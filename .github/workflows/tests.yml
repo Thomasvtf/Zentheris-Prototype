@@ -1,0 +1,27 @@
+name: Pruebas
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Instalar dependencias
+        working-directory: ./api
+        run: uv sync --all-extras --dev
+
+      - name: Revisar estilo de codigo
+        working-directory: ./api
+        run: uv run ruff check .
+
+      - name: Ejecutar pruebas
+        working-directory: ./api
+        run: uv run pytest --cov=app --cov-report=term

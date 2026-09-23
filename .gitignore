@@ -1,0 +1,25 @@
+# Claves y entornos - NUNCA se suben
+.env
+.env.local
+.env.*.local
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+# Node y Expo
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+npm-debug.*
+# Editores y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

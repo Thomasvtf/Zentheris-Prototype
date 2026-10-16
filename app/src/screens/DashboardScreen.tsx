@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -9,6 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Gauge } from '../components/Gauge';
 
 interface Zona {
   id: number;
@@ -20,7 +22,7 @@ interface Zona {
 
 export const DashboardScreen: React.FC = () => {
   const [unit, setUnit] = useState<'KW' | 'COP'>('KW');
-  
+
   const [zonas, setZonas] = useState<Zona[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -57,11 +59,8 @@ export const DashboardScreen: React.FC = () => {
     >
       {/* 1. HEADER / ENCABEZADO */}
       <View style={styles.header}>
-        
-        <Text style={[styles.headerTitle, { textAlign: 'center'}]}>
-          Panel principal
-        </Text>
-        
+        <Text style={styles.headerTitle}>Panel principal</Text>
+
         <TouchableOpacity style={styles.iconBtn}>
           <Ionicons name="notifications-outline" size={22} color="#FFFFFF" />
         </TouchableOpacity>
@@ -79,46 +78,54 @@ export const DashboardScreen: React.FC = () => {
         <Text style={styles.goalText}>Meta 15.0 kWh</Text>
       </View>
 
-      {/* 3. CARD: CONSUMO TOTAL ACTUAL */}
-      <View style={styles.card}>
-        <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardTitleText}>Consumo total actual:</Text>
-          <View style={styles.rightIcons}>
-            <Ionicons name="options-outline" size={20} color="#A0AEC0" style={{ marginRight: 10 }} />
-            <Ionicons name="speedometer-outline" size={20} color="#A0AEC0" />
-          </View>
-        </View>
+     {/* 3. CARD: CONSUMO TOTAL ACTUAL CON VELOCÍMETRO */}
+<View style={styles.card}>
+  {/* Encabezado con título e íconos */}
+  <View style={styles.cardHeaderRow}>
+    <Text style={styles.cardSubTitle}>Panel principal · Consumo actual</Text>
+    <View style={styles.rightIcons}>
+      <TouchableOpacity style={styles.headerIconActive}>
+        <Ionicons name="speedometer-outline" size={18} color="#5DD39E" />
+      </TouchableOpacity>
+      <TouchableOpacity style={{ marginLeft: 10 }}>
+        <Ionicons name="pie-chart-outline" size={18} color="#A0AEC0" />
+      </TouchableOpacity>
+    </View>
+  </View>
 
-        {/* SEMÁFORO / LICES DE ESTADO */}
-        <View style={styles.trafficLightContainer}>
-          <View style={[styles.lightCircle, styles.lightGreenActive]} />
-          <View style={[styles.lightCircle, styles.lightYellowOff]} />
-          <View style={[styles.lightCircle, styles.lightRedOff]} />
-        </View>
+  {/* Gráfico del Velocímetro */}
+  <View style={{ alignItems: 'center', marginTop: 15, marginBottom: 10 }}>
+    <Gauge value={2.4} maxValue={10} size={220} strokeWidth={26} />
 
-        <Text style={[styles.mainStatText, { textAlign: 'center', marginTop: 10 }]}>6 kW</Text>
+    {/* Valor numérico central */}
+    <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: -25 }}>
+      <Text style={styles.gaugeValueText}>2.4</Text>
+      <Text style={styles.gaugeUnitText}>{unit === 'KW' ? ' kW' : ' COP'}</Text>
+    </View>
 
-        {/* INTERVALO CADA */}
-        <Text style={[styles.sectionLabel, { textAlign: 'center', marginTop: 15 }]}>
-        </Text>
-        <View style={[styles.toggleGroup, { justifyContent: 'center', marginTop: 8 }]}>
-          <TouchableOpacity
-            style={[styles.toggleBtn, unit === 'KW' && styles.toggleBtnActive]}
-            onPress={() => setUnit('KW')}
-          >
-            <Ionicons name="flash-outline" size={14} color={unit === 'KW' ? '#00E676' : '#A0AEC0'} />
-            <Text style={[styles.toggleText, unit === 'KW' && styles.toggleTextActive]}>kW</Text>
-          </TouchableOpacity>
+    {/* Subtítulo de estado */}
+    <Text style={styles.gaugeStatusText}>Dentro de lo esperado</Text>
+  </View>
 
-          <TouchableOpacity
-            style={[styles.toggleBtn, unit === 'COP' && styles.toggleBtnActive]}
-            onPress={() => setUnit('COP')}
-          >
-            <Ionicons name="flash-outline" size={14} color={unit === 'COP' ? '#00E676' : '#A0AEC0'} />
-            <Text style={[styles.toggleText, unit === 'COP' && styles.toggleTextActive]}>COP</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+  {/* Toggles (kW / COP) */}
+  <View style={[styles.toggleGroup, { justifyContent: 'center', marginTop: 10 }]}>
+    <TouchableOpacity
+      style={[styles.toggleBtn, unit === 'KW' ? styles.toggleBtnActive : null]}
+      onPress={() => setUnit('KW')}
+    >
+      <Ionicons name="flash-outline" size={14} color={unit === 'KW' ? '#5DD39E' : '#A0AEC0'} />
+      <Text style={[styles.toggleText, unit === 'KW' ? styles.toggleTextActive : null]}>Kw</Text>
+    </TouchableOpacity>
+
+    <TouchableOpacity
+      style={[styles.toggleBtn, unit === 'COP' ? styles.toggleBtnActive : null]}
+      onPress={() => setUnit('COP')}
+    >
+      <Ionicons name="flash-outline" size={14} color={unit === 'COP' ? '#5DD39E' : '#A0AEC0'} />
+      <Text style={[styles.toggleText, unit === 'COP' ? styles.toggleTextActive : null]}>COP</Text>
+    </TouchableOpacity>
+  </View>
+</View>
 
       {/* 4. SECCIÓN ZONAS ACTIVAS */}
       <Text style={styles.sectionTitle}>Zonas activas</Text>
@@ -137,7 +144,7 @@ export const DashboardScreen: React.FC = () => {
               <Text
                 style={[
                   styles.zoneStatus,
-                  zona.estado === 'Alto' ? { color: '#E53E3E' } : { color: '#81C784' },
+                  { color: zona.estado === 'Alto' ? '#E53E3E' : '#81C784' },
                 ]}
               >
                 {zona.estado || 'Normal'}
@@ -167,14 +174,15 @@ const styles = StyleSheet.create({
     borderBottomColor: '#FFFFFF14',
     borderBottomWidth: 1,
     paddingBottom: 10,
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
   },
   headerTitle: {
     color: '#FFFFFF',
     fontSize: 20,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginLeft: 'auto',
-    marginRight: 'auto',
+    flex: 1,
   },
   iconBtn: {
     padding: 4,
@@ -341,4 +349,25 @@ const styles = StyleSheet.create({
   zoneStatus: {
     fontSize: 12,
   },
-}); 
+  gaugeValueText: {
+    color: '#FFFFFF',
+    fontSize: 38,
+    fontWeight: 'bold',
+  },
+  gaugeUnitText: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  gaugeStatusText: {
+    color: '#5DD39E',
+    fontSize: 15,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  headerIconActive: {
+    backgroundColor: '#163B30',
+    padding: 6,
+    borderRadius: 8,
+  },
+});

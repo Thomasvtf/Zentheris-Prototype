@@ -10,6 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Circle } from 'react-native-svg';
 import { Gauge } from '../components/Gauge';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ interface Zona {
   porcentaje?: number; // 0-100
 }
 
+
 // Datos mock (se reemplazan con API cuando devuelve datos)
 const ZONAS_MOCK: Zona[] = [
   { id: 1, nombre: 'Room',    consumo: '0.6 Kw',  estado: 'Normal',  porcentaje: 25 },
@@ -51,8 +53,84 @@ const ZONAS_MOCK: Zona[] = [
   { id: 3, nombre: 'Oficine', consumo: '0.5 Kw',  estado: 'Normal',  porcentaje: 50 },
 ];
 
+// ─── Componente DonutChart (SVG) ──────────────────────────────────────────────
+interface DonutChartProps {
+  value: number;       // ej: 7.2
+  maxValue: number;    // ej: 10
+  unit: 'KW' | 'COP';
+  size?: number;
+  strokeWidth?: number;
+}
+
+const DonutChart: React.FC<DonutChartProps> = ({
+  value,
+  maxValue = 10,
+  unit,
+  size = 200,
+  strokeWidth = 26,
+}) => {
+  const center = size / 2;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const percentage = Math.min(Math.max(value / maxValue, 0), 1);
+  const strokeDashoffset = circumference - percentage * circumference;
+
+  const displayVal = unit === 'COP' ? (value * 1200).toFixed(0) : value.toFixed(1);
+  const displayUnit = unit === 'COP' ? 'COP' : 'kW';
+
+  return (
+    <View style={{ alignItems: 'center', marginTop: 16, marginBottom: 8 }}>
+      <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+        <Svg width={size} height={size}>
+          {/* Círculo de fondo oscuro/apagado */}
+          <Circle
+            cx={center}
+            cy={center}
+            r={radius}
+            stroke="#20382E"
+            strokeWidth={strokeWidth}
+            fill="none"
+          />
+          {/* Círculo de progreso coloreado (comienza arriba a las 12 en punto) */}
+          <Circle
+            cx={center}
+            cy={center}
+            r={radius}
+            stroke="#F6D543"
+            strokeWidth={strokeWidth}
+            strokeDasharray={`${circumference} ${circumference}`}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="butt"
+            fill="none"
+            rotation="-90"
+            origin={`${center}, ${center}`}
+          />
+        </Svg>
+
+        {/* Texto central en el hueco del donut */}
+        <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 36, fontWeight: 'bold' }}>
+            {displayVal}
+          </Text>
+          <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '500', marginTop: -2 }}>
+            {displayUnit}
+          </Text>
+        </View>
+      </View>
+
+      {/* Subtítulo bajo la gráfica */}
+      <Text style={{ color: '#F6D543', fontSize: 15, fontWeight: '500', marginTop: 14 }}>
+        Por encima de lo normal
+      </Text>
+    </View>
+  );
+};
+
+
 export const DashboardScreen: React.FC = () => {
   const [unit, setUnit] = useState<'KW' | 'COP'>('KW');
+  const [chartView, setChartView] = useState<'gauge' | 'donut'>('gauge'); // toggle Card 2
+  const [zonaView, setZonaView] = useState<'grid' | 'list'>('list');
   const [zonas, setZonas] = useState<Zona[]>(ZONAS_MOCK);
   const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -116,28 +194,50 @@ export const DashboardScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* ── CARD 2: VELOCÍMETRO ─────────────────────────────────── */}
+      {/* ── CARD 2: CONSUMO ACTUAL ────────────────────────────────── */}
       <View style={styles.card}>
         <View style={styles.cardHeaderRow}>
           <Text style={styles.cardSubTitle}>Panel principal · Consumo actual</Text>
           <View style={styles.rightIcons}>
-            <TouchableOpacity style={styles.headerIconActive}>
-              <Ionicons name="speedometer-outline" size={18} color="#5DD39E" />
+            {/* Botón Velocímetro */}
+            <TouchableOpacity
+              style={[styles.headerIconActive, chartView === 'gauge' && { backgroundColor: '#163B30' }]}
+              onPress={() => setChartView('gauge')}
+            >
+              <Ionicons
+                name="speedometer-outline"
+                size={18}
+                color={chartView === 'gauge' ? '#5DD39E' : '#A0AEC0'}
+              />
             </TouchableOpacity>
-            <TouchableOpacity style={{ marginLeft: 10 }}>
-              <Ionicons name="time-outline" size={18} color="#A0AEC0" />
+            {/* Botón Donut / Circular */}
+            <TouchableOpacity
+              style={[{ marginLeft: 10, padding: 6, borderRadius: 8 }, chartView === 'donut' && { backgroundColor: '#163B30' }]}
+              onPress={() => setChartView('donut')}
+            >
+              <Ionicons
+                name="pie-chart-outline"
+                size={18}
+                color={chartView === 'donut' ? '#5DD39E' : '#A0AEC0'}
+              />
             </TouchableOpacity>
           </View>
         </View>
 
-        <View style={{ alignItems: 'center', marginTop: 12 }}>
-          <Gauge value={2.4} maxValue={10} size={220} strokeWidth={26} />
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: -20 }}>
-            <Text style={styles.gaugeValueText}>2.4</Text>
-            <Text style={styles.gaugeUnitText}>{unit === 'KW' ? ' kW' : ' COP'}</Text>
+        {chartView === 'gauge' ? (
+          /* ── Vista velocímetro ── */
+          <View style={{ alignItems: 'center', marginTop: 12 }}>
+            <Gauge value={2.4} maxValue={10} size={220} strokeWidth={26} />
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: -20 }}>
+              <Text style={styles.gaugeValueText}>2.4</Text>
+              <Text style={styles.gaugeUnitText}>{unit === 'KW' ? ' kW' : ' COP'}</Text>
+            </View>
+            <Text style={styles.gaugeStatusText}>Dentro de lo esperado</Text>
           </View>
-          <Text style={styles.gaugeStatusText}>Dentro de lo esperado</Text>
-        </View>
+        ) : (
+          /* ── Vista donut circular ── */
+          <DonutChart value={7.2} maxValue={10} unit={unit} />
+        )}
 
         <View style={[styles.toggleGroup, { justifyContent: 'center', marginTop: 14 }]}>
           <TouchableOpacity
@@ -199,18 +299,87 @@ export const DashboardScreen: React.FC = () => {
       <View style={styles.zonesSectionHeader}>
         <Text style={styles.sectionTitle}>Zones</Text>
         <View style={styles.rightIcons}>
-          <TouchableOpacity style={{ marginRight: 12 }}>
-            <Ionicons name="grid-outline" size={20} color="#A0AEC0" />
+          <TouchableOpacity
+            style={[
+              styles.viewToggleBtn,
+              zonaView === 'grid' && styles.viewToggleBtnActive,
+            ]}
+            onPress={() => setZonaView('grid')}
+          >
+            <Ionicons
+              name="grid-outline"
+              size={18}
+              color={zonaView === 'grid' ? '#5DD39E' : '#A0AEC0'}
+            />
           </TouchableOpacity>
-          <TouchableOpacity>
-            <Ionicons name="list-outline" size={22} color="#5DD39E" />
+          <TouchableOpacity
+            style={[
+              styles.viewToggleBtn,
+              zonaView === 'list' && styles.viewToggleBtnActive,
+            ]}
+            onPress={() => setZonaView('list')}
+          >
+            <Ionicons
+              name="list-outline"
+              size={20}
+              color={zonaView === 'list' ? '#5DD39E' : '#A0AEC0'}
+            />
           </TouchableOpacity>
         </View>
       </View>
 
       {loading ? (
         <ActivityIndicator size="large" color="#5DD39E" style={{ marginTop: 20 }} />
+      ) : zonaView === 'grid' ? (
+        /* ── VISTA GRID (compacta, 2 columnas) ── */
+        <View style={styles.zonesGrid}>
+          {zonas.map((zona) => {
+            const color   = estadoColor(zona.estado);
+            const bgBadge = estadoBadgeBg(zona.estado);
+            const icon    = estadoIcon(zona.estado);
+            return (
+              <View key={zona.id} style={styles.zoneCardGrid}>
+                {/* Fila top: icono cama + nombre + badge ícono */}
+                <View style={styles.zoneTopRow}>
+                  <View style={styles.zoneIconBox}>
+                    <Ionicons name="bed-outline" size={15} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.zoneNameGrid} numberOfLines={1}>{zona.nombre}</Text>
+                  <View style={{ marginLeft: 'auto' }}>
+                    <Ionicons name={icon as any} size={16} color={color} />
+                  </View>
+                </View>
+
+                {/* Valor con unidad en la misma línea */}
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 6 }}>
+                  <Text style={[styles.zoneValueGrid, { color }]}>
+                    {zona.consumo?.replace(' Kw', '') || '0.5'}
+                  </Text>
+                  <Text style={styles.zoneUnitGrid}> k {unit === 'COP' ? 'COP' : 'kw'}</Text>
+                </View>
+
+                {/* Estado + porcentaje en la misma línea */}
+                <View style={styles.zoneBottomRow}>
+                  <Text style={[styles.zoneStatusLabel, { color, fontSize: 11 }]}>
+                    {zona.estado || 'Normal'}
+                  </Text>
+                  <Text style={styles.zonePctText}>{zona.porcentaje ?? 50}%</Text>
+                </View>
+
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { width: `${zona.porcentaje ?? 50}%`, backgroundColor: color },
+                    ]}
+                  />
+                </View>
+              </View>
+            );
+          })}
+        </View>
       ) : (
+        /* ── VISTA LISTA (detallada, 1 columna) ── */
         <View>
           {zonas.map((zona) => {
             const color   = estadoColor(zona.estado);
@@ -497,4 +666,58 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginBottom: 6,
   },
-});
+
+  // ── View toggle buttons (grid / list) ────────────────────────
+  viewToggleBtn: {
+    padding: 6,
+    borderRadius: 8,
+    marginLeft: 6,
+  },
+  viewToggleBtnActive: {
+    backgroundColor: '#163B30',
+  },
+
+  // ── Grid layout (2 columnas) ──────────────────────────────────
+  zonesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  zoneCardGrid: {
+    backgroundColor: '#162B25',
+    width: '48.5%',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FFFFFF12',
+  },
+  zoneNameGrid: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+    marginHorizontal: 6,
+  },
+  zoneValueGrid: {
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  zoneUnitGrid: {
+    color: '#A0AEC0',
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 2,
+  },
+  zoneBottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  zonePctText: {
+    color: '#718096',
+    fontSize: 11,
+  },
+});

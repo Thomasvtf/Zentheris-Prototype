@@ -12,26 +12,56 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Gauge } from '../components/Gauge';
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const estadoColor = (estado?: string) => {
+  switch (estado) {
+    case 'Elevado':  return '#D69E2E';
+    case 'Crítico':  return '#E53E3E';
+    default:          return '#5DD39E';
+  }
+};
+const estadoBadgeBg = (estado?: string) => {
+  switch (estado) {
+    case 'Elevado':  return '#3B2A10';
+    case 'Crítico':  return '#3B1010';
+    default:          return '#0E2D22';
+  }
+};
+const estadoIcon = (estado?: string) => {
+  switch (estado) {
+    case 'Elevado':  return 'warning-outline';
+    case 'Crítico':  return 'alert-circle-outline';
+    default:          return 'checkmark-circle-outline';
+  }
+};
+
 interface Zona {
   id: number;
   nombre: string;
   descripcion?: string;
-  consumo?: string; // Ej: "0.5 kW"
-  estado?: string;  // Ej: "Normal", "Alto", "Bajo"
+  consumo?: string;    // Ej: "0.6 Kw"
+  estado?: string;     // Ej: "Normal", "Elevado", "Crítico"
+  porcentaje?: number; // 0-100
 }
+
+// Datos mock (se reemplazan con API cuando devuelve datos)
+const ZONAS_MOCK: Zona[] = [
+  { id: 1, nombre: 'Room',    consumo: '0.6 Kw',  estado: 'Normal',  porcentaje: 25 },
+  { id: 2, nombre: 'Kitchen', consumo: '0.75 Kw', estado: 'Elevado', porcentaje: 75 },
+  { id: 3, nombre: 'Oficine', consumo: '0.5 Kw',  estado: 'Normal',  porcentaje: 50 },
+];
 
 export const DashboardScreen: React.FC = () => {
   const [unit, setUnit] = useState<'KW' | 'COP'>('KW');
-
-  const [zonas, setZonas] = useState<Zona[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [zonas, setZonas] = useState<Zona[]>(ZONAS_MOCK);
+  const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
   const fetchDashboardData = async () => {
     try {
       const response = await fetch('http://127.0.0.1:8000/salud/bd');
       const data = await response.json();
-      setZonas(data.zonas || []);
+      if (data.zonas && data.zonas.length > 0) setZonas(data.zonas);
     } catch (error) {
       console.error('Error al cargar datos del backend:', error);
     } finally {
@@ -40,27 +70,21 @@ export const DashboardScreen: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchDashboardData();
-  };
+  useEffect(() => { fetchDashboardData(); }, []);
+  const onRefresh = () => { setRefreshing(true); fetchDashboardData(); };
 
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00E676" />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#5DD39E" />
       }
     >
-      {/* 1. HEADER / ENCABEZADO */}
+      {/* ── HEADER ──────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Panel principal</Text>
-
+        <View style={{ width: 30 }} />
+        <Text style={styles.headerTitle}>Panel Principal</Text>
         <TouchableOpacity style={styles.iconBtn}>
           <Ionicons name="notifications-outline" size={22} color="#FFFFFF" />
         </TouchableOpacity>
@@ -68,89 +92,158 @@ export const DashboardScreen: React.FC = () => {
 
       <Text style={styles.greeting}>Buenos días, Nicolás</Text>
 
-      {/* 2. CARD: CONSUMO ACUMULADO HOY */}
+      {/* ── CARD 1: CONSUMO ACTUAL (resumen) ────────────────────── */}
       <View style={styles.card}>
         <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardSubTitle}>Consumo acumulado hoy</Text>
-          <Ionicons name="flash-outline" size={24} color="#A0AEC0" />
+          <View style={styles.cardLabelRow}>
+            <Ionicons name="flash-outline" size={15} color="#5DD39E" style={{ marginRight: 6 }} />
+            <Text style={styles.cardSubTitle}>Panel principal · Consumo actual</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: '#0E2D22' }]}>
+            <Text style={[styles.badgeText, { color: '#5DD39E' }]}>Normal</Text>
+          </View>
         </View>
-        <Text style={styles.mainStatText}>12.5 kW</Text>
-        <Text style={styles.goalText}>Meta 15.0 kWh</Text>
+
+        <Text style={styles.mainStatText}>2.25 Kw</Text>
+        <Text style={styles.hintText}>revisar comparación según estado</Text>
+
+        <View style={styles.statusChip}>
+          <Ionicons name="checkmark-circle-outline" size={16} color="#5DD39E" />
+          <Text style={styles.statusChipText}>
+            {'Consumo (normal, elevado, crítico)\n'}
+            <Text style={styles.statusChipSub}>Revisar consumo según state</Text>
+          </Text>
+        </View>
       </View>
 
-     {/* 3. CARD: CONSUMO TOTAL ACTUAL CON VELOCÍMETRO */}
-<View style={styles.card}>
-  {/* Encabezado con título e íconos */}
-  <View style={styles.cardHeaderRow}>
-    <Text style={styles.cardSubTitle}>Panel principal · Consumo actual</Text>
-    <View style={styles.rightIcons}>
-      <TouchableOpacity style={styles.headerIconActive}>
-        <Ionicons name="speedometer-outline" size={18} color="#5DD39E" />
-      </TouchableOpacity>
-      <TouchableOpacity style={{ marginLeft: 10 }}>
-        <Ionicons name="pie-chart-outline" size={18} color="#A0AEC0" />
-      </TouchableOpacity>
-    </View>
-  </View>
+      {/* ── CARD 2: VELOCÍMETRO ─────────────────────────────────── */}
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardSubTitle}>Panel principal · Consumo actual</Text>
+          <View style={styles.rightIcons}>
+            <TouchableOpacity style={styles.headerIconActive}>
+              <Ionicons name="speedometer-outline" size={18} color="#5DD39E" />
+            </TouchableOpacity>
+            <TouchableOpacity style={{ marginLeft: 10 }}>
+              <Ionicons name="time-outline" size={18} color="#A0AEC0" />
+            </TouchableOpacity>
+          </View>
+        </View>
 
-  {/* Gráfico del Velocímetro */}
-  <View style={{ alignItems: 'center', marginTop: 15, marginBottom: 10 }}>
-    <Gauge value={2.4} maxValue={10} size={220} strokeWidth={26} />
+        <View style={{ alignItems: 'center', marginTop: 12 }}>
+          <Gauge value={2.4} maxValue={10} size={220} strokeWidth={26} />
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: -20 }}>
+            <Text style={styles.gaugeValueText}>2.4</Text>
+            <Text style={styles.gaugeUnitText}>{unit === 'KW' ? ' kW' : ' COP'}</Text>
+          </View>
+          <Text style={styles.gaugeStatusText}>Dentro de lo esperado</Text>
+        </View>
 
-    {/* Valor numérico central */}
-    <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: -25 }}>
-      <Text style={styles.gaugeValueText}>2.4</Text>
-      <Text style={styles.gaugeUnitText}>{unit === 'KW' ? ' kW' : ' COP'}</Text>
-    </View>
+        <View style={[styles.toggleGroup, { justifyContent: 'center', marginTop: 14 }]}>
+          <TouchableOpacity
+            style={[styles.toggleBtn, unit === 'KW' ? styles.toggleBtnActive : null]}
+            onPress={() => setUnit('KW')}
+          >
+            <Ionicons name="flash-outline" size={14} color={unit === 'KW' ? '#5DD39E' : '#A0AEC0'} />
+            <Text style={[styles.toggleText, unit === 'KW' ? styles.toggleTextActive : null]}>Kw</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleBtn, unit === 'COP' ? styles.toggleBtnActive : null]}
+            onPress={() => setUnit('COP')}
+          >
+            <Ionicons name="flash-outline" size={14} color={unit === 'COP' ? '#5DD39E' : '#A0AEC0'} />
+            <Text style={[styles.toggleText, unit === 'COP' ? styles.toggleTextActive : null]}>COP</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-    {/* Subtítulo de estado */}
-    <Text style={styles.gaugeStatusText}>Dentro de lo esperado</Text>
-  </View>
+      {/* ── CARD 3: CONSUMO ACUMULADO ───────────────────────────── */}
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardLabelRow}>
+            <Ionicons name="analytics-outline" size={15} color="#5DD39E" style={{ marginRight: 6 }} />
+            <Text style={styles.cardSubTitle} numberOfLines={1}>Panel principal · Consumo acumulado · Hoy</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: '#0E2D22' }]}>
+            <Text style={[styles.badgeText, { color: '#5DD39E' }]}>Normal</Text>
+          </View>
+        </View>
 
-  {/* Toggles (kW / COP) */}
-  <View style={[styles.toggleGroup, { justifyContent: 'center', marginTop: 10 }]}>
-    <TouchableOpacity
-      style={[styles.toggleBtn, unit === 'KW' ? styles.toggleBtnActive : null]}
-      onPress={() => setUnit('KW')}
-    >
-      <Ionicons name="flash-outline" size={14} color={unit === 'KW' ? '#5DD39E' : '#A0AEC0'} />
-      <Text style={[styles.toggleText, unit === 'KW' ? styles.toggleTextActive : null]}>Kw</Text>
-    </TouchableOpacity>
+        <Text style={styles.mainStatText}>127 KWh · COP</Text>
 
-    <TouchableOpacity
-      style={[styles.toggleBtn, unit === 'COP' ? styles.toggleBtnActive : null]}
-      onPress={() => setUnit('COP')}
-    >
-      <Ionicons name="flash-outline" size={14} color={unit === 'COP' ? '#5DD39E' : '#A0AEC0'} />
-      <Text style={[styles.toggleText, unit === 'COP' ? styles.toggleTextActive : null]}>COP</Text>
-    </TouchableOpacity>
-  </View>
-</View>
+        <View style={styles.progressRow}>
+          <Text style={styles.progressLabel}>Progreso hacia el objetivo</Text>
+          <Text style={styles.progressPercent}>68%</Text>
+        </View>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: '68%' }]} />
+        </View>
 
-      {/* 4. SECCIÓN ZONAS ACTIVAS */}
-      <Text style={styles.sectionTitle}>Zonas activas</Text>
+        <View style={{ marginTop: 10 }}>
+          <Text style={styles.limitLabel}>LÍMITE</Text>
+          <Text style={styles.limitValue}>187 kWh</Text>
+        </View>
+
+        <View style={styles.statusChip}>
+          <Ionicons name="checkmark-circle-outline" size={16} color="#5DD39E" />
+          <Text style={styles.statusChipText}>
+            {'Consumo de acuerdo al límite(normal, elevado,crítico)\n'}
+            <Text style={styles.statusChipSub}>
+              Estas por (de acuerdo al estado) del límite o consumo
+            </Text>
+          </Text>
+        </View>
+      </View>
+
+      {/* ── SECCIÓN ZONES ───────────────────────────────────────── */}
+      <View style={styles.zonesSectionHeader}>
+        <Text style={styles.sectionTitle}>Zones</Text>
+        <View style={styles.rightIcons}>
+          <TouchableOpacity style={{ marginRight: 12 }}>
+            <Ionicons name="grid-outline" size={20} color="#A0AEC0" />
+          </TouchableOpacity>
+          <TouchableOpacity>
+            <Ionicons name="list-outline" size={22} color="#5DD39E" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#00E676" style={{ marginTop: 20 }} />
+        <ActivityIndicator size="large" color="#5DD39E" style={{ marginTop: 20 }} />
       ) : (
-        <View style={styles.zonesGrid}>
-          {zonas.map((zona) => (
-            <View key={zona.id} style={styles.zoneCard}>
-              <View style={styles.zoneHeader}>
-                <Ionicons name="tv-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.zoneName}>{zona.nombre}</Text>
+        <View>
+          {zonas.map((zona) => {
+            const color   = estadoColor(zona.estado);
+            const bgBadge = estadoBadgeBg(zona.estado);
+            const icon    = estadoIcon(zona.estado);
+            return (
+              <View key={zona.id} style={styles.zoneCard}>
+                {/* Fila: icono + nombre + badge */}
+                <View style={styles.zoneTopRow}>
+                  <View style={styles.zoneIconBox}>
+                    <Ionicons name="bed-outline" size={18} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.zoneName}>{zona.nombre}</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: bgBadge, marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+                    <Ionicons name={icon as any} size={12} color={color} />
+                    <Text style={[styles.badgeText, { color }]}>{zona.estado || 'Normal'}</Text>
+                  </View>
+                </View>
+
+                <Text style={[styles.zoneValue, { color }]}>{zona.consumo || '0.5 Kw'}</Text>
+                <Text style={[styles.zoneStatusLabel, { color }]}>{zona.estado || 'Normal'}</Text>
+
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { width: `${zona.porcentaje ?? 50}%`, backgroundColor: color },
+                    ]}
+                  />
+                </View>
               </View>
-              <Text style={styles.zoneValue}>{zona.consumo || '0.5 kW'}</Text>
-              <Text
-                style={[
-                  styles.zoneStatus,
-                  { color: zona.estado === 'Alto' ? '#E53E3E' : '#81C784' },
-                ]}
-              >
-                {zona.estado || 'Normal'}
-              </Text>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
     </ScrollView>
@@ -158,6 +251,7 @@ export const DashboardScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  // ── Layout ──────────────────────────────────────────────────
   container: {
     flex: 1,
     backgroundColor: '#0D1F1A',
@@ -166,6 +260,8 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
+
+  // ── Header ──────────────────────────────────────────────────
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -173,7 +269,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderBottomColor: '#FFFFFF14',
     borderBottomWidth: 1,
-    paddingBottom: 10,
+    paddingBottom: 12,
     marginHorizontal: -20,
     paddingHorizontal: 20,
   },
@@ -184,171 +280,101 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     flex: 1,
   },
-  iconBtn: {
-    padding: 4,
-    position: 'relative',
-  },
-  badge: {
-    position: 'absolute',
-    right: -2,
-    top: -2,
-    backgroundColor: '#E53E3E',
-    borderRadius: 8,
-    width: 16,
-    height: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  badgeText: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
+  iconBtn: { padding: 4 },
+
+  // ── Greeting ─────────────────────────────────────────────────
   greeting: {
-    color: '#E2E8F0',
-    fontSize: 16,
+    color: '#A0AEC0',
+    fontSize: 15,
     textAlign: 'center',
-    marginVertical: 18,
+    marginVertical: 16,
   },
-  sectionRow: {
-    marginBottom: 15,
-  },
-  sectionLabel: {
-    color: '#718096',
-    fontSize: 11,
-    fontWeight: 'bold',
-    marginBottom: 6,
-  },
-  toggleGroup: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  toggleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#1A362D',
-    gap: 4,
-  },
-  toggleBtnActive: {
-    backgroundColor: '#163B30',
-  },
-  toggleText: {
-    color: '#718096',
-    fontSize: 13,
-  },
-  toggleTextActive: {
-    color: '#5DD39E',
-    fontWeight: '600',
-  },
+
+  // ── Cards ────────────────────────────────────────────────────
   card: {
     backgroundColor: '#162B25',
     borderRadius: 16,
-    padding: 18,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#FFFFFF14',
+    borderColor: '#FFFFFF12',
     marginBottom: 16,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  cardSubTitle: {
-    color: '#A0AEC0',
-    fontSize: 14,
-  },
-  cardTitleText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  rightIcons: {
-    flexDirection: 'row',
-  },
-  mainStatText: {
-    color: '#00E676',
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginTop: 8,
-  },
-  goalText: {
-    color: '#D69E2E',
-    fontSize: 13,
-    marginTop: 6,
-  },
-  trafficLightContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#05110E',
-    borderRadius: 40,
-    padding: 10,
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    marginTop: 15,
-    borderWidth: 1,
-    borderColor: '#0E2A22',
-  },
-  lightCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
-  lightGreenActive: {
-    backgroundColor: '#00E676',
-    shadowColor: '#00E676',
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  lightYellowOff: {
-    backgroundColor: '#383214',
-  },
-  lightRedOff: {
-    backgroundColor: '#381A1A',
-  },
-  sectionTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginTop: 10,
-    marginBottom: 12,
-  },
-  zonesGrid: {
-    flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  zoneCard: {
-    backgroundColor: '#0B1F19',
-    width: '48%',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#13332A',
-  },
-  zoneHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
   },
-  zoneName: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '500',
+  cardLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    flexShrink: 1,
   },
-  zoneValue: {
-    color: '#00E676',
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginVertical: 6,
-  },
-  zoneStatus: {
+  cardSubTitle: {
+    color: '#718096',
     fontSize: 12,
+    flexShrink: 1,
   },
+  rightIcons: { flexDirection: 'row', alignItems: 'center' },
+  headerIconActive: {
+    backgroundColor: '#163B30',
+    padding: 6,
+    borderRadius: 8,
+  },
+
+  // ── Status badge ──────────────────────────────────────────────
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 20,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+
+  // ── Main stat ─────────────────────────────────────────────────
+  mainStatText: {
+    color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginTop: 10,
+  },
+  hintText: {
+    color: '#718096',
+    fontSize: 12,
+    marginTop: 4,
+  },
+
+  // ── Status chip ───────────────────────────────────────────────
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#0D2119',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: '#1A3B2D',
+  },
+  statusChipText: {
+    color: '#5DD39E',
+    fontSize: 12,
+    fontWeight: '500',
+    flex: 1,
+  },
+  statusChipSub: {
+    color: '#718096',
+    fontSize: 11,
+    fontWeight: '400',
+  },
+
+  // ── Gauge ────────────────────────────────────────────────────
   gaugeValueText: {
     color: '#FFFFFF',
     fontSize: 38,
@@ -360,14 +386,115 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   gaugeStatusText: {
-    color: '#5DD39E',
-    fontSize: 15,
+    color: '#D69E2E',
+    fontSize: 14,
     marginTop: 4,
     fontWeight: '500',
   },
-  headerIconActive: {
-    backgroundColor: '#163B30',
-    padding: 6,
+
+  // ── Toggles ──────────────────────────────────────────────────
+  toggleGroup: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  toggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#1A362D',
+    gap: 5,
+  },
+  toggleBtnActive: { backgroundColor: '#163B30' },
+  toggleText: { color: '#718096', fontSize: 13 },
+  toggleTextActive: { color: '#5DD39E', fontWeight: '600' },
+
+  // ── Progress bar ─────────────────────────────────────────────
+  progressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  progressLabel: { color: '#718096', fontSize: 12 },
+  progressPercent: { color: '#A0AEC0', fontSize: 12, fontWeight: '600' },
+  progressTrack: {
+    height: 6,
+    backgroundColor: '#0D2119',
+    borderRadius: 4,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#5DD39E',
+    borderRadius: 4,
+  },
+
+  // ── Límite ───────────────────────────────────────────────────
+  limitLabel: {
+    color: '#718096',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  limitValue: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+
+  // ── Zones section ────────────────────────────────────────────
+  zonesSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  sectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  zoneCard: {
+    backgroundColor: '#162B25',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FFFFFF12',
+  },
+  zoneTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  zoneIconBox: {
+    width: 32,
+    height: 32,
     borderRadius: 8,
+    backgroundColor: '#0D2119',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  zoneName: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  zoneValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  zoneStatusLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 6,
   },
 });

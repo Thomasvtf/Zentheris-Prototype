@@ -1,6 +1,6 @@
 import React from 'react';
-import { DashboardScreen } from '../screens/DashboardScreen';
+import { LoginScreen } from '../screens/LoginScreen';
 
 export default function Page() {
-  return <DashboardScreen />;
+  return <LoginScreen />;
 }

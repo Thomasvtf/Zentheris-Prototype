@@ -37,8 +37,32 @@ export default function Layout() {
           },
         }}
       >
+        {/* Pantallas de Entrada / Autenticación (Sin barra de navegación) */}
         <Tabs.Screen
           name="index"
+          options={{
+            href: null,
+            tabBarStyle: { display: 'none' },
+          }}
+        />
+        <Tabs.Screen
+          name="login"
+          options={{
+            href: null,
+            tabBarStyle: { display: 'none' },
+          }}
+        />
+        <Tabs.Screen
+          name="register"
+          options={{
+            href: null,
+            tabBarStyle: { display: 'none' },
+          }}
+        />
+
+        {/* Pestañas de la Aplicación Principal (Con barra de navegación) */}
+        <Tabs.Screen
+          name="panel"
           options={{
             title: 'Principal',
             tabBarIcon: ({ focused }) => focused ? (
@@ -53,9 +77,9 @@ export default function Layout() {
           options={{
             title: 'Historial',
             tabBarIcon: ({ focused }) => focused ? (
-              <IconoHistorialActivo width={50 } height={50}  />
+              <IconoHistorialActivo width={50} height={50} />
             ) : (
-              <IconoHistorial width={20} height={20}  />
+              <IconoHistorial width={20} height={20} />
             ),
           }}
         />
@@ -64,9 +88,9 @@ export default function Layout() {
           options={{
             title: 'Zonas',
             tabBarIcon: ({ focused }) => focused ? (
-              <IconoZonasActivo width={50} height={50}  />
+              <IconoZonasActivo width={50} height={50} />
             ) : (
-              <IconoZonas width={20} height={20}  />
+              <IconoZonas width={20} height={20} />
             ),
           }}
         />
@@ -75,20 +99,20 @@ export default function Layout() {
           options={{
             title: 'Consejos',
             tabBarIcon: ({ focused }) => focused ? (
-              <IconoConsejosActivo width={50} height={50}  />
+              <IconoConsejosActivo width={50} height={50} />
             ) : (
-              <IconoConsejos width={20} height={20}  />
+              <IconoConsejos width={20} height={20} />
             ),
           }}
         />
         <Tabs.Screen
-            name="configuracion"
+          name="configuracion"
           options={{
             title: 'Configuración',
             tabBarIcon: ({ focused }) => focused ? (
-              <IconoConfiguracionActivo width={50} height={50}  />
+              <IconoConfiguracionActivo width={50} height={50} />
             ) : (
-              <IconoConfiguracion width={20} height={20}  />
+              <IconoConfiguracion width={20} height={20} />
             ),
           }}
         />

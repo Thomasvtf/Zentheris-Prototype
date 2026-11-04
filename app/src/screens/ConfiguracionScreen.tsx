@@ -12,8 +12,11 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 export function ConfiguracionScreen() {
+  const router = useRouter();
+
   // Estados para los switches de configuración
   const [notifAlertas, setNotifAlertas] = useState(true);
   const [notifConsejos, setNotifConsejos] = useState(true);
@@ -56,18 +59,26 @@ export function ConfiguracionScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* ─── Perfil / Avatar ────────────────────────────────── */}
-        <View style={styles.avatarSection}>
+        <TouchableOpacity
+          style={styles.avatarSection}
+          activeOpacity={0.8}
+          onPress={() => router.push('/editar-perfil')}
+        >
           <View style={styles.avatarCircle}>
             <Ionicons name="person" size={38} color="#2A5C4D" />
           </View>
           <Text style={styles.avatarName}>Zentheris</Text>
-        </View>
+        </TouchableOpacity>
 
         {/* ─── 1. CUENTA ──────────────────────────────────────── */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionHeader}>CUENTA</Text>
 
-          <TouchableOpacity style={styles.rowItem} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.rowItem}
+            activeOpacity={0.7}
+            onPress={() => router.push('/editar-perfil')}
+          >
             <View style={styles.iconBox}>
               <Ionicons name="person-outline" size={20} color="#34D399" />
             </View>
@@ -80,7 +91,11 @@ export function ConfiguracionScreen() {
 
           <View style={styles.divider} />
 
-          <TouchableOpacity style={styles.rowItem} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.rowItem}
+            activeOpacity={0.7}
+            onPress={() => router.push('/cambiar-contrasena')}
+          >
             <View style={styles.iconBox}>
               <Ionicons name="shield-outline" size={20} color="#34D399" />
             </View>
@@ -465,4 +480,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

@@ -82,7 +82,7 @@ export default function Layout() {
           }}
         />
         <Tabs.Screen
-            name="configuracion"
+          name="configuracion"
           options={{
             title: 'Configuración',
             tabBarIcon: ({ focused }) => focused ? (
@@ -90,6 +90,18 @@ export default function Layout() {
             ) : (
               <IconoConfiguracion width={20} height={20}  />
             ),
+          }}
+        />
+        <Tabs.Screen
+          name="editar-perfil"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="cambiar-contrasena"
+          options={{
+            href: null,
           }}
         />
       </Tabs>

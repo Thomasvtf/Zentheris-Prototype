@@ -37,16 +37,25 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // Dynamic drawer sizing based on screen and safe area
   const bottomInset = insets.bottom || 12;
-  const CLOSED_DRAWER_HEIGHT = 88 + bottomInset;
-  const OPEN_DRAWER_HEIGHT = Math.min(SCREEN_HEIGHT * 0.84, 660);
-  const MAX_TRANSLATE_Y = OPEN_DRAWER_HEIGHT - CLOSED_DRAWER_HEIGHT;
+  const CLOSED_DRAWER_HEIGHT = 82 + bottomInset;
+
+  // Drawer open heights for each view
+  const LOGIN_DRAWER_HEIGHT = Math.min(SCREEN_HEIGHT * 0.54, 450);
+  const REGISTER_DRAWER_HEIGHT = Math.min(SCREEN_HEIGHT * 0.86, 710);
 
   // Active form tab ('login' | 'register')
   const [activeTab, setActiveTab] = useState<'login' | 'register'>(initialTab);
   const [isOpen, setIsOpen] = useState<boolean>(initialOpen);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  const targetHeight = activeTab === 'login' ? LOGIN_DRAWER_HEIGHT : REGISTER_DRAWER_HEIGHT;
+  const MAX_TRANSLATE_Y = targetHeight - CLOSED_DRAWER_HEIGHT;
+
+  // Animated values
+  const translateY = useRef(new Animated.Value(initialOpen ? 0 : MAX_TRANSLATE_Y)).current;
+  const currentTranslateY = useRef(initialOpen ? 0 : MAX_TRANSLATE_Y);
+  const heightAnim = useRef(new Animated.Value(targetHeight)).current;
 
   // Form states - Login
   const [loginEmail, setLoginEmail] = useState('');
@@ -56,6 +65,7 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
   // Form states - Register
   const [registerName, setRegisterName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPhone, setRegisterPhone] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
   const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
@@ -64,12 +74,6 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
   // Focus states for input styling
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
 
-  // Animation values
-  // 0 = fully opened, MAX_TRANSLATE_Y = closed (only tabs visible at bottom)
-  const translateY = useRef(new Animated.Value(initialOpen ? 0 : MAX_TRANSLATE_Y)).current;
-  const currentTranslateY = useRef(initialOpen ? 0 : MAX_TRANSLATE_Y);
-
-  // Keep track of current translation for gesture delta calculations
   useEffect(() => {
     const listenerId = translateY.addListener((val) => {
       currentTranslateY.current = val.value;
@@ -78,6 +82,16 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
       translateY.removeListener(listenerId);
     };
   }, [translateY]);
+
+  // Adjust height when tab changes while open
+  useEffect(() => {
+    const newHeight = activeTab === 'login' ? LOGIN_DRAWER_HEIGHT : REGISTER_DRAWER_HEIGHT;
+    Animated.timing(heightAnim, {
+      toValue: newHeight,
+      duration: 250,
+      useNativeDriver: false,
+    }).start();
+  }, [activeTab]);
 
   // Open drawer function
   const openDrawer = (targetTab?: 'login' | 'register') => {
@@ -111,14 +125,12 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        // Trigger pan if vertical swipe exceeds small movement
         return Math.abs(gestureState.dy) > 7 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
       },
       onPanResponderGrant: () => {
         translateY.extractOffset();
       },
       onPanResponderMove: (_, gestureState) => {
-        // Only allow dragging within bounds [0, MAX_TRANSLATE_Y]
         const nextVal = currentTranslateY.current + gestureState.dy;
         if (nextVal >= 0 && nextVal <= MAX_TRANSLATE_Y) {
           translateY.setValue(gestureState.dy);
@@ -128,19 +140,16 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
         translateY.flattenOffset();
         const movedY = currentTranslateY.current;
 
-        // Quick flick up: open
         if (gestureState.vy < -0.3) {
           openDrawer();
           return;
         }
 
-        // Quick flick down: close
-        if (gestureState.vy > 0.3) {
+        if (gestureState.vy > 0.) {
           closeDrawer();
           return;
         }
 
-        // Snap depending on position threshold (50% of travel)
         if (movedY < MAX_TRANSLATE_Y * 0.5) {
           openDrawer();
         } else {
@@ -166,6 +175,11 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
     }
   };
 
+  // Password criteria check
+  const hasMinLength = registerPassword.length >= 8;
+  const hasUpperCase = /[A-Z]/.test(registerPassword);
+  const hasNumber = /[0-9]/.test(registerPassword);
+
   // Handle Login submission
   const handleLoginSubmit = () => {
     if (!loginEmail.trim() || !loginPassword.trim()) {
@@ -174,7 +188,6 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
     }
 
     setIsLoading(true);
-    // Simulate login or call API/Supabase
     setTimeout(() => {
       setIsLoading(false);
       if (onSuccess) {
@@ -201,7 +214,6 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
     }
 
     setIsLoading(true);
-    // Simulate register or call API/Supabase
     setTimeout(() => {
       setIsLoading(false);
       Alert.alert('Cuenta creada', 'Tu cuenta ha sido creada exitosamente. ¡Bienvenido a Zentheris!', [
@@ -234,16 +246,43 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0D1F1A" />
 
-      {/* Main Screen Branding */}
-      <View style={[styles.brandingContainer, { paddingBottom: CLOSED_DRAWER_HEIGHT }]}>
-        <View style={styles.logoWrapper}>
+      {/* Main Screen Branding / Header */}
+      <View
+        style={[
+          styles.brandingContainer,
+          isOpen
+            ? activeTab === 'login'
+              ? styles.brandingLoginOpen
+              : styles.brandingRegisterOpen
+            : { paddingBottom: CLOSED_DRAWER_HEIGHT },
+        ]}
+      >
+        <View style={[styles.logoWrapper, isOpen && styles.logoWrapperOpen]}>
           <Image
             source={require('../../assets/images/zentheris-logo.png')}
             style={styles.logoImage}
             resizeMode="contain"
           />
         </View>
-        <Text style={styles.brandTitle}>Zentheris</Text>
+
+        {/* Dynamic Title & Subtitle */}
+        {!isOpen ? (
+          <Text style={styles.brandTitle}>Zentheris</Text>
+        ) : activeTab === 'login' ? (
+          <View style={styles.headerTextsWrapper}>
+            <Text style={styles.openHeaderTitle}>Iniciar sesión</Text>
+            <Text style={styles.openHeaderSubtitle}>
+              Ingresa tus datos para acceder a la cuenta.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.headerTextsWrapper}>
+            <Text style={styles.openHeaderTitle}>Crear cuenta</Text>
+            <Text style={styles.openHeaderSubtitle}>
+              Completa tus datos para crear tu cuenta.
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Backdrop overlay when drawer is open */}
@@ -268,73 +307,77 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
         style={[
           styles.drawerContainer,
           {
-            height: OPEN_DRAWER_HEIGHT,
+            height: heightAnim,
             transform: [{ translateY }],
           },
         ]}
       >
-        {/* Gesture Responder Area (Header + Drag Handle) */}
+        {/* Gesture Area: Tabs Row + Handle Pill */}
         <View {...panResponder.panHandlers} style={styles.drawerHeaderArea}>
-          {/* Dual Tab bar in the header with separate pill shapes */}
-          <View style={styles.dockTabsRow}>
-            {/* Left Tab: Iniciar sesión */}
-            <TouchableOpacity
-              style={[
-                styles.tabDockButton,
-                styles.tabDockButtonLeft,
-                activeTab === 'login' && styles.tabDockButtonActive,
-              ]}
-              onPress={() => handleTabPress('login')}
-              activeOpacity={0.85}
-            >
-              <Text
-                style={[
-                  styles.tabDockText,
-                  activeTab === 'login' && styles.tabDockTextActive,
-                ]}
+          {/* TABS ROW */}
+          {!isOpen ? (
+            /* CLOSED STATE: Double adjacent rounded tabs forming the center notch */
+            <View style={styles.closedTabsRow}>
+              <TouchableOpacity
+                style={styles.closedTabLeft}
+                onPress={() => openDrawer('login')}
+                activeOpacity={0.88}
               >
-                Iniciar sesión
-              </Text>
-              {isOpen && activeTab === 'login' && <View style={styles.activeTabIndicator} />}
-            </TouchableOpacity>
+                <Text style={styles.closedTabTextLeft}>Iniciar sesión</Text>
+              </TouchableOpacity>
 
-            {/* Gap / Notch Divider between the two tabs */}
-            <View style={styles.tabDividerNotch} />
-
-            {/* Right Tab: Registro */}
-            <TouchableOpacity
-              style={[
-                styles.tabDockButton,
-                styles.tabDockButtonRight,
-                activeTab === 'register' && styles.tabDockButtonActive,
-              ]}
-              onPress={() => handleTabPress('register')}
-              activeOpacity={0.85}
-            >
-              <Text
-                style={[
-                  styles.tabDockText,
-                  activeTab === 'register' && styles.tabDockTextActive,
-                ]}
+              <TouchableOpacity
+                style={styles.closedTabRight}
+                onPress={() => openDrawer('register')}
+                activeOpacity={0.88}
               >
-                Registro
-              </Text>
-              {isOpen && activeTab === 'register' && <View style={styles.activeTabIndicator} />}
-            </TouchableOpacity>
-          </View>
+                <Text style={styles.closedTabTextRight}>Registro</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            /* OPEN STATE: Folder tab shape with active tab elevated */
+            <View style={styles.openTabsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.openTabButton,
+                  activeTab === 'login' ? styles.openTabActiveLeft : styles.openTabInactive,
+                ]}
+                onPress={() => handleTabPress('login')}
+                activeOpacity={0.88}
+              >
+                <Text
+                  style={[
+                    styles.openTabText,
+                    activeTab === 'login' ? styles.openTabTextActive : styles.openTabTextInactive,
+                  ]}
+                >
+                  Iniciar sesión
+                </Text>
+              </TouchableOpacity>
 
-          {/* Drag Handle Bar and Dismiss Button */}
+              <TouchableOpacity
+                style={[
+                  styles.openTabButton,
+                  activeTab === 'register' ? styles.openTabActiveRight : styles.openTabInactive,
+                ]}
+                onPress={() => handleTabPress('register')}
+                activeOpacity={0.88}
+              >
+                <Text
+                  style={[
+                    styles.openTabText,
+                    activeTab === 'register' ? styles.openTabTextActive : styles.openTabTextInactive,
+                  ]}
+                >
+                  Registrarse
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* DRAG HANDLE BAR */}
           <View style={[styles.handleRow, { paddingBottom: isOpen ? 6 : Math.max(bottomInset, 16) }]}>
             <View style={styles.dragPillBar} />
-            {isOpen && (
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={closeDrawer}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <Ionicons name="chevron-down" size={22} color="#7E9990" />
-              </TouchableOpacity>
-            )}
           </View>
         </View>
 
@@ -351,14 +394,7 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
             {activeTab === 'login' ? (
               /* LOGIN FORM */
               <View style={styles.formSection}>
-                <View style={styles.formTitleRow}>
-                  <Text style={styles.formTitle}>Iniciar sesión</Text>
-                  <Text style={styles.formSubtitle}>
-                    Inicia sesión para acceder a tu panel de monitoreo
-                  </Text>
-                </View>
-
-                {/* Email Field */}
+                {/* Correo electronico */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Correo electrónico</Text>
                   <View
@@ -367,15 +403,9 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                       focusedInput === 'loginEmail' && styles.inputContainerFocused,
                     ]}
                   >
-                    <Ionicons
-                      name="mail-outline"
-                      size={20}
-                      color={focusedInput === 'loginEmail' ? '#00E676' : '#7E9990'}
-                      style={styles.inputIcon}
-                    />
                     <TextInput
                       style={styles.textInput}
-                      placeholder="ejemplo@zentheris.com"
+                      placeholder="usuario123@gmail.com"
                       placeholderTextColor="#5A776D"
                       keyboardType="email-address"
                       autoCapitalize="none"
@@ -387,7 +417,7 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                   </View>
                 </View>
 
-                {/* Password Field */}
+                {/* Contrasena */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Contraseña</Text>
                   <View
@@ -396,12 +426,6 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                       focusedInput === 'loginPassword' && styles.inputContainerFocused,
                     ]}
                   >
-                    <Ionicons
-                      name="lock-closed-outline"
-                      size={20}
-                      color={focusedInput === 'loginPassword' ? '#00E676' : '#7E9990'}
-                      style={styles.inputIcon}
-                    />
                     <TextInput
                       style={styles.textInput}
                       placeholder="••••••••••••"
@@ -417,9 +441,9 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                       <Ionicons
-                        name={showLoginPassword ? 'eye-off-outline' : 'eye-outline'}
+                        name={showLoginPassword ? 'eye-outline' : 'eye-off-outline'}
                         size={20}
-                        color="#7E9990"
+                        color="#8DA59E"
                       />
                     </TouchableOpacity>
                   </View>
@@ -446,7 +470,7 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                   activeOpacity={0.85}
                 >
                   {isLoading ? (
-                    <ActivityIndicator color="#0D1F1A" />
+                    <ActivityIndicator color="#0C1F1B" />
                   ) : (
                     <Text style={styles.primaryButtonText}>Iniciar sesión</Text>
                   )}
@@ -454,40 +478,27 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
 
                 {/* Bottom switch link */}
                 <View style={styles.switchModeContainer}>
-                  <Text style={styles.switchModePrompt}>¿No tienes una cuenta? </Text>
+                  <Text style={styles.switchModePrompt}>¿No tienes cuenta? </Text>
                   <TouchableOpacity onPress={() => setActiveTab('register')}>
-                    <Text style={styles.switchModeLink}>Regístrate aquí</Text>
+                    <Text style={styles.switchModeLink}>Crear cuenta</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             ) : (
               /* REGISTER FORM */
               <View style={styles.formSection}>
-                <View style={styles.formTitleRow}>
-                  <Text style={styles.formTitle}>Crear Cuenta</Text>
-                  <Text style={styles.formSubtitle}>
-                    Comienza a optimizar y controlar tu energía con Zentheris
-                  </Text>
-                </View>
-
-                {/* Full Name */}
+                {/* Nombre */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Nombre completo</Text>
+                  <Text style={styles.inputLabel}>Nombre</Text>
                   <View
                     style={[
                       styles.inputContainer,
                       focusedInput === 'registerName' && styles.inputContainerFocused,
                     ]}
                   >
-                    <Ionicons
-                      name="person-outline"
-                      size={20}
-                      color={focusedInput === 'registerName' ? '#00E676' : '#7E9990'}
-                      style={styles.inputIcon}
-                    />
                     <TextInput
                       style={styles.textInput}
-                      placeholder="Juan Pérez"
+                      placeholder="Thomas Vargas"
                       placeholderTextColor="#5A776D"
                       value={registerName}
                       onChangeText={setRegisterName}
@@ -497,7 +508,7 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                   </View>
                 </View>
 
-                {/* Email */}
+                {/* Correo electronico */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Correo electrónico</Text>
                   <View
@@ -506,15 +517,9 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                       focusedInput === 'registerEmail' && styles.inputContainerFocused,
                     ]}
                   >
-                    <Ionicons
-                      name="mail-outline"
-                      size={20}
-                      color={focusedInput === 'registerEmail' ? '#00E676' : '#7E9990'}
-                      style={styles.inputIcon}
-                    />
                     <TextInput
                       style={styles.textInput}
-                      placeholder="ejemplo@zentheris.com"
+                      placeholder="usuario123@gmail.com"
                       placeholderTextColor="#5A776D"
                       keyboardType="email-address"
                       autoCapitalize="none"
@@ -526,7 +531,29 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                   </View>
                 </View>
 
-                {/* Password */}
+                {/* Numero de celular */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Número de celular</Text>
+                  <View
+                    style={[
+                      styles.inputContainer,
+                      focusedInput === 'registerPhone' && styles.inputContainerFocused,
+                    ]}
+                  >
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="0000 000 000"
+                      placeholderTextColor="#5A776D"
+                      keyboardType="phone-pad"
+                      value={registerPhone}
+                      onChangeText={setRegisterPhone}
+                      onFocus={() => setFocusedInput('registerPhone')}
+                      onBlur={() => setFocusedInput(null)}
+                    />
+                  </View>
+                </View>
+
+                {/* Contrasena */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Contraseña</Text>
                   <View
@@ -535,15 +562,9 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                       focusedInput === 'registerPassword' && styles.inputContainerFocused,
                     ]}
                   >
-                    <Ionicons
-                      name="lock-closed-outline"
-                      size={20}
-                      color={focusedInput === 'registerPassword' ? '#00E676' : '#7E9990'}
-                      style={styles.inputIcon}
-                    />
                     <TextInput
                       style={styles.textInput}
-                      placeholder="Mínimo 6 caracteres"
+                      placeholder="••••••••••••"
                       placeholderTextColor="#5A776D"
                       secureTextEntry={!showRegisterPassword}
                       value={registerPassword}
@@ -556,32 +577,26 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                       <Ionicons
-                        name={showRegisterPassword ? 'eye-off-outline' : 'eye-outline'}
+                        name={showRegisterPassword ? 'eye-outline' : 'eye-off-outline'}
                         size={20}
-                        color="#7E9990"
+                        color="#8DA59E"
                       />
                     </TouchableOpacity>
                   </View>
                 </View>
 
-                {/* Confirm Password */}
+                {/* Repetir contrasena */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Confirmar contraseña</Text>
+                  <Text style={styles.inputLabel}>Repetir contraseña</Text>
                   <View
                     style={[
                       styles.inputContainer,
                       focusedInput === 'registerConfirm' && styles.inputContainerFocused,
                     ]}
                   >
-                    <Ionicons
-                      name="shield-checkmark-outline"
-                      size={20}
-                      color={focusedInput === 'registerConfirm' ? '#00E676' : '#7E9990'}
-                      style={styles.inputIcon}
-                    />
                     <TextInput
                       style={styles.textInput}
-                      placeholder="Repite tu contraseña"
+                      placeholder="••••••••••••"
                       placeholderTextColor="#5A776D"
                       secureTextEntry={!showRegisterConfirmPassword}
                       value={registerConfirmPassword}
@@ -596,11 +611,33 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                       <Ionicons
-                        name={showRegisterConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                        name={showRegisterConfirmPassword ? 'eye-outline' : 'eye-off-outline'}
                         size={20}
-                        color="#7E9990"
+                        color="#8DA59E"
                       />
                     </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Password Criteria Box */}
+                <View style={styles.criteriaBox}>
+                  <Text style={styles.criteriaTitle}>Tu contraseña debe incluir:</Text>
+                  <View style={styles.criteriaPillsRow}>
+                    <View style={[styles.criteriaPill, hasMinLength && styles.criteriaPillActive]}>
+                      <Text style={[styles.criteriaPillText, hasMinLength && styles.criteriaPillTextActive]}>
+                        8 caracteres
+                      </Text>
+                    </View>
+                    <View style={[styles.criteriaPill, hasUpperCase && styles.criteriaPillActive]}>
+                      <Text style={[styles.criteriaPillText, hasUpperCase && styles.criteriaPillTextActive]}>
+                        Una mayúscula
+                      </Text>
+                    </View>
+                    <View style={[styles.criteriaPill, hasNumber && styles.criteriaPillActive]}>
+                      <Text style={[styles.criteriaPillText, hasNumber && styles.criteriaPillTextActive]}>
+                        Un número
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -612,17 +649,17 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                   activeOpacity={0.85}
                 >
                   {isLoading ? (
-                    <ActivityIndicator color="#0D1F1A" />
+                    <ActivityIndicator color="#0C1F1B" />
                   ) : (
-                    <Text style={styles.primaryButtonText}>Registrarse</Text>
+                    <Text style={styles.primaryButtonText}>Crear cuenta</Text>
                   )}
                 </TouchableOpacity>
 
                 {/* Bottom switch link */}
                 <View style={styles.switchModeContainer}>
-                  <Text style={styles.switchModePrompt}>¿Ya tienes una cuenta? </Text>
+                  <Text style={styles.switchModePrompt}>¿Ya tienes cuenta? </Text>
                   <TouchableOpacity onPress={() => setActiveTab('login')}>
-                    <Text style={styles.switchModeLink}>Inicia sesión</Text>
+                    <Text style={styles.switchModeLink}>Iniciar sesión</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -643,18 +680,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
 
-  /* Center Branding */
+  /* Center Branding / Header */
   brandingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  brandingLoginOpen: {
+    justifyContent: 'flex-start',
+    paddingTop: 52,
+  },
+  brandingRegisterOpen: {
+    justifyContent: 'flex-start',
+    paddingTop: 10,
   },
   logoWrapper: {
     width: 86,
     height: 155,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 18,
+    marginBottom: 16,
+  },
+  logoWrapperOpen: {
+    width: 48,
+    height: 84,
+    marginBottom: 8,
   },
   logoImage: {
     width: '100%',
@@ -666,6 +717,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  headerTextsWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  openHeaderTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  openHeaderSubtitle: {
+    fontSize: 13,
+    color: '#8CA59C',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
 
   /* Backdrop */
   backdrop: {
@@ -674,7 +742,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#000000',
     zIndex: 10,
   },
 
@@ -684,193 +751,232 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#162B25',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    backgroundColor: 'transparent',
     zIndex: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 20,
     overflow: 'hidden',
   },
 
-  /* Drawer Top Area with Tabs & Drag Bar */
   drawerHeaderArea: {
-    backgroundColor: '#162B25',
-    paddingTop: 8,
+    backgroundColor: 'transparent',
   },
-  dockTabsRow: {
+
+  /* CLOSED STATE: Dual adjacent rounded tabs */
+  closedTabsRow: {
     flexDirection: 'row',
-    paddingHorizontal: 8,
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
+    height: 52,
+    backgroundColor: 'transparent',
   },
-  tabDockButton: {
+  closedTabLeft: {
     flex: 1,
+    height: 52,
     backgroundColor: '#162B25',
-    paddingVertical: 14,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    position: 'relative',
   },
-  tabDockButtonLeft: {
-    marginRight: 2,
+  closedTabRight: {
+    flex: 1,
+    height: 52,
+    backgroundColor: '#162B25',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  tabDockButtonRight: {
-    marginLeft: 2,
-  },
-  tabDockButtonActive: {
-    backgroundColor: '#1A332C',
-  },
-  tabDividerNotch: {
-    width: 4,
-    height: '100%',
-  },
-  tabDockText: {
-    fontSize: 15,
+  closedTabTextLeft: {
+    fontSize: 14,
     fontWeight: '600',
-    color: '#94A39F',
+    color: '#C4D4CF',
   },
-  tabDockTextActive: {
+  closedTabTextRight: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#A3B4AF',
+  },
+
+  /* OPEN STATE: Folder tab with active tab elevated */
+  openTabsRow: {
+    flexDirection: 'row',
+    height: 48,
+    alignItems: 'flex-end',
+    backgroundColor: '#0D1F1A',
+  },
+  openTabButton: {
+    flex: 1,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  openTabActiveLeft: {
+    backgroundColor: '#162B25',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  openTabActiveRight: {
+    backgroundColor: '#162B25',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  openTabInactive: {
+    backgroundColor: 'transparent',
+  },
+  openTabText: {
+    fontSize: 14,
+  },
+  openTabTextActive: {
     color: '#FFFFFF',
     fontWeight: '700',
   },
-  activeTabIndicator: {
-    position: 'absolute',
-    bottom: 2,
-    width: 32,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#00E676',
+  openTabTextInactive: {
+    color: '#7A918A',
+    fontWeight: '500',
   },
 
-  /* Drag handle */
+  /* Handle row below tabs inside drawer body */
   handleRow: {
+    backgroundColor: '#162B25',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 6,
-    position: 'relative',
+    paddingTop: 10,
+    paddingBottom: 4,
   },
   dragPillBar: {
-    width: 48,
+    width: 46,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#4E6B60',
-  },
-  closeButton: {
-    position: 'absolute',
-    right: 18,
-    top: -2,
-    padding: 6,
+    backgroundColor: '#798B85',
   },
 
   /* Form Container */
   formContainer: {
     flex: 1,
+    backgroundColor: '#162B25',
   },
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
+    paddingHorizontal: 20,
+    paddingTop: 12,
   },
   formSection: {
     width: '100%',
   },
-  formTitleRow: {
-    marginBottom: 20,
-  },
-  formTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 6,
-  },
-  formSubtitle: {
-    fontSize: 14,
-    color: '#8CA59C',
-    lineHeight: 20,
-  },
 
   /* Inputs */
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#B0C4BC',
-    marginBottom: 8,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#A6BBB4',
+    marginBottom: 6,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0D1F1A',
-    borderRadius: 14,
-    borderWidth: 1.2,
-    borderColor: '#233E35',
-    paddingHorizontal: 14,
-    height: 52,
+    backgroundColor: '#0C1F1B',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1D3830',
+    paddingHorizontal: 12,
+    height: 44,
   },
   inputContainerFocused: {
-    borderColor: '#00E676',
-    backgroundColor: '#0B1B17',
-  },
-  inputIcon: {
-    marginRight: 10,
+    borderColor: '#68CDA1',
+    backgroundColor: '#0A1A17',
   },
   textInput: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
     height: '100%',
+  },
+
+  /* Criteria Box */
+  criteriaBox: {
+    backgroundColor: '#0C1F1B',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#162B25',
+  },
+  criteriaTitle: {
+    color: '#849C94',
+    fontSize: 11,
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  criteriaPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  criteriaPill: {
+    backgroundColor: '#122621',
+    borderRadius: 14,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#1D352E',
+  },
+  criteriaPillActive: {
+    borderColor: '#68CDA1',
+    backgroundColor: '#18372F',
+  },
+  criteriaPillText: {
+    color: '#657E77',
+    fontSize: 11,
+  },
+  criteriaPillTextActive: {
+    color: '#68CDA1',
+    fontWeight: '600',
   },
 
   /* Links & Buttons */
   forgotPasswordContainer: {
     alignSelf: 'flex-end',
-    marginBottom: 20,
+    marginBottom: 16,
     marginTop: 2,
   },
   forgotPasswordText: {
-    color: '#00E676',
-    fontSize: 13,
+    color: '#68CDA1',
+    fontSize: 12,
     fontWeight: '500',
   },
   primaryButton: {
-    backgroundColor: '#00E676',
-    height: 54,
-    borderRadius: 16,
+    backgroundColor: '#68CDA1',
+    height: 48,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#00E676',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-    marginBottom: 20,
+    shadowColor: '#68CDA1',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+    marginBottom: 16,
   },
   primaryButtonText: {
-    color: '#071A14',
-    fontSize: 16,
+    color: '#0C1F1B',
+    fontSize: 15,
     fontWeight: '700',
-    letterSpacing: 0.4,
   },
   switchModeContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 2,
+    marginBottom: 10,
   },
   switchModePrompt: {
     color: '#8CA59C',
-    fontSize: 14,
+    fontSize: 13,
   },
   switchModeLink: {
-    color: '#00E676',
-    fontSize: 14,
+    color: '#68CDA1',
+    fontSize: 13,
     fontWeight: '700',
   },
 });

@@ -108,7 +108,11 @@ export function ConfiguracionScreen() {
 
           <View style={styles.divider} />
 
-          <TouchableOpacity style={styles.rowItem} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.rowItem}
+            activeOpacity={0.7}
+            onPress={() => router.push('/gestionar-correo')}
+          >
             <View style={styles.iconBox}>
               <Ionicons name="mail-outline" size={20} color="#34D399" />
             </View>

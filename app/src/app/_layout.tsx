@@ -104,6 +104,12 @@ export default function Layout() {
             href: null,
           }}
         />
+        <Tabs.Screen
+          name="gestionar-correo"
+          options={{
+            href: null,
+          }}
+        />
       </Tabs>
     </>
   );

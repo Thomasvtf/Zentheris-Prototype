@@ -216,22 +216,14 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
-      Alert.alert('Cuenta creada', 'Tu cuenta ha sido creada exitosamente. ¡Bienvenido a Zentheris!', [
-        {
-          text: 'Continuar',
-          onPress: () => {
-            if (onSuccess) {
-              onSuccess();
-            } else {
-              try {
-                router.replace('/panel');
-              } catch {
-                setActiveTab('login');
-              }
-            }
-          },
-        },
-      ]);
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push({
+          pathname: '/revisa-tu-correo',
+          params: { email: registerEmail.trim() },
+        });
+      }
     }, 800);
   };
 
@@ -331,7 +323,7 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                 onPress={() => openDrawer('register')}
                 activeOpacity={0.88}
               >
-                <Text style={styles.closedTabTextRight}>Registro</Text>
+                <Text style={styles.closedTabTextRight}>Crear cuenta</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -369,7 +361,7 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                     activeTab === 'register' ? styles.openTabTextActive : styles.openTabTextInactive,
                   ]}
                 >
-                  Registrarse
+                  Crear cuenta
                 </Text>
               </TouchableOpacity>
             </View>
@@ -452,12 +444,7 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                 {/* Forgot Password Link */}
                 <TouchableOpacity
                   style={styles.forgotPasswordContainer}
-                  onPress={() =>
-                    Alert.alert(
-                      'Recuperar Contraseña',
-                      'Te enviaremos un correo con las instrucciones para restablecerla.'
-                    )
-                  }
+                  onPress={() => router.push('/recuperar-contrasena')}
                 >
                   <Text style={styles.forgotPasswordText}>¿Olvidaste tu contraseña?</Text>
                 </TouchableOpacity>
@@ -487,9 +474,9 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
             ) : (
               /* REGISTER FORM */
               <View style={styles.formSection}>
-                {/* Nombre */}
+                {/* Nombre completo */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Nombre</Text>
+                  <Text style={styles.inputLabel}>Nombre completo</Text>
                   <View
                     style={[
                       styles.inputContainer,
@@ -531,9 +518,9 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                   </View>
                 </View>
 
-                {/* Numero de celular */}
+                {/* Celular (opcional) */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Número de celular</Text>
+                  <Text style={styles.inputLabel}>Celular (opcional)</Text>
                   <View
                     style={[
                       styles.inputContainer,
@@ -542,7 +529,7 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                   >
                     <TextInput
                       style={styles.textInput}
-                      placeholder="0000 000 000"
+                      placeholder="300 123 4567"
                       placeholderTextColor="#5A776D"
                       keyboardType="phone-pad"
                       value={registerPhone}
@@ -625,7 +612,7 @@ export const LoginScreen: React.FC<AuthScreenProps> = ({
                   <View style={styles.criteriaPillsRow}>
                     <View style={[styles.criteriaPill, hasMinLength && styles.criteriaPillActive]}>
                       <Text style={[styles.criteriaPillText, hasMinLength && styles.criteriaPillTextActive]}>
-                        8 caracteres
+                        Mínimo 8 caracteres
                       </Text>
                     </View>
                     <View style={[styles.criteriaPill, hasUpperCase && styles.criteriaPillActive]}>

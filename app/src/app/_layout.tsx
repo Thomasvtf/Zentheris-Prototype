@@ -110,6 +110,12 @@ export default function Layout() {
             href: null,
           }}
         />
+        <Tabs.Screen
+          name="establecer-meta"
+          options={{
+            href: null,
+          }}
+        />
       </Tabs>
     </>
   );

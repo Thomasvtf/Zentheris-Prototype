@@ -205,7 +205,11 @@ export function ConfiguracionScreen() {
 
           <View style={styles.divider} />
 
-          <TouchableOpacity style={styles.rowItem} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.rowItem}
+            activeOpacity={0.7}
+            onPress={() => router.push('/configurar-tarifa')}
+          >
             <View style={styles.iconBox}>
               <Ionicons name="leaf-outline" size={20} color="#34D399" />
             </View>
@@ -218,13 +222,17 @@ export function ConfiguracionScreen() {
 
           <View style={styles.divider} />
 
-          <TouchableOpacity style={styles.rowItem} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.rowItem}
+            activeOpacity={0.7}
+            onPress={() => router.push('/fuentes-datos')}
+          >
             <View style={styles.iconBox}>
               <Ionicons name="hardware-chip-outline" size={20} color="#34D399" />
             </View>
             <View style={styles.rowTextContainer}>
-              <Text style={styles.rowTitle}>Conectar medidores</Text>
-              <Text style={styles.rowSubtitle}>Vincula tus dispositivos de medición</Text>
+              <Text style={styles.rowTitle}>Fuentes de datos</Text>
+              <Text style={styles.rowSubtitle}>Consulta la fuente principal y sensores</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#4E7063" />
           </TouchableOpacity>

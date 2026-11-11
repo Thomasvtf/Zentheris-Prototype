@@ -116,6 +116,18 @@ export default function Layout() {
             href: null,
           }}
         />
+        <Tabs.Screen
+          name="configurar-tarifa"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="fuentes-datos"
+          options={{
+            href: null,
+          }}
+        />
       </Tabs>
     </>
   );

@@ -4,7 +4,7 @@ Versión 1 · 11/11/2026. Esta lista es corta y se marca a medida que se avanza.
 
 | # | Cuándo | Tarea | Por qué | Hecho |
 |---|---|---|---|---|
-| 1 | PR 1 `docs/contexto-del-proyecto` | Instalar el paquete de contexto (`CLAUDE.md` y `docs/`) y revisar que los enlaces relativos funcionen. | Que Claude Code y el equipo lean lo mismo. | [ ] |
+| 1 | PR 1 `docs/contexto-del-proyecto` | Instalar el paquete de contexto (`CLAUDE.md` y `docs/`) y revisar que los enlaces relativos funcionen. | Que Claude Code y el equipo lean lo mismo. | [x] |
 | 2 | PR 2 `refactor/mover-estructura` | Mover `supabase/migrations/LEEME.md` a `supabase/LEEME.md` y ajustar las rutas relativas de su texto. | La carpeta de migraciones queda solo con archivos SQL. | [ ] |
 | 3 | PR 2 y 3 | Mover y adaptar la estructura en inglés (rutas de expo-router en español). Un commit solo de movimientos y otro solo de imports. | Menos conflictos con las ramas del equipo. | [ ] |
 | 4 | PR 3 | Crear `api/app/config_files/` con copias exactas de `umbrales-estado.v1.json` y `textos-backend.es-CO.json`. | Decisión confirmada el 11/11/2026. | [ ] |

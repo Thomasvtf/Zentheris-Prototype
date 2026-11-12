@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends, HTTPException
 from sqlmodel import Session, text
 
-from app.database import get_session
+from app.data.database import get_session
 
 app = FastAPI(
     title="Zentheris API",

@@ -6,7 +6,7 @@ Esquema de la base de Zentheris en Supabase (PostgreSQL, Auth y Storage). Reglas
 
 - `migrations/`: **migraciones numeradas** de Supabase CLI, con el nombre `<version>_<NNNN>_<nombre>.sql`. Las `0001` a `0006` ya están aplicadas en el proyecto definitivo (08/11/2026): no se editan ni se repiten.
 - `types/database.types.ts`: tipos de la base generados el 08/11/2026 (17 tablas). Solo de referencia; se regeneran cuando cambia el esquema.
-- `LEEME.md` (hoy dentro de `migrations/`): orden de las migraciones y huella esperada del esquema.
+- [`LEEME.md`](LEEME.md): orden de las migraciones y huella esperada del esquema.
 
 ## Qué no va aquí
 

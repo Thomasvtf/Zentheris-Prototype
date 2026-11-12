@@ -1,0 +1,27 @@
+{
+  "_meta": {
+    "nota": "Plantillas de texto para Supabase Auth (se pegan en el panel). Variables {{ }} propias de Supabase: verificar contra la documentación vigente. SMTP pendiente.",
+    "estado": "APROBADO por Nicolás el 02/11/2026 (aprobación total), con salvedades",
+    "version": "1.0"
+  },
+  "plantillas": {
+    "confirmar_registro": {
+      "asunto": "Confirma tu cuenta de Zentheris",
+      "cuerpo": "Hola,\n\nPara terminar de crear tu cuenta, confirma tu correo.",
+      "boton": "Confirmar mi cuenta",
+      "seguridad": "Si no creaste una cuenta en Zentheris, ignora este correo."
+    },
+    "cambio_correo": {
+      "asunto": "Confirma tu nuevo correo de Zentheris",
+      "cuerpo": "Hola,\n\nRecibimos una solicitud para cambiar tu correo de acceso a {{ .NewEmail }}. El cambio se aplica cuando abras este enlace.",
+      "boton": "Confirmar nuevo correo",
+      "seguridad": "Si no pediste este cambio, ignora este correo: tu correo actual seguirá igual."
+    },
+    "recuperar_contrasena": {
+      "asunto": "Crea una nueva contraseña en Zentheris",
+      "cuerpo": "Hola,\n\nRecibimos una solicitud para crear una nueva contraseña de tu cuenta.",
+      "boton": "Crear nueva contraseña",
+      "seguridad": "Si no la pediste, ignora este correo: tu contraseña no cambiará."
+    }
+  }
+}

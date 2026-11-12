@@ -1,0 +1,9 @@
+# Saltos de línea fijos en LF para que el SHA-256 de las copias coincida en Windows (PENDIENTES #27).
+*.json text eol=lf
+*.sql  text eol=lf
+*.md   text eol=lf
+*.py   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.zip  binary
+*.png  binary

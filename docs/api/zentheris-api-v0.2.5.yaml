@@ -1,0 +1,1642 @@
+openapi: 3.1.0
+info:
+  title: Zentheris API (MVP)
+  version: 0.2.5
+  description: |
+    Contrato de la API del MVP de Zentheris (proyecto formativo SENA). **Versión 0.2.5 · 03/11/2026.**
+
+    **Estado:** candidato a congelar. Validación estructural propia sin errores (referencias,
+    operationId únicos, parámetros de ruta, esquemas JSON Schema 2020-12, enums cruzados con el
+    catálogo de textos v1). Falta correr el linter oficial (`npx @redocly/cli lint`, configuración
+    en `redocly.yaml`). No está implementado ni probado contra el backend ni contra Supabase.
+
+    **Fuentes:** Reglas de Negocio y Modelo de Datos v4.9 (cada operación cita su regla RN-),
+    registro de decisiones DC-01 a DC-58 (03/11/2026), umbrales `umbrales-estado.v1.json` y acta 04.
+
+    **Cambios frente a 0.2.4:** cabecera actualizada; enum `CodigoError` (26 códigos, iguales al
+    catálogo); textos del pico según D17; reglas de cálculo de referencias, comparación, pico y
+    proyección (v4.9); recuperación de horas antes de responder consultas de consumo; lista de
+    operadores aprobada. Sin endpoints nuevos ni campos nuevos: 40 operaciones.
+
+    **Convenciones**
+    - Autenticación: Supabase Auth (RN-I-01). El cliente obtiene el JWT con Supabase
+      (registro, acceso, recuperación y cambio de correo, RN-IX-01, -03, -04, -06) y lo
+      envía como `Authorization: Bearer`. FastAPI lo valida en cada llamada con las claves
+      públicas (JWKS) del proyecto (DC-44).
+    - Aislamiento: solo se accede a hogares con membresía activa (RN-I-03); si no, `404`.
+    - Fechas: ISO 8601 con desfase de America/Bogota (−05:00). Las fechas sin hora usan `YYYY-MM-DD`.
+    - Unidades: la energía de una hora se entrega como `potencia_kw` (potencia promedio de
+      la hora, RN-IV-03, RN-XI-01); los totales de un periodo, como `energia_kwh` (RN-XIII-06).
+      Los valores en COP solo aparecen con tarifa vigente (RN-XI-08); si no hay tarifa son `null`.
+    - **Números sin formato** (DC-11): la API nunca devuelve textos formateados; la app aplica
+      RN-XII-08 (coma decimal, kW 2 decimales, kWh 1, COP 0, «34 %»).
+    - `null` en un consumo significa ausencia de lectura ("Sin datos"), nunca consumo cero.
+    - La personalidad de simulación nunca se expone (N9).
+    - Textos: los mensajes de estado se entregan como `mensaje_codigo`, clave del catálogo de
+      textos v1 (RN-XI-09). Los títulos y mensajes de alertas y consejos los escribe el backend
+      desde `textos-backend.es-CO.json` y se guardan resueltos en sus tablas.
+    - Estados normal, elevado y crítico: se calculan al consultar (RN-XI-02) con
+      `umbrales-estado.v1.json` (RN-XI-07, DC-27). Los umbrales no se exponen.
+    - Antes de responder cualquier consulta de consumo, historial, fuentes de datos o alertas,
+      el backend completa las horas faltantes del hogar (RN-IV-05, DC-34).
+    - Autorización: FastAPI comprueba en cada llamada la membresía activa, el rol y el permiso.
+      RLS de Supabase queda como segunda defensa (RN-I-03); con la conexión de servicio RLS no se
+      aplica, por eso la comprobación en el backend es obligatoria.
+    - Textos fijos de la app: `mensaje_codigo` y la lista de operadores viven en la app; no hay
+      endpoints de catálogo.
+    - Sin endpoint, como tareas internas del backend: generación horaria y recuperación de
+      lecturas (RN-IV-05), creación de alertas y consejos (solo sobre horas en vivo, DC-35),
+      cierre de mes, vencimientos y ocultamientos. Registro, acceso, recuperación y cambio de
+      correo van directo a Supabase Auth.
+    - Listas: sin paginación; solo las alertas aceptan `limite`.
+    - Tiempos de espera sugeridos en la app: 15 s; 60 s en `POST /onboarding` (DC-16).
+servers:
+  - url: /api/v1
+security:
+  - supabaseJwt: []
+tags:
+  - name: Usuario
+    description: Ficha, preferencias, contraseña y cuenta (reglas I, VII, IX y XVI).
+  - name: Hogares
+    description: Hogar actual y sus zonas (reglas II, III y XII).
+  - name: Onboarding
+    description: Creación del hogar y backfill (reglas IV y X).
+  - name: Miembros e invitaciones
+    description: Membresías, permisos e invitaciones (reglas II, X, XVI y XVII).
+  - name: Consumo
+    description: Panel, zonas, zona individual, historial y fuentes de datos (reglas XI, XII, XIII y XVI-06).
+  - name: Metas y tarifa
+    description: Meta mensual en kWh y tarifa en COP (reglas V y XVI).
+  - name: Alertas y consejos
+    description: Campana, lectura y seguimiento individual (reglas VI, XIV y XV).
+  - name: Sistema
+    description: Estado del servicio.
+
+paths:
+  /salud:
+    get:
+      tags: [Sistema]
+      operationId: obtenerSalud
+      summary: Estado del servicio
+      description: |
+        No requiere autenticación. Solo indica que el servicio responde; no comprueba Supabase
+        ni demuestra que el producto funcione de punta a punta.
+      security: []
+      responses:
+        '200':
+          description: Servicio activo.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [estado]
+                properties:
+                  estado: { type: string, enum: [ok] }
+
+  # ───────────────────────────── Usuario ─────────────────────────────
+  /usuarios/me:
+    get:
+      tags: [Usuario]
+      operationId: obtenerUsuarioActual
+      summary: Ficha, preferencias y membresía del usuario autenticado
+      description: |
+        Punto de entrada tras iniciar sesión (RN-X-01). Si `membresia` es `null`, la app
+        consulta `GET /invitaciones/recibidas` y, si no hay ninguna, pasa al onboarding.
+        Devuelve `404` con `FICHA_NO_CREADA` si aún no existe la ficha en `usuarios`.
+      responses:
+        '200':
+          description: Usuario actual.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsuarioActual' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+    post:
+      tags: [Usuario]
+      operationId: crearFichaUsuario
+      summary: Crear la ficha y las preferencias por defecto (RN-IX-01)
+      description: |
+        Se llama una vez, en el primer acceso con sesión (RN-IX-01). La app toma el nombre y
+        el teléfono de los metadatos del registro en Supabase Auth y los envía aquí. Crea `usuarios` y
+        `preferencias_usuario` con sus valores por defecto. "Repetir contraseña" no viaja:
+        es validación de pantalla.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UsuarioCrear' }
+      responses:
+        '201':
+          description: Ficha creada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsuarioActual' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Validacion' }
+    patch:
+      tags: [Usuario]
+      operationId: actualizarPerfil
+      summary: Editar nombre completo y teléfono (RN-IX-07)
+      description: El correo no se edita aquí; se cambia con Supabase Auth (RN-IX-06).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UsuarioActualizar' }
+      responses:
+        '200':
+          description: Perfil actualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsuarioActual' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '422': { $ref: '#/components/responses/Validacion' }
+    delete:
+      tags: [Usuario]
+      operationId: eliminarCuenta
+      summary: Eliminar la cuenta de forma irreversible (RN-IX-09)
+      description: |
+        La confirmación se pide en la app. Borra los datos personales y cierra la membresía.
+        Los datos del hogar se conservan para los demás miembros; si era el único miembro,
+        se elimina también el hogar. Responde `409` con `ADMIN_DEBE_TRANSFERIR` si el usuario
+        es administrador y hay otros miembros activos.
+      responses:
+        '204': { description: Cuenta eliminada. }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+
+  /usuarios/me/avatar:
+    put:
+      tags: [Usuario]
+      operationId: guardarAvatar
+      summary: Registrar la foto de perfil (RN-I-02)
+      description: |
+        La app sube la imagen directamente a Supabase Storage y envía aquí la ruta resultante,
+        que se guarda en `usuarios.avatar_url`. La ruta debe estar en la carpeta del usuario.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AvatarGuardar' }
+      responses:
+        '200':
+          description: Foto registrada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsuarioActual' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '422': { $ref: '#/components/responses/Validacion' }
+    delete:
+      tags: [Usuario]
+      operationId: eliminarAvatar
+      summary: Eliminar la foto de perfil (RN-I-02)
+      description: Deja `avatar_url` en `null`; la app muestra el avatar con iniciales.
+      responses:
+        '204': { description: Foto eliminada. }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+
+  /usuarios/me/preferencias:
+    get:
+      tags: [Usuario]
+      operationId: obtenerPreferencias
+      summary: Interruptores de notificación y base de comparación
+      responses:
+        '200':
+          description: Preferencias.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferencias' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+    patch:
+      tags: [Usuario]
+      operationId: actualizarPreferencias
+      summary: Cambiar interruptores y base de comparación (RN-VI-04, RN-VII-01, RN-XVI-02, RN-XVI-03)
+      description: |
+        `base_comparacion` es individual y no cambia la meta del hogar. Los interruptores
+        solo afectan alertas futuras (RN-VI-02, sin efecto retroactivo).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreferenciasActualizar' }
+      responses:
+        '200':
+          description: Preferencias actualizadas.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferencias' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '422': { $ref: '#/components/responses/Validacion' }
+
+  /usuarios/me/contrasena/verificar:
+    post:
+      tags: [Usuario]
+      operationId: verificarContrasenaActual
+      summary: Verificar la contraseña actual (RN-IX-05)
+      description: |
+        Habilita en la pantalla los campos de la nueva contraseña. No sustituye la verificación
+        que hace `POST /usuarios/me/contrasena`. Las contraseñas no se registran en logs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContrasenaVerificar' }
+      responses:
+        '204': { description: La contraseña actual es correcta. }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '422': { $ref: '#/components/responses/Validacion' }
+
+  /usuarios/me/contrasena:
+    post:
+      tags: [Usuario]
+      operationId: cambiarContrasena
+      summary: Cambiar la contraseña (RN-IX-02, RN-IX-05)
+      description: |
+        Verifica de nuevo la contraseña actual y aplica las reglas: mínimo 8 caracteres,
+        una mayúscula, un número y distinta de la actual. "Confirmar" es solo validación de pantalla.
+        Códigos posibles en `422`: `CONTRASENA_ACTUAL_INCORRECTA`, `CONTRASENA_NO_CUMPLE_REGLAS`,
+        `CONTRASENA_IGUAL_A_ACTUAL`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContrasenaCambiar' }
+      responses:
+        '204': { description: Contraseña cambiada. }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '422': { $ref: '#/components/responses/Validacion' }
+
+  # ───────────────────────────── Hogares ─────────────────────────────
+  /hogares/actual:
+    get:
+      tags: [Hogares]
+      operationId: obtenerHogarActual
+      summary: Hogar de la membresía activa del usuario (RN-II-01)
+      responses:
+        '200':
+          description: Hogar actual.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hogar' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /hogares/{hogar_id}:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Hogares]
+      operationId: obtenerHogar
+      summary: Datos del hogar, rol del usuario y permisos (RN-II-03)
+      responses:
+        '200':
+          description: Hogar.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hogar' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /hogares/{hogar_id}/zonas:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Hogares]
+      operationId: listarZonas
+      summary: Zonas del hogar, en orden alfabético por nombre (RN-III-01, RN-XII-03)
+      description: Solo lectura; las zonas no se gestionan después del onboarding.
+      responses:
+        '200':
+          description: Zonas.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [zonas]
+                properties:
+                  zonas:
+                    type: array
+                    items: { $ref: '#/components/schemas/Zona' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  # ───────────────────────────── Onboarding ─────────────────────────────
+  /onboarding:
+    post:
+      tags: [Onboarding]
+      operationId: crearHogarOnboarding
+      summary: Crear el hogar y generar el backfill (RN-X-02, RN-X-03, RN-X-04, RN-IV-01, RN-IV-07)
+      description: |
+        En una sola transacción crea el hogar, la membresía de administrador, las zonas,
+        la fuente principal "Fuente principal [nombre]", un sensor por zona, los permisos por
+        defecto y la personalidad (calculada en el servidor; el cliente no la envía y la
+        respuesta no la expone). Después genera 30 días (720 horas) de lecturas por zona con
+        `calidad = 'simulada'`.
+
+        **Síncrono y atómico:** el backfill se ejecuta dentro de la misma transacción que crea
+        el hogar. Si algo falla no queda nada creado (ni hogar ni lecturas), responde `500` con
+        `BACKFILL_FALLIDO` y la app muestra un estado de error con botón
+        Reintentar que repite la misma llamada (sección 7.1). Responde cuando termina; la app
+        muestra la pantalla de carga mientras espera (RN-IV-02). Así lo define RN-X-03
+        (v4.9). Máximo 6 480 lecturas (720 horas × 9 zonas), insertadas por lotes; en local
+        tomó menos de 0,2 s (DC-33). Plan B solo si el p95 medido en Render supera 10 s:
+        responder `202` y agregar una consulta de estado, calculada como "existen lecturas
+        hasta la última hora completa".
+
+        Restricciones validadas en el servidor (RN-X-02): apartaestudio, de 3 a 5 zonas, sin
+        extras y con al menos 3 básicas; apartamento, casa, dúplex y casa campestre, las 4
+        básicas obligatorias y cualquier otra zona. Códigos en `422`: `ZONAS_NO_PERMITIDAS`,
+        `ZONAS_BASICAS_FALTANTES`, `CANTIDAD_ZONAS_INVALIDA`, `ZONAS_DUPLICADAS`.
+        `409` con `MEMBRESIA_ACTIVA_EXISTENTE` si el usuario ya pertenece a un hogar (RN-II-01).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OnboardingCrear' }
+      responses:
+        '500': { $ref: '#/components/responses/ErrorServidor' }
+        '201':
+          description: Hogar creado con su historial inicial.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hogar' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Validacion' }
+
+  # ───────────────────────── Miembros e invitaciones ─────────────────────────
+  /hogares/{hogar_id}/miembros:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Miembros e invitaciones]
+      operationId: listarMiembros
+      summary: Miembros activos, invitaciones pendientes y permisos (RN-XVI-07)
+      description: |
+        Visible para todos los miembros; solo el administrador puede modificar (RN-X-08). El
+        administrador recibe la lista de invitaciones pendientes con sus correos; los demás
+        no las reciben (`invitaciones_pendientes` es `null`; sección 7.3).
+      responses:
+        '200':
+          description: Miembros del hogar.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MiembrosHogar' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /hogares/{hogar_id}/permisos:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    patch:
+      tags: [Miembros e invitaciones]
+      operationId: actualizarPermisos
+      summary: Cambiar los permisos generales del hogar (RN-II-03, RN-X-08)
+      description: Solo el administrador. Afecta por igual a todos los miembros; el administrador conserva acceso total.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PermisosActualizar' }
+      responses:
+        '200':
+          description: Permisos actualizados.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Permisos' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
+
+  /hogares/{hogar_id}/miembros/{membresia_id}:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+      - $ref: '#/components/parameters/MembresiaId'
+    delete:
+      tags: [Miembros e invitaciones]
+      operationId: expulsarMiembro
+      summary: Expulsar a un miembro (RN-II-04, RN-X-07)
+      description: Solo el administrador; no puede expulsarse a sí mismo. La membresía pasa a `inactivo` con `fecha_salida`.
+      responses:
+        '204': { description: Miembro expulsado. }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+
+  /hogares/{hogar_id}/miembros/{membresia_id}/transferir-administracion:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+      - $ref: '#/components/parameters/MembresiaId'
+    post:
+      tags: [Miembros e invitaciones]
+      operationId: transferirAdministracion
+      summary: Transferir el rol de administrador a otro miembro activo (RN-II-04, RN-X-07)
+      description: Solo el administrador. El destinatario no tiene que aceptar. El administrador anterior pasa a `miembro`.
+      responses:
+        '200':
+          description: Administración transferida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MiembrosHogar' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+
+  /hogares/{hogar_id}/salir:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    post:
+      tags: [Miembros e invitaciones]
+      operationId: salirDelHogar
+      summary: Salir voluntariamente del hogar (RN-II-04, RN-X-07)
+      description: |
+        La membresía pasa a `inactivo` con `fecha_salida`. El administrador no puede salir
+        directamente (RN-X-07): `409` con `ADMIN_DEBE_TRANSFERIR` si hay otros miembros activos
+        (debe transferir antes desde el menú de acciones; son dos pasos con pantallas existentes) y
+        `409` con `ADMIN_UNICO_MIEMBRO` si es el único miembro (debe usar `DELETE /usuarios/me`,
+        que elimina también el hogar).
+      responses:
+        '204': { description: El usuario salió del hogar. }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+
+  /hogares/{hogar_id}/invitaciones:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    post:
+      tags: [Miembros e invitaciones]
+      operationId: crearInvitacion
+      summary: Invitar a una persona por correo (RN-X-05)
+      description: |
+        Solo el administrador. Crea la invitación con vencimiento a 7 días, guarda solo el hash
+        del token y envía el correo desde el backend, con el mismo SMTP que se configure en
+        Supabase (RN-IX-03). El enlace abre la app por deep link de Expo. El token no se devuelve
+        en la respuesta.
+        Códigos en `409`: `LIMITE_MIEMBROS` (activos + pendientes = 5);
+        `INVITACION_PENDIENTE_EXISTENTE` (ya hay una pendiente para ese correo en este hogar; el
+        administrador puede cancelarla y volver a invitar); `YA_ES_MIEMBRO` (el correo pertenece
+        a un miembro activo de este hogar). Si el correo ya tiene un hogar activo en otro lugar,
+        la invitación se crea igual y falla al aceptar con `MEMBRESIA_ACTIVA_EXISTENTE`, para no
+        revelar a quién pertenece cada cuenta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvitacionCrear' }
+      responses:
+        '201':
+          description: Invitación creada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvitacionPendiente' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Validacion' }
+
+  /hogares/{hogar_id}/invitaciones/{invitacion_id}:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+      - $ref: '#/components/parameters/InvitacionId'
+    delete:
+      tags: [Miembros e invitaciones]
+      operationId: revocarInvitacion
+      summary: Cancelar una invitación pendiente (RN-X-06)
+      description: Solo el administrador. La invitación pasa a `revocada`; no se borra.
+      responses:
+        '204': { description: Invitación revocada. }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+
+  /invitaciones/recibidas:
+    get:
+      tags: [Miembros e invitaciones]
+      operationId: listarInvitacionesRecibidas
+      summary: Invitaciones pendientes para el correo del usuario (RN-X-01)
+      description: |
+        Las invitaciones vencidas se marcan como `expirada` al consultarse y no se devuelven.
+      responses:
+        '200':
+          description: Invitaciones pendientes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invitaciones]
+                properties:
+                  invitaciones:
+                    type: array
+                    items: { $ref: '#/components/schemas/InvitacionRecibida' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+
+  /invitaciones/resolver:
+    post:
+      tags: [Miembros e invitaciones]
+      operationId: resolverTokenInvitacion
+      summary: Obtener la invitación a partir del token del enlace (RN-X-05)
+      description: |
+        El token viaja en el cuerpo, no en la URL. Se compara contra `token_hash`.
+        El correo de la invitación debe coincidir con el del usuario autenticado (`403`).
+        Códigos en `409`: `INVITACION_EXPIRADA`, `INVITACION_NO_PENDIENTE`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvitacionToken' }
+      responses:
+        '200':
+          description: Invitación encontrada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvitacionRecibida' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+
+  /invitaciones/{invitacion_id}/aceptar:
+    parameters:
+      - $ref: '#/components/parameters/InvitacionId'
+    post:
+      tags: [Miembros e invitaciones]
+      operationId: aceptarInvitacion
+      summary: Aceptar una invitación (RN-X-05, RN-X-06)
+      description: |
+        Crea la membresía con rol `miembro` y la alerta de información "Nuevo miembro".
+        Vuelve a validar el límite de 5 activos. Códigos en `409`: `LIMITE_MIEMBROS`,
+        `MEMBRESIA_ACTIVA_EXISTENTE`, `INVITACION_EXPIRADA`, `INVITACION_NO_PENDIENTE`.
+        `403` si el correo no coincide.
+      responses:
+        '200':
+          description: Invitación aceptada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembresiaResumen' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+
+  /invitaciones/{invitacion_id}/rechazar:
+    parameters:
+      - $ref: '#/components/parameters/InvitacionId'
+    post:
+      tags: [Miembros e invitaciones]
+      operationId: rechazarInvitacion
+      summary: Rechazar una invitación (RN-X-06)
+      description: La invitación pasa a `rechazada` con `respondida_en`. `403` si el correo no coincide.
+      responses:
+        '204': { description: Invitación rechazada. }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+
+  # ───────────────────────────── Consumo ─────────────────────────────
+  /hogares/{hogar_id}/consumo/actual:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Consumo]
+      operationId: obtenerConsumoActual
+      summary: Cards del Panel principal (RN-XI-01, RN-XI-03, RN-XI-04, RN-XI-08)
+      description: |
+        Consumo de la última hora completa del hogar (suma de sus zonas activas, sin lectura
+        adicional) y acumulado de hoy. La referencia depende de `base_comparacion` del usuario
+        (RN-XI-03): si es `meta` y no hay meta activa, se usa el promedio y `referencia_tipo`
+        devuelve `promedio`. Requiere `permiso_ver_consumo_actual` o ser administrador (RN-XVII-01);
+        si no, `403` con `SIN_PERMISO_VER_CONSUMO`.
+      responses:
+        '200':
+          description: Consumo actual.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsumoActualHogar' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /hogares/{hogar_id}/consumo/zonas:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Consumo]
+      operationId: obtenerConsumoZonas
+      summary: Participación y estado de cada zona en la última hora completa (RN-XI-05, RN-XII-05, RN-XII-06)
+      description: |
+        Usado en el Panel y en Zonas. Orden alfabético por nombre. Requiere
+        `permiso_ver_consumo_actual` o ser administrador.
+      responses:
+        '200':
+          description: Consumo por zona.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsumoZonas' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /hogares/{hogar_id}/consumo/zonas/{zona_id}:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+      - $ref: '#/components/parameters/ZonaId'
+    get:
+      tags: [Consumo]
+      operationId: obtenerConsumoZona
+      summary: Zona individual (RN-XI-05, RN-XI-06, RN-XII-07)
+      description: |
+        El estado de consumo se compara siempre contra el promedio histórico de la zona en la
+        misma hora del día, nunca contra la meta. Requiere `permiso_ver_consumo_actual` o ser administrador.
+      responses:
+        '200':
+          description: Detalle de la zona.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConsumoZonaDetalle' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /hogares/{hogar_id}/historial:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Consumo]
+      operationId: obtenerHistorial
+      summary: Historial por periodo (RN-XIII-01 a RN-XIII-06)
+      description: |
+        Día = hoy desde 00:00 hasta la última hora completa (serie por hora); Semana = de
+        lunes a hoy y Mes = del día 1 a hoy (serie por día). La comparación usa el mismo tramo
+        del periodo anterior. Sin flechas ni rangos libres (RN-XIII-02). Requiere
+        `permiso_ver_historial` o ser administrador (RN-XVII-02); si no, `403` con `SIN_PERMISO_VER_HISTORIAL`.
+      parameters:
+        - name: periodo
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [dia, semana, mes]
+        - name: zona_id
+          in: query
+          required: false
+          description: Filtro por zona. Si se omite, se usa el filtro General (incluye participación por zona).
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Historial del periodo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Historial' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
+
+  /hogares/{hogar_id}/fuentes-datos:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Consumo]
+      operationId: obtenerFuentesDatos
+      summary: Fuente principal y sensores, solo lectura (RN-III-03, RN-XVI-06)
+      description: |
+        Visible para todos los miembros (RN-XVI-06). Sin el permiso de ver consumo actual (y sin
+        ser administrador), los valores en kW salen `null` y `valores_ocultos` es `true`, para no
+        mostrar el consumo por zona (RN-XVII-01). La app usa el estado Sin permiso
+        (sección 7.3). "Sin datos" se calcula; no es una columna guardada.
+      responses:
+        '200':
+          description: Fuentes de datos.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FuentesDatos' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  # ───────────────────────────── Metas y tarifa ─────────────────────────────
+  /hogares/{hogar_id}/meta:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Metas y tarifa]
+      operationId: obtenerMeta
+      summary: Meta activa del hogar y promedio de referencia (RN-V-03, RN-XVI-04)
+      responses:
+        '200':
+          description: Meta del hogar.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MetaVista' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /hogares/{hogar_id}/metas:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    post:
+      tags: [Metas y tarifa]
+      operationId: crearMeta
+      summary: Guardar una meta nueva (RN-V-03, RN-XVI-04, RN-XVII-04)
+      description: |
+        Administrador o miembros con `permiso_modificar_metas`. La meta anterior pasa a
+        `inactiva` y su `fecha_fin` es la `fecha_inicio` de la nueva (fin excluido). El
+        servidor asigna `fecha_inicio` con la fecha actual de Bogotá. El tipo solo cambia textos.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MetaCrear' }
+      responses:
+        '201':
+          description: Meta creada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Meta' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
+
+  /hogares/{hogar_id}/tarifa:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Metas y tarifa]
+      operationId: obtenerTarifa
+      summary: Tarifa vigente del hogar (RN-XVI-05)
+      responses:
+        '200':
+          description: Tarifa del hogar.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TarifaVista' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /hogares/{hogar_id}/tarifas:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    post:
+      tags: [Metas y tarifa]
+      operationId: crearTarifa
+      summary: Guardar una tarifa nueva (RN-V-01, RN-V-02, RN-XVI-05)
+      description: |
+        Solo el administrador. No depende de los datos del hogar. Se guarda el día 1 del mes
+        elegido; la tarifa anterior se cierra con `vigente_hasta` igual al nuevo `vigente_desde`.
+        `422` con `VIGENCIA_NO_POSTERIOR` si el nuevo inicio no es posterior al de la tarifa vigente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TarifaCrear' }
+      responses:
+        '201':
+          description: Tarifa creada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tarifa' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
+
+  # ───────────────────────────── Alertas y consejos ─────────────────────────────
+  /hogares/{hogar_id}/alertas:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Alertas y consejos]
+      operationId: listarAlertas
+      summary: Alertas entregadas al usuario (RN-XIV-01, RN-XIV-04, RN-XIV-05)
+      description: |
+        Solo las de `alertas_usuario` de esta persona, de la más reciente a la más antigua,
+        excluyendo las leídas hace más de 7 días. Requiere `permiso_recibir_alertas` o ser
+        administrador (RN-XII-02); si no, `403` con `SIN_PERMISO_RECIBIR_ALERTAS`.
+        No incluye la regla ni los umbrales que dispararon la alerta.
+      parameters:
+        - name: categoria
+          in: query
+          required: false
+          description: Si se omite, equivale al filtro Todas.
+          schema: { $ref: '#/components/schemas/CategoriaAlerta' }
+        - name: limite
+          in: query
+          required: false
+          description: Máximo de alertas a devolver, de la más reciente a la más antigua. Sin paginación en el MVP.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Alertas.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [alertas]
+                properties:
+                  alertas:
+                    type: array
+                    items: { $ref: '#/components/schemas/Alerta' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /hogares/{hogar_id}/alertas/no-leidas:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Alertas y consejos]
+      operationId: contarAlertasNoLeidas
+      summary: Indicador de la campana (RN-XII-02)
+      description: Requiere `permiso_recibir_alertas` o ser administrador.
+      responses:
+        '200':
+          description: Conteo de no leídas.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cantidad]
+                properties:
+                  cantidad: { type: integer, minimum: 0 }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /hogares/{hogar_id}/alertas/marcar-leidas:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    post:
+      tags: [Alertas y consejos]
+      operationId: marcarAlertasLeidas
+      summary: Marcar como leídas las alertas visibles al entrar (RN-XIV-03, RN-VI-05)
+      description: |
+        Registra `leida_en` solo para esta persona. Los ids que ya estaban leídos o que no
+        pertenecen al usuario se ignoran.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertasMarcar' }
+      responses:
+        '200':
+          description: Alertas marcadas.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [marcadas]
+                properties:
+                  marcadas: { type: integer, minimum: 0 }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
+
+  /hogares/{hogar_id}/consejos:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+    get:
+      tags: [Alertas y consejos]
+      operationId: listarConsejos
+      summary: Consejos visibles para el usuario (RN-VI-03, RN-XV-02, RN-XV-03, RN-XV-04, RN-XV-05)
+      description: |
+        Pendientes dentro de su vigencia (7 días desde creado_en, RN-XV-05, D10), ordenados por prioridad (alta, media, baja), y
+        completados hace menos de 7 días al final. Una lista sin pendientes corresponde a la
+        card "Todo bajo control".
+      responses:
+        '200':
+          description: Consejos.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [consejos]
+                properties:
+                  consejos:
+                    type: array
+                    items: { $ref: '#/components/schemas/Consejo' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+
+  /hogares/{hogar_id}/consejos/{consejo_id}/estado:
+    parameters:
+      - $ref: '#/components/parameters/HogarId'
+      - $ref: '#/components/parameters/ConsejoId'
+    put:
+      tags: [Alertas y consejos]
+      operationId: actualizarEstadoConsejo
+      summary: Marcar o desmarcar un consejo (RN-XV-03, RN-VI-05)
+      description: |
+        Solo afecta a esta persona. `completada` registra `completada_en`; `pendiente` lo deja vacío.
+        `404` si el usuario no tiene fila en `consejos_usuario` para ese consejo (RN-XV-06).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConsejoEstadoActualizar' }
+      responses:
+        '200':
+          description: Estado actualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Consejo' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
+
+components:
+  securitySchemes:
+    supabaseJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token de acceso emitido por Supabase Auth.
+
+  parameters:
+    HogarId:
+      name: hogar_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ZonaId:
+      name: zona_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MembresiaId:
+      name: membresia_id
+      in: path
+      required: true
+      description: Id de la fila en `hogar_miembros`.
+      schema: { type: string, format: uuid }
+    InvitacionId:
+      name: invitacion_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ConsejoId:
+      name: consejo_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    NoAutenticado:
+      description: Token ausente, inválido o vencido.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Prohibido:
+      description: El usuario no tiene el rol o el permiso necesario.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NoEncontrado:
+      description: El recurso no existe o el usuario no tiene membresía activa en ese hogar.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflicto:
+      description: La operación choca con el estado actual (límites, membresía o invitación).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Validacion:
+      description: Los datos enviados no cumplen las reglas.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ErrorServidor:
+      description: Error interno. En el onboarding, `BACKFILL_FALLIDO`; no queda ningún dato creado.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    # ── Comunes ──
+    Error:
+      type: object
+      required: [codigo, mensaje]
+      properties:
+        codigo:
+          $ref: '#/components/schemas/CodigoError'
+          description: |
+            Código estable para la app (enum `CodigoError`): `FICHA_NO_CREADA`, `FICHA_EXISTENTE`,
+            `NO_ES_ADMINISTRADOR`, `SIN_PERMISO_VER_CONSUMO`, `SIN_PERMISO_VER_HISTORIAL`,
+            `SIN_PERMISO_RECIBIR_ALERTAS`, `SIN_PERMISO_MODIFICAR_METAS`, `ADMIN_DEBE_TRANSFERIR`,
+            `MEMBRESIA_ACTIVA_EXISTENTE`, `LIMITE_MIEMBROS`, `INVITACION_EXPIRADA`,
+            `INVITACION_NO_PENDIENTE`, `INVITACION_PENDIENTE_EXISTENTE`, `YA_ES_MIEMBRO`,
+            `CORREO_NO_COINCIDE`, `ZONAS_NO_PERMITIDAS`, `ZONAS_BASICAS_FALTANTES`,
+            `CANTIDAD_ZONAS_INVALIDA`, `ZONAS_DUPLICADAS`, `VIGENCIA_NO_POSTERIOR`,
+            `CONTRASENA_ACTUAL_INCORRECTA`, `CONTRASENA_NO_CUMPLE_REGLAS`,
+            `CONTRASENA_IGUAL_A_ACTUAL`, `ADMIN_UNICO_MIEMBRO`, `BACKFILL_FALLIDO`, `VALIDACION`.
+        mensaje:
+          type: string
+          description: Descripción técnica; el texto para el usuario lo resuelve la app con `codigo`.
+        detalles:
+          type: [object, 'null']
+          additionalProperties: true
+          description: Información adicional (por ejemplo, el campo que falló).
+
+    CodigoError:
+      type: string
+      description: Códigos de error del contrato. Cada uno tiene texto en el catálogo v1 (`error.<codigo en minúsculas>`), salvo FICHA_NO_CREADA y FICHA_EXISTENTE, que son internos. LIMITE_MIEMBROS tiene dos textos (invitar y aceptar).
+      enum: [FICHA_NO_CREADA, FICHA_EXISTENTE, NO_ES_ADMINISTRADOR, SIN_PERMISO_VER_CONSUMO, SIN_PERMISO_VER_HISTORIAL, SIN_PERMISO_RECIBIR_ALERTAS, SIN_PERMISO_MODIFICAR_METAS, ADMIN_DEBE_TRANSFERIR, MEMBRESIA_ACTIVA_EXISTENTE, LIMITE_MIEMBROS, INVITACION_EXPIRADA, INVITACION_NO_PENDIENTE, INVITACION_PENDIENTE_EXISTENTE, YA_ES_MIEMBRO, CORREO_NO_COINCIDE, ZONAS_NO_PERMITIDAS, ZONAS_BASICAS_FALTANTES, CANTIDAD_ZONAS_INVALIDA, ZONAS_DUPLICADAS, VIGENCIA_NO_POSTERIOR, CONTRASENA_ACTUAL_INCORRECTA, CONTRASENA_NO_CUMPLE_REGLAS, CONTRASENA_IGUAL_A_ACTUAL, ADMIN_UNICO_MIEMBRO, BACKFILL_FALLIDO, VALIDACION]
+
+    EstadoConsumo:
+      type: string
+      enum: [normal, elevado, critico, sin_referencia, sin_datos]
+      description: |
+        Calculado al consultar (RN-XI-02). `sin_referencia` es solo respaldo (RN-XI-03);
+        `sin_datos` indica que falta la lectura de la última hora completa.
+    ReferenciaTipo:
+      type: string
+      enum: [promedio, meta]
+    MensajeCodigo:
+      type: [string, 'null']
+      description: Clave del catálogo de textos (RN-XI-09). Valores del catálogo v1.0 (aprobado 02/11/2026). La app resuelve estado.<codigo>.titulo/.cuerpo/.leyenda.
+      enum:
+        - consumo_actual.normal
+        - consumo_actual.elevado
+        - consumo_actual.critico
+        - consumo_actual.sin_datos
+        - consumo_actual.sin_referencia
+        - acumulado.meta.normal
+        - acumulado.meta.elevado
+        - acumulado.meta.critico
+        - acumulado.promedio.normal
+        - acumulado.promedio.elevado
+        - acumulado.promedio.critico
+        - acumulado.meta.sin_referencia
+        - acumulado.meta.sin_datos
+        - acumulado.promedio.sin_referencia
+        - acumulado.promedio.sin_datos
+        - zona_estado.normal
+        - zona_estado.elevado
+        - zona_estado.critico
+        - zona_estado.sin_datos
+        - zona_estado.sin_referencia
+        - historial_comparacion.menor
+        - historial_comparacion.similar
+        - historial_comparacion.mayor
+        - historial_comparacion.muy_mayor
+        - historial_comparacion.sin_anterior
+        - historial_comparacion.sin_referencia
+        - null
+    TipoVivienda:
+      type: string
+      enum: [apartamento, casa, apartaestudio, duplex, casa_campestre]
+    TipoZona:
+      type: string
+      enum: [cocina, sala, dormitorio, bano, oficina, lavanderia, terraza, garaje, cuarto_servicio]
+    Rol:
+      type: string
+      enum: [administrador, miembro]
+    IntervaloHora:
+      type: object
+      description: Última hora completa, en hora de Bogotá.
+      required: [inicio, fin]
+      properties:
+        inicio: { type: string, format: date-time }
+        fin: { type: string, format: date-time }
+
+    # ── Usuario ──
+    Preferencias:
+      type: object
+      required: [notif_consumo, notif_consejos, base_comparacion]
+      properties:
+        notif_consumo: { type: boolean, description: Alertas de consumo e información. }
+        notif_consejos: { type: boolean, description: Avisos de consejos. }
+        base_comparacion: { $ref: '#/components/schemas/ReferenciaTipo' }
+    PreferenciasActualizar:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        notif_consumo: { type: boolean }
+        notif_consejos: { type: boolean }
+        base_comparacion: { $ref: '#/components/schemas/ReferenciaTipo' }
+    MembresiaResumen:
+      type: object
+      required: [membresia_id, hogar_id, rol]
+      properties:
+        membresia_id: { type: string, format: uuid }
+        hogar_id: { type: string, format: uuid }
+        rol: { $ref: '#/components/schemas/Rol' }
+    UsuarioActual:
+      type: object
+      required: [id, correo, nombre_completo, telefono, avatar_url, preferencias, membresia]
+      properties:
+        id: { type: string, format: uuid }
+        correo:
+          type: string
+          format: email
+          readOnly: true
+          description: Tomado de `auth.users`; solo lectura.
+        nombre_completo: { type: string }
+        telefono: { type: [string, 'null'] }
+        avatar_url:
+          type: [string, 'null']
+          description: Ruta en Supabase Storage; `null` muestra iniciales.
+        preferencias: { $ref: '#/components/schemas/Preferencias' }
+        membresia:
+          oneOf:
+            - $ref: '#/components/schemas/MembresiaResumen'
+            - type: 'null'
+    UsuarioCrear:
+      type: object
+      required: [nombre_completo]
+      additionalProperties: false
+      properties:
+        nombre_completo: { type: string, minLength: 1 }
+        telefono: { type: [string, 'null'] }
+    UsuarioActualizar:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        nombre_completo: { type: string, minLength: 1 }
+        telefono: { type: [string, 'null'] }
+    AvatarGuardar:
+      type: object
+      required: [avatar_url]
+      additionalProperties: false
+      properties:
+        avatar_url: { type: string, minLength: 1 }
+    ContrasenaVerificar:
+      type: object
+      required: [contrasena_actual]
+      additionalProperties: false
+      properties:
+        contrasena_actual: { type: string, format: password, writeOnly: true }
+    ContrasenaCambiar:
+      type: object
+      required: [contrasena_actual, contrasena_nueva]
+      additionalProperties: false
+      properties:
+        contrasena_actual: { type: string, format: password, writeOnly: true }
+        contrasena_nueva:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 8
+          description: Una mayúscula, un número y distinta de la actual (RN-IX-02).
+
+    # ── Hogares y onboarding ──
+    Permisos:
+      type: object
+      required: [ver_consumo_actual, ver_historial, recibir_alertas, modificar_metas]
+      description: Permisos generales del hogar (RN-II-03). Valores por defecto true, true, true, false.
+      properties:
+        ver_consumo_actual: { type: boolean }
+        ver_historial: { type: boolean }
+        recibir_alertas: { type: boolean }
+        modificar_metas: { type: boolean }
+    PermisosActualizar:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        ver_consumo_actual: { type: boolean }
+        ver_historial: { type: boolean }
+        recibir_alertas: { type: boolean }
+        modificar_metas: { type: boolean }
+    Hogar:
+      type: object
+      description: No incluye la personalidad de simulación ni los datos de Fase 2.
+      required: [id, nombre, tipo_vivienda, rol_usuario, permisos]
+      properties:
+        id: { type: string, format: uuid }
+        nombre: { type: string }
+        tipo_vivienda: { $ref: '#/components/schemas/TipoVivienda' }
+        rol_usuario: { $ref: '#/components/schemas/Rol' }
+        permisos: { $ref: '#/components/schemas/Permisos' }
+    Zona:
+      type: object
+      required: [id, tipo, nombre, estado]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { $ref: '#/components/schemas/TipoZona' }
+        nombre: { type: string, description: Generado desde el tipo (RN-XII-03). }
+        estado: { type: string, enum: [activa, inactiva] }
+    OnboardingCrear:
+      type: object
+      required: [nombre_hogar, tipo_vivienda, zonas]
+      additionalProperties: false
+      properties:
+        nombre_hogar: { type: string, minLength: 1 }
+        tipo_vivienda: { $ref: '#/components/schemas/TipoVivienda' }
+        zonas:
+          type: array
+          minItems: 3
+          maxItems: 9
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/TipoZona' }
+
+    # ── Miembros e invitaciones ──
+    Miembro:
+      type: object
+      required: [membresia_id, usuario_id, nombre_completo, avatar_url, rol, estado, fecha_ingreso]
+      properties:
+        membresia_id: { type: string, format: uuid }
+        usuario_id: { type: string, format: uuid }
+        nombre_completo: { type: string }
+        avatar_url: { type: [string, 'null'] }
+        rol: { $ref: '#/components/schemas/Rol' }
+        estado: { type: string, enum: [activo] }
+        fecha_ingreso: { type: string, format: date-time }
+    InvitacionPendiente:
+      type: object
+      required: [id, correo_invitado, estado, expira_en]
+      properties:
+        id: { type: string, format: uuid }
+        correo_invitado: { type: string, format: email }
+        estado: { type: string, enum: [pendiente] }
+        expira_en: { type: string, format: date-time }
+    MiembrosHogar:
+      type: object
+      required: [miembros_activos, miembros, invitaciones_pendientes, permisos, puede_gestionar]
+      properties:
+        miembros_activos: { type: integer, minimum: 1, maximum: 5 }
+        miembros:
+          type: array
+          items: { $ref: '#/components/schemas/Miembro' }
+        invitaciones_pendientes:
+          type: [array, 'null']
+          description: Solo para el administrador; null para los demás miembros.
+          items: { $ref: '#/components/schemas/InvitacionPendiente' }
+        permisos: { $ref: '#/components/schemas/Permisos' }
+        puede_gestionar:
+          type: boolean
+          description: true solo para el administrador (RN-X-08).
+    InvitacionCrear:
+      type: object
+      required: [correo_invitado]
+      additionalProperties: false
+      properties:
+        correo_invitado: { type: string, format: email }
+    InvitacionToken:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token: { type: string, minLength: 1, writeOnly: true }
+    InvitacionRecibida:
+      type: object
+      required: [id, hogar_nombre, invitado_por_nombre, expira_en]
+      properties:
+        id: { type: string, format: uuid }
+        hogar_nombre: { type: string }
+        invitado_por_nombre: { type: string }
+        expira_en: { type: string, format: date-time }
+
+    # ── Consumo ──
+    ConsumoActualHogar:
+      type: object
+      required: [hora, tarifa_vigente, actual, acumulado_hoy]
+      properties:
+        hora: { $ref: '#/components/schemas/IntervaloHora' }
+        tarifa_vigente:
+          type: boolean
+          description: Si es false, los campos COP son null y la app oculta el selector COP (RN-XII-04).
+        actual:
+          type: object
+          required: [potencia_kw, costo_cop, variacion_hora_anterior_pct, referencia_tipo, referencia_kw, estado, mensaje_codigo]
+          properties:
+            potencia_kw: { type: [number, 'null'], minimum: 0 }
+            costo_cop: { type: [number, 'null'], minimum: 0 }
+            variacion_hora_anterior_pct: { type: [number, 'null'] }
+            referencia_tipo: { $ref: '#/components/schemas/ReferenciaTipo' }
+            referencia_kw:
+              type: [number, 'null']
+              description: Valor de referencia de esa hora (promedio de la misma hora o meta, RN-XI-03).
+            estado: { $ref: '#/components/schemas/EstadoConsumo' }
+            mensaje_codigo: { $ref: '#/components/schemas/MensajeCodigo' }
+        acumulado_hoy:
+          type: object
+          required: [energia_kwh, costo_cop, referencia_tipo, referencia_kwh, muestra_limite, estado, mensaje_codigo]
+          properties:
+            energia_kwh: { type: number, minimum: 0 }
+            costo_cop: { type: [number, 'null'], minimum: 0 }
+            referencia_tipo: { $ref: '#/components/schemas/ReferenciaTipo' }
+            referencia_kwh:
+              type: [number, 'null']
+              description: Con meta, meta mensual ÷ días del mes; sin meta, promedio acumulado a esa hora en días anteriores (RN-XI-04). El tipo sigue a base_comparacion del usuario (D6); referencia_tipo informa cuál se aplicó.
+            muestra_limite:
+              type: boolean
+              description: true solo con meta activa (texto "Límite").
+            estado: { $ref: '#/components/schemas/EstadoConsumo' }
+            mensaje_codigo: { $ref: '#/components/schemas/MensajeCodigo' }
+    ConsumoZonaItem:
+      type: object
+      required: [zona_id, tipo, nombre, potencia_kw, costo_cop, participacion_pct, estado_participacion]
+      properties:
+        zona_id: { type: string, format: uuid }
+        tipo: { $ref: '#/components/schemas/TipoZona' }
+        nombre: { type: string }
+        potencia_kw: { type: [number, 'null'], minimum: 0 }
+        costo_cop: { type: [number, 'null'], minimum: 0 }
+        participacion_pct: { type: [number, 'null'], minimum: 0, maximum: 100 }
+        estado_participacion:
+          $ref: '#/components/schemas/EstadoConsumo'
+    ConsumoZonas:
+      type: object
+      required: [hora, tarifa_vigente, total_kw, zonas]
+      properties:
+        hora: { $ref: '#/components/schemas/IntervaloHora' }
+        tarifa_vigente: { type: boolean }
+        total_kw:
+          type: [number, 'null']
+          minimum: 0
+          description: Suma de las zonas activas en la última hora completa.
+        zonas:
+          type: array
+          items: { $ref: '#/components/schemas/ConsumoZonaItem' }
+    ConsumoZonaDetalle:
+      type: object
+      required: [zona, hora, tarifa_vigente, potencia_kw, costo_cop, estado_consumo, participacion]
+      properties:
+        zona: { $ref: '#/components/schemas/Zona' }
+        hora: { $ref: '#/components/schemas/IntervaloHora' }
+        tarifa_vigente: { type: boolean }
+        potencia_kw: { type: [number, 'null'], minimum: 0 }
+        costo_cop: { type: [number, 'null'], minimum: 0 }
+        estado_consumo:
+          type: object
+          required: [promedio_misma_hora_kw, variacion_pct, estado, mensaje_codigo]
+          properties:
+            promedio_misma_hora_kw: { type: [number, 'null'], minimum: 0 }
+            variacion_pct: { type: [number, 'null'] }
+            estado: { $ref: '#/components/schemas/EstadoConsumo' }
+            mensaje_codigo: { $ref: '#/components/schemas/MensajeCodigo' }
+        participacion:
+          type: object
+          required: [participacion_pct, total_hogar_kw, estado]
+          properties:
+            participacion_pct: { type: [number, 'null'], minimum: 0, maximum: 100 }
+            total_hogar_kw: { type: [number, 'null'], minimum: 0 }
+            estado: { $ref: '#/components/schemas/EstadoConsumo' }
+    PuntoSerie:
+      type: object
+      required: [inicio, fin, energia_kwh, costo_cop, es_pico_maximo]
+      properties:
+        inicio: { type: string, format: date-time }
+        fin: { type: string, format: date-time }
+        energia_kwh:
+          type: [number, 'null']
+          minimum: 0
+          description: Por hora en Día (numéricamente igual a kW promedio) y por día en Semana y Mes. null = sin datos.
+        costo_cop:
+          type: [number, 'null']
+          minimum: 0
+          description: Con la tarifa vigente en esa fecha (RN-XIII-05).
+        es_pico_maximo:
+          type: boolean
+          description: Pico más alto del periodo. La app lo marca con la etiqueta «Pico» y el rojo claro `chart/peak`, sin componentes ni palabras de estado (RN-XIII-03, D17).
+    Historial:
+      type: object
+      required: [periodo, zona_id, inicio, fin, granularidad, tarifa_vigente, total_kwh, serie, participacion_zonas, ultimo_pico, comparacion, costo]
+      properties:
+        periodo: { type: string, enum: [dia, semana, mes] }
+        zona_id:
+          type: [string, 'null']
+          format: uuid
+          description: null = filtro General.
+        inicio: { type: string, format: date-time }
+        fin:
+          type: string
+          format: date-time
+          description: Fin de la última hora completa.
+        granularidad: { type: string, enum: [hora, dia] }
+        tarifa_vigente: { type: boolean }
+        total_kwh: { type: number, minimum: 0 }
+        serie:
+          type: array
+          items: { $ref: '#/components/schemas/PuntoSerie' }
+        participacion_zonas:
+          description: Solo con el filtro General (gráfico de anillo, RN-XIII-04); suma 100.
+          oneOf:
+            - type: array
+              items:
+                type: object
+                required: [zona_id, nombre, energia_kwh, participacion_pct]
+                properties:
+                  zona_id: { type: string, format: uuid }
+                  nombre: { type: string }
+                  energia_kwh: { type: number, minimum: 0 }
+                  participacion_pct: { type: number, minimum: 0, maximum: 100 }
+            - type: 'null'
+        ultimo_pico:
+          description: Último valor del periodo que supera su promedio histórico en al menos 10 % (RN-XIII-03, DC-31); null si no hay (la app muestra «Sin picos en este periodo»). Su estado usa los umbrales de consumo actual (Día) o de día completo (Semana y Mes).
+          oneOf:
+            - type: object
+              required: [inicio, fin, energia_kwh, promedio_historico_kwh, exceso_pct, estado]
+              properties:
+                inicio: { type: string, format: date-time }
+                fin: { type: string, format: date-time }
+                energia_kwh: { type: number, minimum: 0 }
+                promedio_historico_kwh: { type: number, minimum: 0 }
+                exceso_pct: { type: number }
+                estado: { $ref: '#/components/schemas/EstadoConsumo' }
+            - type: 'null'
+        comparacion:
+          type: object
+          description: Mismo tramo del periodo anterior; válido solo si tiene lecturas en todas sus horas (RN-XIII-01, DC-29). menor < -5 %, similar < +10 % (normal), mayor < +25 % (elevado), muy_mayor (crítico).
+          required: [actual_kwh, anterior_kwh, variacion_pct, estado, mensaje_codigo]
+          properties:
+            actual_kwh: { type: number, minimum: 0 }
+            anterior_kwh:
+              type: [number, 'null']
+              minimum: 0
+              description: null = "no hay datos" del periodo anterior (RN-XIII-01).
+            variacion_pct: { type: [number, 'null'] }
+            estado: { $ref: '#/components/schemas/EstadoConsumo' }
+            mensaje_codigo: { $ref: '#/components/schemas/MensajeCodigo' }
+        costo:
+          type: object
+          required: [costo_cop, proyeccion_cierre_cop, incluye_cargo_fijo, estado, mensaje_codigo]
+          description: Todo null sin tarifa vigente, salvo estado y mensaje_codigo, que siguen la comparación del mismo periodo (opción A). Proyección según RN-XIII-05 (v4.9, DC-30) - acumulado + promedio de lo que falta del periodo; en COP, precio vigente hoy y cargo fijo solo en Mes.
+          properties:
+            costo_cop: { type: [number, 'null'], minimum: 0 }
+            proyeccion_cierre_cop: { type: [number, 'null'], minimum: 0 }
+            incluye_cargo_fijo:
+              type: boolean
+              description: Solo en la vista Mes (RN-V-02, RN-XIII-05).
+            estado:
+              $ref: '#/components/schemas/EstadoConsumo'
+              description: Igual al estado de comparacion del mismo periodo (v0.2.4).
+            mensaje_codigo:
+              $ref: '#/components/schemas/MensajeCodigo'
+    FuentesDatos:
+      type: object
+      required: [hora, valores_ocultos, fuente_principal, sensores]
+      properties:
+        valores_ocultos:
+          type: boolean
+          description: true si el usuario no tiene permiso de ver consumo; todos los `potencia_kw` son null.
+        hora: { $ref: '#/components/schemas/IntervaloHora' }
+        fuente_principal:
+          type: object
+          required: [id, nombre, estado, potencia_kw]
+          properties:
+            id: { type: string, format: uuid }
+            nombre: { type: string, description: '"Fuente principal [nombre del hogar]"' }
+            estado: { type: string, enum: [activa, inactiva] }
+            potencia_kw:
+              type: [number, 'null']
+              minimum: 0
+              description: Suma de sus sensores en la última hora completa.
+        sensores:
+          type: array
+          items:
+            type: object
+            required: [id, nombre, zona_id, zona_nombre, potencia_kw, estado]
+            properties:
+              id: { type: string, format: uuid }
+              nombre: { type: string, description: '"Sensor [zona]"' }
+              zona_id: { type: string, format: uuid }
+              zona_nombre: { type: string }
+              potencia_kw: { type: [number, 'null'], minimum: 0 }
+              estado:
+                type: string
+                enum: [activo, pausado, sin_datos]
+                description: sin_datos se calcula si falta la lectura de la última hora completa.
+
+    # ── Metas y tarifa ──
+    TipoMeta:
+      type: string
+      enum: [ahorro, eficiencia, presupuesto]
+    Meta:
+      type: object
+      required: [id, tipo, valor_kwh_mensual, estado, fecha_inicio, fecha_fin]
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { $ref: '#/components/schemas/TipoMeta' }
+        valor_kwh_mensual: { type: number, exclusiveMinimum: 0 }
+        estado: { type: string, enum: [activa, inactiva] }
+        fecha_inicio: { type: string, format: date }
+        fecha_fin: { type: [string, 'null'], format: date }
+    MetaCrear:
+      type: object
+      required: [tipo, valor_kwh_mensual]
+      additionalProperties: false
+      properties:
+        tipo: { $ref: '#/components/schemas/TipoMeta' }
+        valor_kwh_mensual: { type: number, exclusiveMinimum: 0 }
+    MetaVista:
+      type: object
+      required: [meta, limite_diario_kwh, promedio_diario_30d_kwh, puede_editar]
+      properties:
+        meta:
+          oneOf:
+            - $ref: '#/components/schemas/Meta'
+            - type: 'null'
+        limite_diario_kwh:
+          type: [number, 'null']
+          description: Meta mensual ÷ días del mes en curso.
+        promedio_diario_30d_kwh:
+          type: [number, 'null']
+          description: Promedio diario de los últimos 30 días (referencia de la pantalla).
+        puede_editar:
+          type: boolean
+          description: Administrador o `permiso_modificar_metas` (RN-XVII-04).
+    Tarifa:
+      type: object
+      required: [id, operador, precio_kwh, cargo_fijo_mensual, vigente_desde, vigente_hasta]
+      properties:
+        id: { type: string, format: uuid }
+        operador: { type: [string, 'null'] }
+        precio_kwh: { type: number, minimum: 0, description: COP por kWh. }
+        cargo_fijo_mensual: { type: [number, 'null'], minimum: 0, description: COP; no se prorratea (RN-V-02). }
+        vigente_desde: { type: string, format: date }
+        vigente_hasta:
+          type: [string, 'null']
+          format: date
+          description: Fin excluido; null = tarifa vigente.
+    TarifaCrear:
+      type: object
+      required: [precio_kwh, vigente_desde]
+      additionalProperties: false
+      properties:
+        operador:
+          type: [string, 'null']
+          description: Texto elegido en la lista aprobada de la app (D14) - Afinia, Air-e, CHEC, Celsia, Enel Colombia, EPM, ESSA u Otro operador.
+        precio_kwh: { type: number, minimum: 0 }
+        vigente_desde:
+          type: string
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+          description: Mes y año (YYYY-MM); se guarda el día 1.
+        cargo_fijo_mensual: { type: [number, 'null'], minimum: 0 }
+    TarifaVista:
+      type: object
+      required: [tarifa, puede_editar]
+      properties:
+        tarifa:
+          oneOf:
+            - $ref: '#/components/schemas/Tarifa'
+            - type: 'null'
+        puede_editar:
+          type: boolean
+          description: Solo el administrador (RN-XVI-05).
+
+    # ── Alertas y consejos ──
+    CategoriaAlerta:
+      type: string
+      enum: [consumo, consejo, informacion]
+    Alerta:
+      type: object
+      required: [id, categoria, severidad, titulo, mensaje, zona_id, zona_nombre, creada_en, leida_en]
+      properties:
+        id: { type: string, format: uuid }
+        categoria: { $ref: '#/components/schemas/CategoriaAlerta' }
+        severidad: { type: string, enum: [informativa, advertencia, critica] }
+        titulo: { type: string }
+        mensaje: { type: string }
+        zona_id: { type: [string, 'null'], format: uuid }
+        zona_nombre: { type: [string, 'null'] }
+        creada_en: { type: string, format: date-time }
+        leida_en:
+          type: [string, 'null']
+          format: date-time
+          description: null = no leída (punto relleno, RN-XIV-02).
+    AlertasMarcar:
+      type: object
+      required: [alerta_ids]
+      additionalProperties: false
+      properties:
+        alerta_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, format: uuid }
+    Consejo:
+      type: object
+      required: [id, categoria, prioridad, titulo, descripcion, zona_id, zona_nombre, estado, completada_en, creado_en]
+      properties:
+        id: { type: string, format: uuid }
+        categoria: { type: string }
+        prioridad: { type: string, enum: [alta, media, baja] }
+        titulo: { type: string }
+        descripcion: { type: string }
+        zona_id: { type: [string, 'null'], format: uuid }
+        zona_nombre: { type: [string, 'null'] }
+        estado:
+          type: string
+          enum: [pendiente, completada]
+          description: Estado individual de esta persona.
+        completada_en: { type: [string, 'null'], format: date-time }
+        creado_en: { type: string, format: date-time }
+    ConsejoEstadoActualizar:
+      type: object
+      required: [estado]
+      additionalProperties: false
+      properties:
+        estado: { type: string, enum: [pendiente, completada] }

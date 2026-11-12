@@ -6,8 +6,6 @@
     "@expo/metro-runtime": "~57.0.17",
     "@expo/ui": "~57.0.26",
     "@expo/vector-icons": "^15.0.2",
-    "@react-navigation/bottom-tabs": "^7.20.0",
-    "@react-navigation/native": "^7.5.0",
     "@supabase/supabase-js": "^2.117.1",
     "@tanstack/react-query": "^5.103.2",
     "expo": "~57.0.31",
@@ -16,6 +14,7 @@
     "expo-font": "~57.0.4",
     "expo-glass-effect": "~57.0.4",
     "expo-image": "~57.0.5",
+    "expo-linear-gradient": "~57.0.2",
     "expo-linking": "~57.0.13",
     "expo-router": "~57.0.29",
     "expo-secure-store": "~57.0.4",
@@ -24,10 +23,12 @@
     "expo-symbols": "~57.0.3",
     "expo-system-ui": "~57.0.4",
     "expo-web-browser": "~57.0.3",
+    "lucide-react-native": "^1.72.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",
+    "react-native-gifted-charts": "^1.4.81",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
@@ -41,6 +42,7 @@
     "@testing-library/react-native": "^14.0.1",
     "@types/react": "~19.2.2",
     "jest-expo": "~57.0.6",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -49,7 +51,19 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "jest",
+    "typecheck": "tsc --noEmit",
+    "generate:api-types": "openapi-typescript ../docs/api/zentheris-api-v0.2.5.yaml -o src/api/schema.d.ts",
+    "generate:tokens": "node scripts/generate-tokens.mjs"
   },
-  "private": true
+  "private": true,
+  "jest": {
+    "preset": "jest-expo"
+  },
+  "overrides": {
+    "openapi-typescript": {
+      "typescript": "$typescript"
+    }
+  }
 }

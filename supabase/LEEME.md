@@ -2,6 +2,7 @@
 
 **Estado (08/11/2026):** **aplicadas** en el proyecto definitivo `zentheris` (ref `hylseqruipigpewjfxmf`, organización «Zentheris»). La huella coincide al 100 % con el laboratorio `zentheris-dev` (ref `cjybhgmpiduwlaozjels`, «nicv25's Org»), donde pasaron 55 de 55 pruebas el 06/11/2026. Evidencia: `Archivos_Zentheris/02_base-de-datos/entornos/definitivo/acta-migracion-2026-11-08.md`.
 **Fuente:** reglas v4.9 §3, [`docs/supabase/especificacion-supabase-v1.md`](../docs/supabase/especificacion-supabase-v1.md), decisiones DC-36 a DC-45.
+**Rutas `Archivos_Zentheris/…`:** están fuera de este repositorio, en la carpeta de documentación del proyecto.
 
 ## Orden, versión real y contenido
 
@@ -18,7 +19,7 @@ El nombre de cada archivo es `<version>_<nombre>.sql`, igual al historial de la 
 
 **Diferencia con el laboratorio:** allí hubo 8 migraciones. Las 07 y 08 solo ajustaron la política `invitaciones_leer`. Aquí ese ajuste ya viene dentro de la `0004`, así que el resultado final es idéntico.
 
-> Los archivos con el nombre antiguo (`0001_…` a `0006_…`) son copias idénticas (mismo SHA-256) que quedaron porque la sesión no podía borrar. Están en `../_LIMPIEZA-PENDIENTE.md`. **Usa solo los que empiezan por la versión.**
+> Los archivos con el nombre antiguo (`0001_…` a `0006_…`) son copias idénticas (mismo SHA-256) que quedaron porque la sesión no podía borrar. No se copiaron a este repositorio: aquí solo están los que empiezan por la versión.
 
 ## Cambios futuros
 

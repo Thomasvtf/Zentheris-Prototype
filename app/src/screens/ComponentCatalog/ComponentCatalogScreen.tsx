@@ -2,7 +2,8 @@
  * Catálogo interno (solo __DEV__): tokens, fuentes, íconos, formatos y la prueba mínima de
  * gráficos (PENDIENTES #11, DC-12 y DC-63).
  *
- * - Barras, línea y anillo de zonas con react-native-gifted-charts.
+ * - Barras, línea (Día, Semana y Mes) y anillo de zonas con react-native-gifted-charts; ver
+ *   chartSamples.tsx (escala, etiquetas es-CO, pico con píldora, corte en null y volteo).
  * - Arco base del medidor con react-native-svg (gifted-charts no trae medidor). Proporción
  *   de ejemplo con la regla del arco: min(potencia_kw ÷ (referencia_kw × 1,6), 1).
  *
@@ -13,15 +14,35 @@ import { useFonts } from 'expo-font';
 import { Bell, ChartColumn, House, Lightbulb, Settings, Zap } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { BarChart, LineChart, PieChart } from 'react-native-gifted-charts';
+import { PieChart } from 'react-native-gifted-charts';
 import Svg, { Path } from 'react-native-svg';
 
 import { DECIMALES, formatCOP, formatNumber, formatPercent } from '@/format';
+import { t } from '@/texts';
 import { colors, fontFamilyFor, fontFiles, hasSatoshi, radius, spacing, typography } from '@/theme';
+
+import { BarSample, LineSample, type Point } from './chartSamples';
 
 type TypographyStyle = (typeof typography)[keyof typeof typography];
 
-const SAMPLE_HOURS = [0.42, 0.38, 0.35, 0.33, 0.36, 0.55, 0.9, 1.25, 1.1, 0.95, 0.88, 0.92];
+const pad2 = (n: number) => String(n).padStart(2, '0');
+/** Día: 24 horas en kW, con pico a las 12:00. */
+const DAY_KW = [0.42, 0.38, 0.35, 0.33, 0.36, 0.55, 0.9, 1.25, 1.1, 0.95, 0.88, 0.92, 3.2, 1.4, 1.05, 0.98, 1.1, 1.6, 2.1, 2.4, 1.9, 1.3, 0.8, 0.5];
+const DAY_POINTS: Point[] = DAY_KW.map((valor, h) => ({ etiqueta: `${pad2(h)}:00`, valor, eje: h % 3 === 0 ? pad2(h) : '' }));
+/** Línea del Día con dos horas sin lectura (15:00 y 16:00): la línea se interrumpe. */
+const DAY_POINTS_GAP: Point[] = DAY_POINTS.map((p, h) => (h === 15 || h === 16 ? { ...p, valor: null } : p));
+const WEEK_KEYS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];
+/** Semana en kWh, con pico el sábado (cerca del borde derecho). */
+const WEEK_POINTS: Point[] = [18.2, 17.5, 19.1, 18.8, 21.3, 28.4, 22.0].map((valor, i) => {
+  const dia = t(`formato.dia_corto.${WEEK_KEYS[i]}`);
+  return { etiqueta: dia, valor, eje: dia };
+});
+/** Mes de 30 días en kWh, con pico el día 28 (cerca del borde derecho). */
+const MONTH_POINTS: Point[] = Array.from({ length: 30 }, (_, i) => {
+  const dia = i + 1;
+  const valor = dia === 28 ? 28 : 16 + ((dia * 7) % 9) * 0.9;
+  return { etiqueta: t('formato.tiempo.fecha', { dd: pad2(dia), mm: '11' }), valor, eje: dia % 5 === 0 ? String(dia) : '' };
+});
 const SAMPLE_ZONES = [
   { value: 38, color: colors['chart-series1'] },
   { value: 24, color: colors['chart-series2'] },
@@ -101,28 +122,20 @@ export function ComponentCatalogScreen() {
         </Text>
       </Section>
 
-      <Section title="react-native-gifted-charts · BarChart">
-        <BarChart
-          data={SAMPLE_HOURS.map((value) => ({ value, frontColor: colors['chart-series1'] }))}
-          barWidth={12}
-          spacing={8}
-          noOfSections={3}
-          yAxisTextStyle={{ color: colors['chart-label'] }}
-          rulesColor={colors['chart-grid']}
-          isAnimated={false}
-        />
+      <Section title="react-native-gifted-charts · BarChart (Día, kW)">
+        <BarSample points={DAY_POINTS} unit="kW" periodo={t('formato.periodo.dia')} />
       </Section>
 
-      <Section title="react-native-gifted-charts · LineChart">
-        <LineChart
-          data={SAMPLE_HOURS.map((value) => ({ value }))}
-          color={colors['chart-series2']}
-          dataPointsColor={colors['chart-series2']}
-          spacing={22}
-          noOfSections={3}
-          yAxisTextStyle={{ color: colors['chart-label'] }}
-          rulesColor={colors['chart-grid']}
-        />
+      <Section title="react-native-gifted-charts · LineChart (Día, kW, sin lectura 15:00 y 16:00)">
+        <LineSample points={DAY_POINTS_GAP} unit="kW" periodo={t('formato.periodo.dia')} vista="dia" />
+      </Section>
+
+      <Section title="react-native-gifted-charts · LineChart (Semana, kWh)">
+        <LineSample points={WEEK_POINTS} unit="kWh" periodo={t('formato.periodo.semana')} vista="semana" />
+      </Section>
+
+      <Section title="react-native-gifted-charts · LineChart (Mes, kWh)">
+        <LineSample points={MONTH_POINTS} unit="kWh" periodo={t('formato.periodo.mes')} vista="mes" />
       </Section>
 
       <Section title="react-native-gifted-charts · PieChart (anillo de zonas)">

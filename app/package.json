@@ -50,12 +50,17 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
   },
   "private": true,
   "overrides": {
     "openapi-typescript": {
       "typescript": "$typescript"
     }
+  },
+  "jest": {
+    "preset": "jest-expo"
   }
 }

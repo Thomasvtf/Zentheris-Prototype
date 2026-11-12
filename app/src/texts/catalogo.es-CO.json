@@ -1,0 +1,1066 @@
+{
+  "_meta": {
+    "idioma": "es-CO",
+    "version": "1.0",
+    "fecha": "2026-11-02",
+    "estado": "APROBADO por Nicolás el 02/11/2026 (aprobación total), con las salvedades de LEEME",
+    "variables": "Se escriben {nombre}; la app las rellena y da formato es-CO (RN-XII-08).",
+    "plurales": "Un texto con claves zero/one/other es plural; se elige por n (0 / 1 / otros).",
+    "claves": "Las claves de estado.* coinciden con mensaje_codigo (ver mensaje_codigos.es-CO.json)."
+  },
+  "estado": {
+    "palabra": {
+      "normal": "Normal",
+      "elevado": "Elevado",
+      "critico": "Crítico",
+      "sin_datos": "Sin datos",
+      "sin_referencia": "Sin referencia"
+    },
+    "consumo_actual": {
+      "normal": {
+        "titulo": "Dentro de lo habitual",
+        "cuerpo": "Vas bien, sigue así.",
+        "leyenda": "Dentro de lo esperado"
+      },
+      "elevado": {
+        "titulo": "Consumo elevado",
+        "cuerpo": "Revisa qué equipos están encendidos.",
+        "leyenda": "Por encima de lo esperado"
+      },
+      "critico": {
+        "titulo": "Consumo crítico",
+        "cuerpo": "Apaga los equipos que no necesites.",
+        "leyenda": "Muy por encima de lo esperado"
+      },
+      "sin_datos": {
+        "titulo": "Sin datos de la última hora",
+        "cuerpo": "La lectura de la última hora aún no llega. Se actualizará en la próxima hora.",
+        "leyenda": "Sin datos"
+      },
+      "sin_referencia": {
+        "titulo": "Aún no hay referencia para comparar",
+        "cuerpo": "Todavía no hay suficiente historial de esta hora.",
+        "leyenda": "Sin referencia"
+      }
+    },
+    "variacion_hora": {
+      "mas": "{pct} más que la hora anterior",
+      "menos": "{pct} menos que la hora anterior",
+      "igual": "Igual que la hora anterior",
+      "sin_dato": "Sin dato de la hora anterior"
+    },
+    "acumulado": {
+      "meta": {
+        "normal": {
+          "titulo": "Dentro del límite de hoy",
+          "cuerpo": "Llevas el {pct} de {objetivo_dia}."
+        },
+        "elevado": {
+          "titulo": "Cerca del límite de hoy",
+          "cuerpo": "Llevas el {pct} de {objetivo_dia}."
+        },
+        "critico": {
+          "titulo": "Superaste el límite de hoy",
+          "cuerpo": "Ya superaste {objetivo_dia}: llevas el {pct}."
+        },
+        "sin_referencia": {
+          "titulo": "Aún no hay referencia para comparar",
+          "cuerpo": "Todavía no hay suficiente historial hasta esta hora."
+        },
+        "sin_datos": {
+          "titulo": "Sin datos de hoy",
+          "cuerpo": "Aún no hay lecturas completas de hoy."
+        }
+      },
+      "promedio": {
+        "normal": {
+          "titulo": "Dentro de tu promedio",
+          "cuerpo": "Tu promedio hasta esta hora es {promedio}."
+        },
+        "elevado": {
+          "titulo": "Por encima de tu promedio",
+          "cuerpo": "Tu promedio hasta esta hora es {promedio}."
+        },
+        "critico": {
+          "titulo": "Muy por encima de tu promedio",
+          "cuerpo": "Tu promedio hasta esta hora es {promedio}."
+        },
+        "sin_referencia": {
+          "titulo": "Aún no hay referencia para comparar",
+          "cuerpo": "Todavía no hay suficiente historial hasta esta hora."
+        },
+        "sin_datos": {
+          "titulo": "Sin datos de hoy",
+          "cuerpo": "Aún no hay lecturas completas de hoy."
+        }
+      }
+    },
+    "zona_estado": {
+      "normal": {
+        "leyenda": "Dentro del rango habitual para esta hora",
+        "titulo": "Consumo dentro de lo habitual",
+        "cuerpo": "Vas bien, sigue así."
+      },
+      "elevado": {
+        "leyenda": "Por encima del rango habitual para esta hora",
+        "titulo": "Consumo elevado en esta zona",
+        "cuerpo": "Revisa qué equipos de {zona} están encendidos."
+      },
+      "critico": {
+        "leyenda": "Muy por encima del rango habitual para esta hora",
+        "titulo": "Consumo crítico en esta zona",
+        "cuerpo": "Apaga los equipos de {zona} que no necesites."
+      },
+      "sin_datos": {
+        "leyenda": "Sin datos",
+        "titulo": "Sin datos de la última hora",
+        "cuerpo": "La lectura de {zona} aún no llega."
+      },
+      "sin_referencia": {
+        "leyenda": "Sin referencia",
+        "titulo": "Aún no hay referencia para comparar",
+        "cuerpo": "Todavía no hay suficiente historial de esta hora."
+      }
+    },
+    "zona_participacion": {
+      "normal": {
+        "titulo": "Participación habitual",
+        "cuerpo": "La zona consume lo esperado frente al total del hogar."
+      },
+      "elevado": {
+        "titulo": "Participación alta",
+        "cuerpo": "{zona} pesa más de lo habitual en el consumo del hogar."
+      },
+      "critico": {
+        "titulo": "Participación muy alta",
+        "cuerpo": "{zona} pesa mucho más de lo habitual en el consumo del hogar."
+      },
+      "sin_datos": {
+        "titulo": "Sin datos",
+        "cuerpo": "No llegó la lectura de la última hora."
+      },
+      "detalle": "{kw_zona} de {kw_hogar} del hogar",
+      "del_total": "del total"
+    },
+    "historial_pico": {
+      "normal": {
+        "titulo": "Pico levemente por encima del promedio"
+      },
+      "elevado": {
+        "titulo": "Pico por encima del promedio"
+      },
+      "critico": {
+        "titulo": "Pico muy por encima del promedio"
+      },
+      "cuerpo": {
+        "dia": "Supera el promedio histórico de esa hora.",
+        "periodo": "Supera el promedio histórico de ese día."
+      },
+      "ninguno": {
+        "titulo": "Sin picos en este periodo",
+        "cuerpo": "Ningún valor superó el promedio histórico."
+      },
+      "ultimo": "Último pico: {cuando}",
+      "etiqueta_grafico": "Pico · {cuando} · {valor}",
+      "etiqueta": "Pico"
+    },
+    "historial_comparacion": {
+      "menor": {
+        "titulo": "Menor que el periodo anterior",
+        "cuerpo": "Vas bien, sigue así."
+      },
+      "similar": {
+        "titulo": "Similar al periodo anterior",
+        "cuerpo": "Vas bien, sigue así."
+      },
+      "mayor": {
+        "titulo": "Mayor que el periodo anterior",
+        "cuerpo": "Revisa los consejos para reducir tu consumo."
+      },
+      "muy_mayor": {
+        "titulo": "Muy por encima del periodo anterior",
+        "cuerpo": "Revisa los consejos y qué zonas pesaron más."
+      },
+      "sin_anterior": {
+        "titulo": "No hay datos del periodo anterior",
+        "cuerpo": "Aún no hay un tramo anterior para comparar."
+      },
+      "sin_referencia": {
+        "titulo": "Aún no hay referencia para comparar",
+        "cuerpo": "Todavía no hay suficiente historial."
+      }
+    },
+    "historial_costo": {
+      "menor": {
+        "titulo": "Costo menor que el periodo anterior",
+        "cuerpo": "Estimado con tu tarifa vigente. Puede no incluir subsidios ni otros cobros."
+      },
+      "similar": {
+        "titulo": "Costo similar al periodo anterior",
+        "cuerpo": "Estimado con tu tarifa vigente. Puede no incluir subsidios ni otros cobros."
+      },
+      "mayor": {
+        "titulo": "Costo mayor que el periodo anterior",
+        "cuerpo": "Estimado con tu tarifa vigente. Puede no incluir subsidios ni otros cobros."
+      },
+      "muy_mayor": {
+        "titulo": "Costo muy superior al periodo anterior",
+        "cuerpo": "Estimado con tu tarifa vigente. Puede no incluir subsidios ni otros cobros."
+      },
+      "sin_anterior": {
+        "titulo": "No hay costo del periodo anterior",
+        "cuerpo": "Aún no hay un tramo anterior para comparar."
+      },
+      "sin_tarifa": {
+        "titulo": "Configura tu tarifa para ver el costo",
+        "cuerpo": "Los kWh se siguen mostrando."
+      }
+    }
+  },
+  "error": {
+    "no_es_administrador": {
+      "titulo": "Solo el administrador puede hacerlo",
+      "cuerpo": "Pídele al administrador del hogar que haga este cambio."
+    },
+    "sin_permiso_ver_consumo": {
+      "titulo": "No tienes permiso para ver el consumo actual",
+      "cuerpo": "Pídele acceso al administrador del hogar."
+    },
+    "sin_permiso_ver_historial": {
+      "titulo": "No tienes permiso para ver el historial",
+      "cuerpo": "Pídele acceso al administrador del hogar."
+    },
+    "sin_permiso_recibir_alertas": {
+      "titulo": "No recibes alertas",
+      "cuerpo": "Pídele al administrador el permiso «Recibir alertas»."
+    },
+    "sin_permiso_modificar_metas": {
+      "titulo": "No puedes modificar la meta",
+      "cuerpo": "Pídele al administrador el permiso «Modificar metas»."
+    },
+    "admin_debe_transferir": {
+      "titulo": "Primero transfiere la administración",
+      "cuerpo": "Eres el administrador y hay otros miembros activos. Haz administrador a otra persona desde Miembros del hogar y luego {accion_pendiente}.",
+      "accion": "Ir a Miembros del hogar"
+    },
+    "admin_unico_miembro": {
+      "titulo": "¿Eliminar tu cuenta y tu hogar?",
+      "cuerpo": "Eres el único miembro de {hogar}: también se eliminarán el hogar y todo su historial. Esta acción no se puede deshacer.",
+      "accion": "Eliminar cuenta y hogar"
+    },
+    "membresia_activa_existente": {
+      "titulo": "Ya perteneces a un hogar",
+      "cuerpo": "Para unirte a otro, primero debes salir de tu hogar actual."
+    },
+    "invitacion_expirada": {
+      "titulo": "Esta invitación ya no está disponible",
+      "cuerpo": "Venció o fue cancelada. Pide una nueva invitación o crea tu propio hogar.",
+      "accion": "Crear mi hogar"
+    },
+    "invitacion_no_pendiente": {
+      "titulo": "Esta invitación ya no está disponible",
+      "cuerpo": "Ya no se puede usar. Pide una nueva invitación o crea tu propio hogar.",
+      "accion": "Crear mi hogar"
+    },
+    "invitacion_pendiente_existente": {
+      "titulo": "Ya hay una invitación pendiente para este correo",
+      "cuerpo": "Puedes cancelarla en Miembros del hogar y volver a invitar."
+    },
+    "ya_es_miembro": {
+      "titulo": "Esta persona ya es miembro del hogar",
+      "cuerpo": "Escribe el correo de otra persona."
+    },
+    "correo_no_coincide": {
+      "titulo": "Esta invitación es para otro correo",
+      "cuerpo": "Inicia sesión con el correo al que llegó la invitación.",
+      "accion": "Cerrar sesión"
+    },
+    "zonas_no_permitidas": {
+      "titulo": "Algunas zonas no aplican a tu vivienda",
+      "cuerpo": "Terraza, garaje y cuarto de servicio no aplican a apartaestudio."
+    },
+    "zonas_basicas_faltantes": {
+      "titulo": "Faltan zonas básicas",
+      "cuerpo": "Incluye las 4 zonas básicas: Baño, Cocina, Dormitorio y Sala."
+    },
+    "cantidad_zonas_invalida": {
+      "titulo": "Cantidad de zonas no válida",
+      "cuerpo": "En apartaestudio elige de 3 a 5 zonas."
+    },
+    "zonas_duplicadas": {
+      "titulo": "Hay zonas repetidas",
+      "cuerpo": "Revisa tu selección."
+    },
+    "vigencia_no_posterior": {
+      "titulo": "Fecha no válida",
+      "cuerpo": "Debe ser posterior a tu tarifa vigente ({mes_anio})."
+    },
+    "contrasena_actual_incorrecta": {
+      "titulo": "La contraseña actual no es correcta",
+      "cuerpo": "Revísala e inténtalo de nuevo."
+    },
+    "contrasena_no_cumple_reglas": {
+      "titulo": "La contraseña no cumple los requisitos",
+      "cuerpo": "Usa mínimo 8 caracteres, una mayúscula y un número."
+    },
+    "contrasena_igual_a_actual": {
+      "titulo": "La nueva contraseña debe ser diferente",
+      "cuerpo": "Elige una contraseña distinta a la actual."
+    },
+    "backfill_fallido": {
+      "titulo": "No pudimos crear tu hogar",
+      "cuerpo": "No se guardó ningún dato. Revisa tu conexión e inténtalo de nuevo.",
+      "accion": "Reintentar"
+    },
+    "validacion": {
+      "titulo": "Revisa los datos marcados",
+      "cuerpo": "Corrige los campos señalados e inténtalo de nuevo."
+    },
+    "ficha_no_creada": {
+      "interno": "(sin mensaje)"
+    },
+    "ficha_existente": {
+      "interno": "(sin mensaje)"
+    },
+    "app": {
+      "sin_conexion": {
+        "titulo": "Sin conexión",
+        "cuerpo": "Revisa tu conexión a internet e inténtalo de nuevo.",
+        "accion": "Reintentar"
+      },
+      "sesion_vencida": {
+        "titulo": "Tu sesión venció",
+        "cuerpo": "Inicia sesión de nuevo para continuar.",
+        "accion": "Iniciar sesión"
+      },
+      "error_servidor": {
+        "titulo": "Algo salió mal de nuestro lado",
+        "cuerpo": "Inténtalo de nuevo en unos minutos.",
+        "accion": "Reintentar"
+      },
+      "tiempo_agotado": {
+        "titulo": "Esto tardó más de lo esperado",
+        "cuerpo": "Inténtalo de nuevo.",
+        "accion": "Reintentar"
+      },
+      "no_encontrado": {
+        "titulo": "No encontramos esta información",
+        "cuerpo": "Puede que ya no tengas acceso al hogar. Vuelve al inicio.",
+        "accion": "Ir al inicio"
+      },
+      "enlace_correo_vencido": {
+        "titulo": "Este enlace ya no es válido",
+        "cuerpo": "Puede haber vencido o ya se usó. Solicita uno nuevo desde la app.",
+        "accion": "Volver a iniciar sesión"
+      },
+      "desconocido": {
+        "titulo": "Algo no salió bien",
+        "cuerpo": "No pudimos completar la acción. Inténtalo de nuevo.",
+        "accion": "Reintentar"
+      }
+    },
+    "campo": {
+      "requerido": "Este campo es obligatorio.",
+      "correo_invalido": "Escribe un correo válido.",
+      "correos_no_coinciden": "Los correos no coinciden.",
+      "contrasenas_no_coinciden": "Las contraseñas no coinciden.",
+      "nombre_requerido": "Escribe tu nombre completo.",
+      "hogar_nombre_requerido": "Escribe el nombre de tu hogar.",
+      "telefono_invalido": "Escribe un número de celular válido.",
+      "meta_mayor_cero": "La meta debe ser mayor que 0.",
+      "precio_requerido": "Escribe el valor por kWh.",
+      "precio_mayor_cero": "El valor por kWh debe ser mayor que 0.",
+      "cargo_fijo_invalido": "Escribe un valor válido o déjalo vacío.",
+      "vigencia_requerida": "Elige desde qué mes aplica la tarifa.",
+      "vigencia_futura": "No se eligen meses futuros.",
+      "vivienda_requerida": "Elige el tipo de vivienda.",
+      "zonas_minimas": "Elige al menos 3 zonas básicas.",
+      "estrato_requerido": "Selecciona tu estrato.",
+      "ciudad_requerida": "Escribe tu ciudad o municipio.",
+      "personas_minimo": "Debe haber al menos 1 persona."
+    },
+    "limite_miembros": {
+      "invitar": {
+        "titulo": "Ya no quedan cupos",
+        "cuerpo": "El hogar tiene 5 entre miembros activos e invitaciones pendientes. Cancela una invitación o espera a que alguien salga."
+      },
+      "aceptar": {
+        "titulo": "Este hogar ya está completo",
+        "cuerpo": "Pide al administrador que libere un cupo e inténtalo de nuevo."
+      },
+      "titulo": "Ya no quedan cupos",
+      "cuerpo": "El hogar tiene 5 entre miembros activos e invitaciones pendientes. Cancela una invitación o espera a que alguien salga."
+    }
+  },
+  "comun": {
+    "iniciar_sesion": "Iniciar sesión",
+    "crear_cuenta": "Crear cuenta",
+    "continuar": "Continuar",
+    "cancelar": "Cancelar",
+    "guardar": "Guardar",
+    "volver": "Volver",
+    "reintentar": "Reintentar",
+    "cerrar": "Cerrar",
+    "aceptar": "Aceptar",
+    "rechazar": "Rechazar",
+    "eliminar": "Eliminar",
+    "editar": "Editar",
+    "ver_consejos": "Ver consejos",
+    "configurar_tarifa": "Configurar tarifa",
+    "opcional": "Opcional",
+    "proximamente": "Próximamente",
+    "general": "General",
+    "sin_dato": "—",
+    "kw": "kW",
+    "kwh": "kWh",
+    "cop": "COP",
+    "cargando": "Cargando…",
+    "activo": "Activo",
+    "pausado": "Pausado",
+    "tu": "(tú)",
+    "de": "de"
+  },
+  "nav": {
+    "principal": "Principal",
+    "historial": "Historial",
+    "zonas": "Zonas",
+    "consejos": "Consejos",
+    "configuracion": "Configuración"
+  },
+  "zona": {
+    "cocina": "Cocina",
+    "sala": "Sala",
+    "dormitorio": "Dormitorio",
+    "bano": "Baño",
+    "oficina": "Oficina",
+    "lavanderia": "Lavandería",
+    "terraza": "Terraza",
+    "garaje": "Garaje",
+    "cuarto_servicio": "Cuarto de servicio"
+  },
+  "vivienda": {
+    "apartamento": "Apartamento",
+    "apartaestudio": "Apartaestudio",
+    "casa": "Casa",
+    "casa_campestre": "Casa campestre",
+    "duplex": "Dúplex"
+  },
+  "rol": {
+    "administrador": "Administrador",
+    "miembro": "Miembro"
+  },
+  "formato": {
+    "saludo": {
+      "manana": "Buenos días, {nombre}",
+      "tarde": "Buenas tardes, {nombre}",
+      "noche": "Buenas noches, {nombre}"
+    },
+    "hoy_hasta": "Hoy hasta las {hora}",
+    "ultima_hora": "Última hora completa ({intervalo})",
+    "tiempo": {
+      "ahora": "Ahora",
+      "min": "Hace {n} min",
+      "hora": "Hace {n} h",
+      "ayer": "Ayer",
+      "dias": {
+        "zero": "Hoy",
+        "one": "Hace 1 día",
+        "other": "Hace {n} días"
+      },
+      "fecha": "{dd}/{mm}"
+    },
+    "vence": {
+      "dias": {
+        "zero": "Vence hoy",
+        "one": "Vence en 1 día",
+        "other": "Vence en {n} días"
+      }
+    },
+    "dia_corto": {
+      "lun": "Lun",
+      "mar": "Mar",
+      "mie": "Mié",
+      "jue": "Jue",
+      "vie": "Vie",
+      "sab": "Sáb",
+      "dom": "Dom"
+    },
+    "dia": {
+      "lun": "lunes",
+      "mar": "martes",
+      "mie": "miércoles",
+      "jue": "jueves",
+      "vie": "viernes",
+      "sab": "sábado",
+      "dom": "domingo"
+    },
+    "mes": {
+      "01": "enero",
+      "02": "febrero",
+      "03": "marzo",
+      "04": "abril",
+      "05": "mayo",
+      "06": "junio",
+      "07": "julio",
+      "08": "agosto",
+      "09": "septiembre",
+      "10": "octubre",
+      "11": "noviembre",
+      "12": "diciembre"
+    },
+    "mes_corto": {
+      "01": "Ene",
+      "02": "Feb",
+      "03": "Mar",
+      "04": "Abr",
+      "05": "May",
+      "06": "Jun",
+      "07": "Jul",
+      "08": "Ago",
+      "09": "Sep",
+      "10": "Oct",
+      "11": "Nov",
+      "12": "Dic"
+    },
+    "mes_anio": "{mes} de {anio}",
+    "periodo": {
+      "dia": "Día",
+      "semana": "Semana",
+      "mes": "Mes"
+    },
+    "cierre": {
+      "dia": "del día",
+      "semana": "de la semana",
+      "mes": "del mes"
+    }
+  },
+  "a11y": {
+    "volver": "Volver",
+    "campana": "Abrir alertas",
+    "campana_no_leidas": {
+      "zero": "Abrir alertas",
+      "one": "Abrir alertas, 1 sin leer",
+      "other": "Abrir alertas, {n} sin leer"
+    },
+    "mostrar_contrasena": "Mostrar contraseña",
+    "ocultar_contrasena": "Ocultar contraseña",
+    "vista_larga": "Ver zonas en vista larga",
+    "vista_compacta": "Ver zonas en vista compacta",
+    "ver_gauge": "Ver como indicador circular",
+    "ver_anillo": "Ver como anillo",
+    "meta_menos": "Reducir meta",
+    "meta_mas": "Aumentar meta",
+    "consejo_marcar": "Marcar consejo como completado",
+    "consejo_desmarcar": "Desmarcar consejo completado",
+    "alerta_no_leida": "No leída",
+    "alerta_leida": "Leída",
+    "menu_acciones": "Abrir menú de acciones de {nombre}",
+    "cambiar_foto": "Cambiar foto de perfil",
+    "zona_elegida": "{zona}, elegida",
+    "zona_no_elegida": "{zona}, sin elegir",
+    "zona_no_disponible": "{zona}, no disponible",
+    "grafico_barras": "Gráfico de barras de {periodo}. Pico: {valor}, {cuando}.",
+    "grafico_linea": "Gráfico de línea de {periodo}. Pico: {valor}, {cuando}.",
+    "grafico_anillo": "Participación por zona en {periodo}. {zonas}.",
+    "grafico_sin_pico": "Gráfico de {periodo}. No hay picos.",
+    "gauge": "Consumo actual: {valor}. Estado {estado}."
+  },
+  "auth": {
+    "inicio": {
+      "marca": "Zentheris"
+    },
+    "login": {
+      "titulo": "Iniciar sesión",
+      "subtitulo": "Ingresa tus datos para acceder a la cuenta.",
+      "correo": "Correo electrónico",
+      "correo_ph": "nombre@correo.com",
+      "contrasena": "Contraseña",
+      "contrasena_ph": "••••••••",
+      "olvidaste": "¿Olvidaste tu contraseña?",
+      "sin_cuenta": "¿No tienes cuenta?",
+      "boton": "Iniciar sesión"
+    },
+    "registro": {
+      "titulo": "Crear cuenta",
+      "subtitulo": "Completa tus datos para crear tu cuenta.",
+      "nombre": "Nombre completo",
+      "nombre_ph": "Nombre y apellido",
+      "celular": "Celular (opcional)",
+      "celular_ph": "300 123 4567",
+      "repetir": "Repetir contraseña",
+      "con_cuenta": "¿Ya tienes cuenta?",
+      "boton": "Crear cuenta"
+    },
+    "requisitos": {
+      "titulo": "Tu contraseña debe incluir:",
+      "minimo": "Mínimo 8 caracteres",
+      "mayuscula": "Una mayúscula",
+      "numero": "Un número",
+      "diferente": "Diferente a la actual"
+    },
+    "revisa_correo": {
+      "titulo": "Revisa tu correo",
+      "registro": "Enviamos un enlace a {correo} para confirmar tu cuenta. Ábrelo desde este teléfono para continuar.",
+      "recuperacion": "Si {correo} está registrado, recibirás un enlace para crear una nueva contraseña.",
+      "cambio_correo": "Enviamos un enlace a {correo}. Tu correo cambiará cuando lo confirmes; mientras tanto sigues usando el actual.",
+      "no_llego": "¿No llegó? Revisa la carpeta de spam o reenvíalo.",
+      "reenviar": "Reenviar enlace",
+      "reenviado": "Enlace reenviado.",
+      "volver_login": "Volver a iniciar sesión",
+      "volver_config": "Volver a Configuración"
+    },
+    "recuperar": {
+      "encabezado": "Recuperar contraseña",
+      "titulo": "¿Olvidaste tu contraseña?",
+      "cuerpo": "Escribe el correo de tu cuenta y te enviaremos un enlace para crear una nueva.",
+      "ayuda": "Si el correo está registrado, recibirás el enlace en unos minutos.",
+      "boton": "Enviar enlace"
+    },
+    "restablecer": {
+      "encabezado": "Nueva contraseña",
+      "titulo": "Crea una nueva contraseña",
+      "cuerpo": "Úsala para iniciar sesión en Zentheris.",
+      "nueva": "Nueva contraseña",
+      "confirmar": "Confirmar contraseña",
+      "boton": "Guardar contraseña",
+      "exito": "Contraseña actualizada. Ya puedes iniciar sesión.",
+      "vencido_titulo": "Este enlace ya no es válido",
+      "vencido_cuerpo": "Puede haber vencido o ya se usó. Solicita uno nuevo para cambiar tu contraseña.",
+      "vencido_boton": "Solicitar un nuevo enlace"
+    }
+  },
+  "onboarding": {
+    "paso": "Paso {n} de 2",
+    "titulo": "Crea tu hogar",
+    "hogar": "Nombre del hogar",
+    "hogar_ph": "Ej. Casa García",
+    "vivienda": "Tipo de vivienda",
+    "aviso_vivienda_titulo": "El tipo de vivienda define tus zonas",
+    "aviso_vivienda_cuerpo": "En el siguiente paso verás las zonas disponibles para tu vivienda.",
+    "zonas_titulo": "Elige las zonas de tu hogar",
+    "zonas_aviso": "Las zonas no se pueden cambiar después de crear el hogar.",
+    "zonas_contador": {
+      "zero": "Ninguna zona elegida",
+      "one": "1 zona elegida",
+      "other": "{n} zonas elegidas"
+    },
+    "zonas_contador_estudio": "{n} de 5 zonas",
+    "seccion_basicas": "Básicas · incluidas",
+    "seccion_adicionales": "Adicionales",
+    "zona_basica": "Básica",
+    "zona_agregar": "Agregar",
+    "zona_elegida": "Elegida",
+    "zona_no_disponible": "No disponible",
+    "basicas_titulo": "Las 4 zonas básicas vienen incluidas",
+    "basicas_cuerpo": "En apartamento, casa, dúplex y casa campestre no se pueden quitar.",
+    "estudio_ayuda": "En apartaestudio eliges de 3 a 5 zonas; al menos 3 deben ser básicas. Las zonas no se pueden cambiar después.",
+    "maximo_titulo": "Llegaste al máximo de 5 zonas",
+    "maximo_cuerpo": "Quita una zona para elegir otra. Terraza, garaje y cuarto de servicio no aplican a apartaestudio.",
+    "ajuste_zonas": "Ajustamos tus zonas a las que permite {vivienda}.",
+    "crear": "Crear mi hogar",
+    "cerrar_sesion": "Cerrar sesión",
+    "cerrar_sesion_dialogo": {
+      "titulo": "¿Cerrar sesión?",
+      "cuerpo": "Se cancelará la creación de tu hogar y no se guardará nada. Al volver a entrar, empezarás de cero.",
+      "confirmar": "Cerrar sesión",
+      "cancelar": "Cancelar"
+    }
+  },
+  "carga": {
+    "preparando": "Preparando y analizando tu hogar…",
+    "volver_datos": "Volver a mis datos"
+  },
+  "invitacion": {
+    "titulo": "Te invitaron a un hogar",
+    "cuerpo": "Acepta para ver el consumo y las alertas del hogar según los permisos que te asignen.",
+    "card_hogar": "{hogar}",
+    "card_texto": "{invitador} te invitó a unirte a su hogar.",
+    "vence": "La invitación vence el {fecha}.",
+    "aceptar": "Aceptar invitación",
+    "rechazar": "Rechazar",
+    "rechazar_ayuda": "Si rechazas, podrás crear tu propio hogar.",
+    "cerrar_sesion": "Cerrar sesión",
+    "aceptada": "Ya eres parte de {hogar}.",
+    "rechazada": "Rechazaste la invitación."
+  },
+  "panel": {
+    "encabezado": "Panel principal",
+    "consumo_actual": "Consumo actual · {intervalo}",
+    "acumulado": "Consumo acumulado · Hoy hasta las {hora}",
+    "progreso_meta": "Progreso frente al límite diario",
+    "limite": "Límite",
+    "progreso_promedio": "Frente a tu promedio hasta esta hora",
+    "zonas": "Zonas"
+  },
+  "zonas": {
+    "encabezado": "Zonas",
+    "ultima_hora": "{zona} · Última hora completa ({intervalo})",
+    "estado_actual": "{zona} · Estado actual",
+    "participacion": "{zona} · Participación",
+    "porcentaje_total": "{pct} del total"
+  },
+  "historial": {
+    "encabezado": "Historial",
+    "filtrar_zona": "Filtrar por zona:",
+    "este_periodo": "Este periodo",
+    "periodo_anterior": "Periodo anterior",
+    "pico_dia": "Pico del periodo · Hoy",
+    "pico_semana": "Pico del periodo · Esta semana",
+    "pico_mes": "Pico del periodo · Este mes",
+    "consumo_dia": "Consumo de hoy · {tramo}",
+    "consumo_semana": "Consumo de esta semana · {tramo}",
+    "consumo_mes": "Consumo de este mes · {tramo}",
+    "comparacion_dia": "Comparación · Hoy vs ayer ({tramo})",
+    "comparacion_semana": "Comparación · Esta semana vs la anterior ({tramo})",
+    "comparacion_mes": "Comparación · Este mes vs el anterior (mismo tramo)",
+    "costo_dia": "Costo estimado · Hoy",
+    "costo_semana": "Costo estimado · Esta semana",
+    "costo_mes": "Costo estimado · Este mes",
+    "proyeccion": "Proyección al cierre {periodo_cierre}: {valor}",
+    "proyeccion_mes": "Proyección al cierre del mes (incluye cargo fijo): {valor}",
+    "anillo_titulo": "Por zona · {periodo} · {tramo}",
+    "anillo_otras": "Otras zonas",
+    "anillo_total_dia": "Total hoy",
+    "anillo_total_semana": "Esta semana",
+    "anillo_total_mes": "Este mes",
+    "faltan_titulo": "Falta la lectura de la última hora",
+    "faltan_cuerpo": "El Día se muestra hasta la última hora con datos; las horas faltantes no cuentan como cero.",
+    "sin_tarifa_titulo": "Configura tu tarifa para ver el costo",
+    "sin_tarifa_cuerpo": "Los kWh se siguen mostrando."
+  },
+  "consejos": {
+    "encabezado": "Consejos",
+    "prioridad_alta": "Alta prioridad",
+    "prioridad_media": "Media prioridad",
+    "prioridad_baja": "Baja prioridad",
+    "completado": "Completado",
+    "vacio_titulo": "¡Todo bajo control!",
+    "vacio_cuerpo": "No tienes consejos pendientes por ahora. Revisa más tarde para nuevas recomendaciones de ahorro."
+  },
+  "alertas": {
+    "encabezado": "Alertas",
+    "filtro_todas": "Todas",
+    "filtro_consumos": "Consumos",
+    "filtro_consejos": "Consejos",
+    "filtro_informacion": "Información",
+    "vacio_titulo": "No tienes alertas",
+    "vacio_cuerpo": "Aquí verás los avisos de consumo, consejos e información del hogar.",
+    "vacio_filtro": "No hay alertas en esta categoría."
+  },
+  "config": {
+    "encabezado": "Configuración",
+    "sec_cuenta": "Cuenta",
+    "sec_notificaciones": "Notificaciones",
+    "sec_energia": "Energía y consumo",
+    "sec_familia": "Familia y acceso",
+    "sec_transicion": "Hogar y transición energética",
+    "sec_otros": "Otros",
+    "sec_riesgo": "Zona de riesgo",
+    "perfil_t": "Editar perfil",
+    "perfil_d": "Actualiza tu información personal",
+    "contrasena_t": "Cambiar contraseña",
+    "contrasena_d": "Contraseña y autenticación",
+    "correo_t": "Correo electrónico",
+    "correo_d": "Gestiona tu correo de acceso",
+    "alertas_t": "Alertas",
+    "alertas_d": "Avisos de consumo e información del hogar",
+    "consejos_t": "Consejos",
+    "consejos_d": "Recibe recomendaciones de ahorro",
+    "meta_consumo_t": "Meta de consumo",
+    "meta_consumo_d": "Encendido: compara con tu meta. Apagado: con tu promedio.",
+    "meta_t": "Establecer meta",
+    "meta_d": "Define tu objetivo mensual",
+    "meta_d_activa": "Meta actual: {valor} kWh al mes",
+    "tarifa_t": "Configurar tarifa",
+    "tarifa_d": "Valor por kWh para estimar el costo",
+    "fuentes_t": "Fuentes de datos",
+    "fuentes_d": "Consulta la fuente principal y los sensores por zona",
+    "miembros_t": "Administrar miembros del hogar",
+    "miembros_d": "Gestiona el acceso compartido",
+    "miembros_t_lectura": "Miembros del hogar",
+    "miembros_d_lectura": "Consulta quién pertenece al hogar",
+    "hogar_t": "Información del hogar",
+    "hogar_d": "Recomendaciones sobre energías renovables",
+    "huella_t": "Mi huella de carbono",
+    "huella_d": "Conoce el impacto ambiental de tu consumo",
+    "salir_t": "Cerrar sesión",
+    "salir_d": "Finaliza la sesión en este dispositivo",
+    "salir_boton": "Cerrar",
+    "eliminar_t": "Eliminar cuenta",
+    "eliminar_d": "Esta acción no se puede deshacer",
+    "eliminar_boton": "Eliminar"
+  },
+  "perfil": {
+    "encabezado": "Editar perfil",
+    "seccion": "Información personal",
+    "seccion_d": "Datos principales asociados a tu cuenta",
+    "nombre": "Nombre completo",
+    "correo": "Correo",
+    "correo_edicion": "Correo (se cambia en Gestionar correo)",
+    "telefono": "Teléfono",
+    "telefono_edicion": "Teléfono (opcional)",
+    "acciones": "Acciones",
+    "acciones_d": "Edita tu nombre y teléfono",
+    "editar": "Editar información",
+    "editar_d": "Actualiza tus datos personales",
+    "guardar": "Guardar cambios",
+    "cancelar": "Cancelar",
+    "foto_titulo": "Foto de perfil",
+    "foto_cuerpo": "Elige una opción.",
+    "foto_galeria": "Elegir de la galería",
+    "foto_eliminar": "Eliminar foto"
+  },
+  "contrasena": {
+    "encabezado": "Cambiar contraseña",
+    "titulo": "Protege tu cuenta",
+    "cuerpo": "Verifica tu contraseña actual antes de crear una nueva.",
+    "actual": "Contraseña actual",
+    "nueva": "Nueva contraseña",
+    "confirmar": "Confirmar contraseña",
+    "boton": "Guardar nueva contraseña"
+  },
+  "correo": {
+    "encabezado": "Gestionar correo",
+    "titulo": "Correo de acceso",
+    "cuerpo": "Este correo se utiliza para iniciar sesión y recibir avisos de tu cuenta.",
+    "actual": "Correo actual",
+    "nuevo": "Nuevo correo",
+    "nuevo_ph": "nuevo@correo.com",
+    "confirmar": "Confirmar correo",
+    "confirmar_ph": "Repite el nuevo correo",
+    "verif_titulo": "Verificación de correo",
+    "verif_cuerpo": "Enviaremos un enlace de confirmación al nuevo correo. El cambio se aplica cuando lo abras.",
+    "paso": "Paso siguiente",
+    "boton": "Continuar"
+  },
+  "meta": {
+    "encabezado": "Establecer meta",
+    "promedio_titulo": "Consumo promedio actual",
+    "promedio_periodo": "Últimos 30 días",
+    "promedio_valor": "{kwh_dia} kWh/día",
+    "promedio_ayuda": "Referencia de tu consumo",
+    "define_titulo": "Define tu meta",
+    "define_cuerpo": "Elige cómo quieres medir tus objetivos de consumo.",
+    "mensual": "Meta mensual",
+    "por_mes": "Por mes",
+    "valor": "{valor} kWh",
+    "equivale": "Equivale a {kwh_dia} kWh por día en {mes} ({dias} días).",
+    "tipo_titulo": "Tipo de meta",
+    "tipo_ayuda": "Selecciona el enfoque que quieres priorizar.",
+    "boton": "Guardar meta",
+    "guardada": "Meta guardada.",
+    "lectura_titulo": "No puedes modificar la meta",
+    "lectura_cuerpo": "Pídele al administrador el permiso «Modificar metas».",
+    "error_cero": "La meta debe ser mayor que 0.",
+    "tipo": {
+      "ahorro": {
+        "etiqueta": "Ahorro",
+        "descripcion": "Reduce tu consumo con respecto al promedio de los últimos 30 días.",
+        "objetivo_dia": "tu meta de ahorro de hoy"
+      },
+      "eficiencia": {
+        "etiqueta": "Eficiencia",
+        "descripcion": "Usa la energía que necesitas, sin picos ni desperdicios.",
+        "objetivo_dia": "tu meta de eficiencia de hoy"
+      },
+      "presupuesto": {
+        "etiqueta": "Presupuesto",
+        "descripcion": "Fija un tope de kWh para el mes y mantente dentro de él.",
+        "objetivo_dia": "tu presupuesto de energía de hoy"
+      }
+    }
+  },
+  "tarifa": {
+    "encabezado": "Configurar tarifa",
+    "activa": "Tarifa activa",
+    "activa_chip": "Activa",
+    "valor_kwh": "{valor} / kWh",
+    "vigente_desde_resumen": "Vigente desde {mes_anio}",
+    "editar": "Editar tarifa",
+    "actualizar_titulo": "Actualizar tarifa",
+    "actualizar_cuerpo": "Usaremos esta información para estimar el costo de tu consumo.",
+    "operador": "Operador (opcional)",
+    "operador_ph": "Elige un operador",
+    "precio": "Valor aplicado de energía*",
+    "precio_ayuda": "Consulta el valor aplicado por kWh en tu factura.",
+    "vigencia": "Vigente desde*",
+    "vigencia_ph": "Elige mes y año",
+    "cargo_fijo": "Cargo fijo mensual (opcional)",
+    "cargo_fijo_ph": "Ej. 12.000",
+    "aviso": "Es una estimación: puede no incluir subsidios, contribuciones u otros cobros de tu factura.",
+    "guardar": "Guardar tarifa",
+    "guardada": "Tarifa guardada.",
+    "lectura_titulo": "Solo el administrador cambia la tarifa",
+    "lectura_cuerpo": "Puedes consultarla; los costos en COP se calculan con ella.",
+    "sin_tarifa_titulo": "Aún no hay una tarifa vigente",
+    "sin_tarifa_cuerpo": "Configúrala para ver los costos en COP. Los kWh se siguen mostrando.",
+    "hoja_operador_titulo": "Operador",
+    "hoja_operador_apoyo": "Opcional. Elige el operador que aparece en tu factura.",
+    "hoja_vigencia_titulo": "Vigente desde",
+    "hoja_vigencia_ayuda": "Debe ser posterior a la tarifa vigente ({mes_anio}). No se eligen meses futuros.",
+    "hoja_vigencia_mes": "Mes",
+    "hoja_vigencia_anio": "Año",
+    "hoja_vigencia_aplicar": "Aplicar · {mes_anio}",
+    "operadores": {
+      "1": "Afinia",
+      "2": "Air-e",
+      "3": "CHEC",
+      "4": "Celsia",
+      "5": "Enel Colombia",
+      "6": "EPM",
+      "7": "ESSA",
+      "8": "Otro operador"
+    }
+  },
+  "fuentes": {
+    "encabezado": "Fuentes de datos",
+    "intro": "Consulta de solo lectura de la fuente principal y de los sensores de cada zona.",
+    "principal": "Fuente principal",
+    "principal_nombre": "Fuente principal {hogar}",
+    "principal_suma": "Suma de los sensores activos",
+    "sensores": "Sensores por zona",
+    "sensor_nombre": "Sensor {zona}",
+    "estado_activo": "Activo",
+    "estado_pausado": "Pausado",
+    "estado_sin_datos": "Sin datos",
+    "pie": "Valores en kW de la última hora completa ({intervalo}). «Sin datos» significa que no llegó la lectura de esa hora; no es consumo cero.",
+    "sin_permiso_titulo": "No tienes permiso para ver el consumo actual",
+    "sin_permiso_cuerpo": "Ves las fuentes y su estado, pero no los valores en kW. Pídele acceso al administrador."
+  },
+  "miembros": {
+    "encabezado": "Miembros del hogar",
+    "resumen": {
+      "zero": "Sin miembros activos",
+      "one": "1 miembro activo",
+      "other": "{n} miembros activos"
+    },
+    "subtitulo_admin": "Gestiona quién pertenece a tu hogar y qué puede ver.",
+    "subtitulo_miembro": "Solo el administrador puede invitar personas y cambiar los permisos.",
+    "estado_activo": "Activo",
+    "estado_pendiente": "Pendiente",
+    "pendientes_titulo": "Invitaciones pendientes",
+    "pendientes_ayuda": "Solo tú ves las invitaciones pendientes.",
+    "permisos_titulo": "Permisos de los miembros",
+    "permisos_admin": "Aplican a todos los miembros. El administrador siempre tiene acceso total.",
+    "permisos_lectura": "Permisos generales del hogar (solo lectura).",
+    "perm_consumo": "Ver consumo actual",
+    "perm_historial": "Ver historial completo",
+    "perm_alertas": "Recibir alertas",
+    "perm_metas": "Modificar metas",
+    "perm_si": "Permitido",
+    "perm_no": "No permitido",
+    "invitar": "Invitar miembro",
+    "cupos": {
+      "zero": "Ya no quedan cupos de 5 (miembros activos más invitaciones pendientes).",
+      "one": "Queda 1 cupo de 5 (miembros activos más invitaciones pendientes).",
+      "other": "Quedan {n} cupos de 5 (miembros activos más invitaciones pendientes)."
+    },
+    "salir": "Salir del hogar",
+    "menu_miembro": "Miembro · Activo",
+    "menu_transferir": "Transferir administración",
+    "menu_expulsar": "Expulsar del hogar",
+    "menu_cancelar_inv": "Cancelar invitación",
+    "menu_invitacion": "Invitación pendiente · {vence}",
+    "permiso_actualizado": "Permisos actualizados."
+  },
+  "invitar": {
+    "encabezado": "Invitar miembro",
+    "titulo": "Invita a alguien a tu hogar",
+    "cuerpo": "Le enviaremos un enlace por correo. Si aún no tiene cuenta, deberá crearla antes de aceptar.",
+    "correo": "Correo de la persona",
+    "correo_ph": "nombre@correo.com",
+    "cupos": {
+      "zero": "Hasta 5 miembros activos, contando invitaciones pendientes. No quedan cupos.",
+      "one": "Hasta 5 miembros activos, contando invitaciones pendientes. Queda 1 cupo.",
+      "other": "Hasta 5 miembros activos, contando invitaciones pendientes. Quedan {n} cupos."
+    },
+    "boton": "Enviar invitación",
+    "enviada_titulo": "Invitación enviada",
+    "enviada_cuerpo": "Le enviamos un enlace a {correo}. Vence en 7 días.",
+    "otra": "Invitar a otra persona"
+  },
+  "dialogo": {
+    "expulsar": {
+      "titulo": "¿Expulsar a {nombre}?",
+      "cuerpo": "Dejará de ver la información de {hogar}. Podrás invitar a esta persona de nuevo más adelante.",
+      "confirmar": "Expulsar",
+      "cancelar": "Cancelar"
+    },
+    "transferir": {
+      "titulo": "¿Transferir la administración a {nombre}?",
+      "cuerpo": "{nombre} tendrá el control del hogar y tú pasarás a ser miembro. No necesita aceptar.",
+      "confirmar": "Transferir administración",
+      "cancelar": "Cancelar"
+    },
+    "cancelar_invitacion": {
+      "titulo": "¿Cancelar la invitación?",
+      "cuerpo": "El enlace enviado a {correo} dejará de funcionar.",
+      "confirmar": "Cancelar invitación",
+      "cancelar": "Volver"
+    },
+    "salir_hogar": {
+      "titulo": "¿Salir de {hogar}?",
+      "cuerpo": "Dejarás de ver el consumo y las alertas de este hogar. Para volver necesitarás una nueva invitación.",
+      "confirmar": "Salir del hogar",
+      "cancelar": "Cancelar"
+    },
+    "eliminar_cuenta": {
+      "titulo": "¿Eliminar tu cuenta?",
+      "cuerpo": "Se borrarán tus datos personales y tu foto, y saldrás del hogar. Los datos del hogar se conservan para los demás miembros. Esta acción no se puede deshacer.",
+      "confirmar": "Eliminar cuenta",
+      "cancelar": "Cancelar"
+    },
+    "eliminar_cuenta_hogar": {
+      "titulo": "¿Eliminar tu cuenta y tu hogar?",
+      "cuerpo": "Eres el único miembro de {hogar}: también se eliminarán el hogar y todo su historial. Esta acción no se puede deshacer.",
+      "confirmar": "Eliminar cuenta y hogar",
+      "cancelar": "Cancelar"
+    },
+    "debes_transferir": {
+      "titulo": "Primero transfiere la administración",
+      "cuerpo": "Eres el administrador y hay otros miembros activos. Haz administrador a otra persona desde Miembros del hogar y luego {accion_pendiente}.",
+      "confirmar": "Ir a Miembros del hogar",
+      "cancelar": "Cerrar"
+    }
+  },
+  "toast": {
+    "transferida": "Administración transferida.",
+    "expulsado": "Miembro expulsado del hogar.",
+    "invitacion_cancelada": "Invitación cancelada.",
+    "saliste": "Saliste del hogar.",
+    "cambios_guardados": "Cambios guardados.",
+    "foto_actualizada": "Foto actualizada.",
+    "foto_eliminada": "Foto eliminada.",
+    "contrasena_cambiada": "Contraseña actualizada.",
+    "cuenta_eliminada": "Tu cuenta fue eliminada."
+  },
+  "fase2": {
+    "encabezado": "Datos y transición",
+    "titulo": "Prepara tu transición energética",
+    "cuerpo": "Registra la información de tu hogar para recibir recomendaciones sobre energías renovables.",
+    "hogar_titulo": "Información del hogar",
+    "hogar_cuerpo": "Estos datos se usarán para recomendaciones sobre energías renovables.",
+    "estrato": "Estrato*",
+    "estrato_ph": "Selecciona tu estrato",
+    "vivienda": "Tipo de vivienda*",
+    "vivienda_ph": "Selecciona una opción",
+    "ciudad": "Ciudad / municipio*",
+    "ciudad_ph": "Ej. Bogotá",
+    "personas": "Número de personas en el hogar*",
+    "personas_ph": "Ej. 4",
+    "remoto": "¿Trabajan o estudian desde casa?",
+    "perfil_titulo": "Perfil de transición energética",
+    "perfil_cuerpo": "Información para evaluar oportunidades de energía renovable.",
+    "techo": "Área del techo disponible (m²)",
+    "techo_ph": "Ej. 40 m²",
+    "factura": "Factura promedio mensual ($)",
+    "factura_ph": "Ej. $180.000",
+    "ev": "¿Tienes vehículo eléctrico?",
+    "presupuesto": "Presupuesto estimado para inversión ($)",
+    "presupuesto_ph": "Ej. $5.000.000",
+    "guardar": "Guardar información",
+    "pie": "Tus datos se usarán para recomendaciones sobre energías renovables (Fase 2).",
+    "solo_admin": "Solo el administrador puede editar estos datos",
+    "solo_admin_cuerpo": "Función de la Fase 2: en el MVP aparece como «Próximamente»."
+  }
+}

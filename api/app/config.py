@@ -24,6 +24,8 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
+        # Una variable vacía (`DATABASE_URL=` en la plantilla) cuenta como ausente.
+        env_ignore_empty=True,
     )
 
     database_url: SecretStr | None = Field(default=None, validation_alias="DATABASE_URL")

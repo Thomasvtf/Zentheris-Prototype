@@ -52,6 +52,22 @@ class ErrorResponse(BaseModel):
     detalles: dict[str, Any] | None = None
 
 
+# Descripciones de `components.responses` del contrato, por código HTTP.
+ERROR_DESCRIPTIONS = {
+    401: "Token ausente, inválido o vencido.",
+    403: "El usuario no tiene el rol o el permiso necesario.",
+    404: "El recurso no existe o el usuario no tiene membresía activa en ese hogar.",
+    409: "La operación choca con el estado actual (límites, membresía o invitación).",
+    422: "Los datos enviados no cumplen las reglas.",
+    500: "Error interno. En el onboarding, `BACKFILL_FALLIDO`; no queda ningún dato creado.",
+}
+
+
+def error_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
+    """Respuestas de error de una operación, con el esquema `Error` del contrato."""
+    return {code: {"model": ErrorResponse, "description": ERROR_DESCRIPTIONS[code]} for code in codes}
+
+
 class ApiError(Exception):
     """Error de negocio que la API devuelve con su código HTTP y su `codigo`."""
 

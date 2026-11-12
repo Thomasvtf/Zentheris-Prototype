@@ -38,6 +38,14 @@ export const fontFiles: Record<string, number> = {
 /** Indica si Satoshi está disponible en esta build. */
 export const hasSatoshi = satoshiBold !== null;
 
+if (__DEV__ && !hasSatoshi) {
+  // Solo en desarrollo: Satoshi no está en git (licencia ITF FFL, DC-06) y cada persona la descarga.
+  console.warn(
+    '[fonts] Falta app/assets/fonts/satoshi/Satoshi-Bold.otf: los títulos usan Inter Bold. ' +
+      'Descárgala de fontshare.com siguiendo app/assets/fonts/README.md.',
+  );
+}
+
 const WEIGHT_SUFFIX: Record<FontWeight, string> = {
   '400': 'Regular',
   '500': 'Medium',

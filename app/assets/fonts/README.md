@@ -10,6 +10,17 @@ Fuentes de la app. Las abiertas van como archivos, todas en TTF, cada una con su
 
 Los pesos son los de `docs/diseno/tokens.json` (`fontWeight`). Descargadas el 11/11/2026.
 
+## Satoshi: cómo instalarla en tu equipo (obligatoria para los títulos)
+
+Satoshi es la fuente de los títulos (rol `display` de los tokens). Su licencia (ITF Free Font License) permite usarla en la app, pero **no** subirla a un repositorio público; por eso cada persona la descarga:
+
+1. Entra a [fontshare.com/fonts/satoshi](https://www.fontshare.com/fonts/satoshi) y descarga la familia completa (botón de descarga; es gratis).
+2. Descomprime el archivo y copia **`Satoshi-Bold.otf`** (carpeta `Fonts/OTF/` del paquete) en **`app/assets/fonts/satoshi/Satoshi-Bold.otf`**, con ese nombre exacto.
+3. Reinicia Metro limpiando la caché: `npx expo start --clear`.
+4. Comprueba: en `/catalogo-componentes` el título de tipografía dice «Satoshi sí» y en la consola ya no aparece el aviso `[fonts] Falta …`.
+
+La carpeta `satoshi/` está en `.gitignore` (git no la sube) y **no** está en el `.easignore` de la raíz, así que las builds de EAS sí la incluyen (DC-06).
+
 ## SHA-256
 
 ```

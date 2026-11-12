@@ -13,7 +13,9 @@ App móvil de Zentheris: Expo (SDK 57), React Native y TypeScript, con expo-rout
 | Regenerar los tokens | `npm run generate:tokens` (desde `docs/diseno/tokens.json`) |
 | Regenerar los tipos de la API | `npm run generate:api-types` (desde el contrato) |
 
-Variables de entorno: copia [`.env.example`](.env.example) como `app/.env` y rellénalo (guía de claves v3). `app/.env` nunca se sube. Satoshi: ver [`assets/fonts/README.md`](assets/fonts/README.md).
+Variables de entorno: copia [`.env.example`](.env.example) como `app/.env` y rellénalo (guía de claves v3). `app/.env` nunca se sube.
+
+**Satoshi (obligatoria para los títulos):** descárgala de [fontshare.com/fonts/satoshi](https://www.fontshare.com/fonts/satoshi) y copia `Satoshi-Bold.otf` en `app/assets/fonts/satoshi/Satoshi-Bold.otf`. No se sube a git (licencia ITF FFL, DC-06). Pasos completos en [`assets/fonts/README.md`](assets/fonts/README.md).
 
 En desarrollo, la ruta `/catalogo-componentes` muestra tokens, fuentes, íconos, formatos y la prueba mínima de gráficos.
 

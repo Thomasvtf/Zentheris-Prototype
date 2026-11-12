@@ -25,3 +25,7 @@ jobs:
       - name: Ejecutar pruebas
         working-directory: ./api
         run: uv run pytest --cov=app --cov-report=term
+
+      - name: Comprobar copias de config_files (SHA-256)
+        working-directory: ./api
+        run: uv run python ../scripts/check_integration.py

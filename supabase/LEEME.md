@@ -1,7 +1,8 @@
 # Migraciones definitivas de Zentheris (6)
 
-**Estado (08/11/2026):** **aplicadas** en el proyecto definitivo `zentheris` (ref `hylseqruipigpewjfxmf`, organización «Zentheris»). La huella coincide al 100 % con el laboratorio `zentheris-dev` (ref `cjybhgmpiduwlaozjels`, «nicv25's Org»), donde pasaron 55 de 55 pruebas el 06/11/2026. Evidencia: `../entornos/definitivo/acta-migracion-2026-11-08.md`.
-**Fuente:** reglas v4.9 §3, `especificacion-supabase-v1.md`, decisiones DC-36 a DC-45.
+**Estado (08/11/2026):** **aplicadas** en el proyecto definitivo `zentheris` (ref `hylseqruipigpewjfxmf`, organización «Zentheris»). La huella coincide al 100 % con el laboratorio `zentheris-dev` (ref `cjybhgmpiduwlaozjels`, «nicv25's Org»), donde pasaron 55 de 55 pruebas el 06/11/2026. Evidencia: `Archivos_Zentheris/02_base-de-datos/entornos/definitivo/acta-migracion-2026-11-08.md`.
+**Fuente:** reglas v4.9 §3, [`docs/supabase/especificacion-supabase-v1.md`](../docs/supabase/especificacion-supabase-v1.md), decisiones DC-36 a DC-45.
+**Rutas `Archivos_Zentheris/…`:** están fuera de este repositorio, en la carpeta de documentación del proyecto.
 
 ## Orden, versión real y contenido
 
@@ -18,18 +19,18 @@ El nombre de cada archivo es `<version>_<nombre>.sql`, igual al historial de la 
 
 **Diferencia con el laboratorio:** allí hubo 8 migraciones. Las 07 y 08 solo ajustaron la política `invitaciones_leer`. Aquí ese ajuste ya viene dentro de la `0004`, así que el resultado final es idéntico.
 
-> Los archivos con el nombre antiguo (`0001_…` a `0006_…`) son copias idénticas (mismo SHA-256) que quedaron porque la sesión no podía borrar. Están en `../_LIMPIEZA-PENDIENTE.md`. **Usa solo los que empiezan por la versión.**
+> Los archivos con el nombre antiguo (`0001_…` a `0006_…`) son copias idénticas (mismo SHA-256) que quedaron porque la sesión no podía borrar. No se copiaron a este repositorio: aquí solo están los que empiezan por la versión.
 
 ## Cambios futuros
 
 1. Una migración aplicada **no se edita** (RN-XIX-02). Todo cambio es un archivo nuevo: `<version>_0007_<nombre>.sql`, y así en adelante.
-2. Se prueba primero en el laboratorio o en local, se revisa por PR y una persona designada la aplica en `zentheris` (ver `../guias/guia-integracion-github.md` §5).
-3. Si el cambio toca el esquema, se vuelve a ejecutar `../pruebas/verificacion_post_migracion.sql` y se **actualiza la huella** de abajo en el mismo PR.
-4. **No** se cargan los datos de prueba ni la función `pruebas.ejecutar()` en `zentheris`. Esos viven solo en el laboratorio (`entornos/zentheris-dev/`).
+2. Se prueba primero en el laboratorio o en local, se revisa por PR y una persona designada la aplica en `zentheris` (ver `Archivos_Zentheris/02_base-de-datos/guias/guia-integracion-github.md` §5).
+3. Si el cambio toca el esquema, se vuelve a ejecutar `Archivos_Zentheris/02_base-de-datos/pruebas/verificacion_post_migracion.sql` y se **actualiza la huella** de abajo en el mismo PR.
+4. **No** se cargan los datos de prueba ni la función `pruebas.ejecutar()` en `zentheris`. Esos viven solo en el laboratorio (`Archivos_Zentheris/02_base-de-datos/entornos/zentheris-dev/`).
 
 ## Huella esperada (comprobación final)
 
-Ejecuta `../pruebas/verificacion_post_migracion.sql`. Laboratorio (07/11/2026) y `zentheris` (08/11/2026) dan **exactamente** esto:
+Ejecuta `Archivos_Zentheris/02_base-de-datos/pruebas/verificacion_post_migracion.sql`. Laboratorio (07/11/2026) y `zentheris` (08/11/2026) dan **exactamente** esto:
 
 | Campo | Valor esperado |
 |---|---|

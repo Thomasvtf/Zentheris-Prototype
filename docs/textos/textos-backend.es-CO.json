@@ -1,0 +1,423 @@
+{
+  "_meta": {
+    "idioma": "es-CO",
+    "version": "1.0",
+    "fecha": "2026-11-02",
+    "estado": "APROBADO por Nicolás el 02/11/2026 (aprobación total), con salvedades",
+    "uso": "Archivo de configuración del backend (RN-XI-09). Al crear una alerta o un consejo, el backend renderiza el texto y lo guarda en alertas.titulo/mensaje y consejos.titulo/descripcion; no hay tabla de plantillas.",
+    "variables": "Se escriben {zona}; el backend las rellena (kW 2 decimales, kWh 1, hora HH:00).",
+    "variables_por_clave": {
+      "alertas.consumo_elevado": {
+        "zona": "nombre de la zona (RN-XII-03)",
+        "hora_ini": "inicio de la hora HH:00",
+        "hora_fin": "fin de la hora HH:00",
+        "kw": "potencia media, 2 decimales"
+      },
+      "alertas.consumo_critico": {
+        "zona": "...",
+        "hora_ini": "...",
+        "hora_fin": "...",
+        "kw": "..."
+      },
+      "alertas.cierre_mes_dentro": {
+        "mes": "nombre del mes (formato.mes)",
+        "kwh": "total del mes, 1 decimal",
+        "referencia": "«tu meta de N kWh» o «tu promedio de N kWh» según el hogar (RN-XIV-07 v4.8)"
+      },
+      "alertas.cierre_mes_encima": {
+        "mes": "...",
+        "kwh": "...",
+        "referencia": "..."
+      },
+      "alertas.nuevo_miembro": {
+        "nombre": "nombre del nuevo miembro",
+        "hogar": "nombre del hogar"
+      },
+      "alertas.nuevo_consejo_zona": {
+        "zona": "nombre de la zona"
+      },
+      "consejos.*.descripcion": {
+        "mes": "solo en consejos de cierre de mes"
+      },
+      "correos.invitacion": {
+        "invitador": "nombre de quien invita",
+        "hogar": "nombre del hogar",
+        "correo": "correo invitado",
+        "fecha_vencimiento": "fecha de vencimiento (7 días)",
+        "enlace": "enlace de invitación (token hasheado en BD)"
+      }
+    },
+    "nota_variables": "Las claves de estado (app) usan variables que la app calcula; ver catalogo.es-CO.json. Los textos de backend no usan variables fuera de esta lista."
+  },
+  "alertas": {
+    "consumo_elevado": {
+      "categoria": "consumo",
+      "severidad": "advertencia",
+      "regla_origen": "consumo_elevado",
+      "titulo": "Consumo elevado en {zona}",
+      "mensaje": "Entre las {hora_ini} y las {hora_fin}, {zona} tuvo un promedio de {kw} kW, más alto de lo habitual para esa hora."
+    },
+    "consumo_critico": {
+      "categoria": "consumo",
+      "severidad": "critica",
+      "regla_origen": "consumo_critico",
+      "titulo": "Consumo crítico en {zona}",
+      "mensaje": "Entre las {hora_ini} y las {hora_fin}, {zona} tuvo un promedio de {kw} kW, muy por encima de lo habitual para esa hora."
+    },
+    "cierre_mes_dentro": {
+      "categoria": "informacion",
+      "severidad": "informativa",
+      "regla_origen": "cierre_mes_dentro",
+      "titulo": "Cierre de {mes}: dentro de tu referencia",
+      "mensaje": "Cerraste {mes} con {kwh} kWh, dentro de {referencia}."
+    },
+    "cierre_mes_encima": {
+      "categoria": "informacion",
+      "severidad": "advertencia",
+      "regla_origen": "cierre_mes_encima",
+      "titulo": "Cierre de {mes}: por encima de tu referencia",
+      "mensaje": "Cerraste {mes} con {kwh} kWh, por encima de {referencia}. Revisa los consejos."
+    },
+    "nuevo_miembro": {
+      "categoria": "informacion",
+      "severidad": "informativa",
+      "regla_origen": "nuevo_miembro",
+      "titulo": "{nombre} se unió al hogar",
+      "mensaje": "{nombre} ya forma parte de {hogar}."
+    },
+    "nuevo_consejo_zona": {
+      "categoria": "consejo",
+      "severidad": "informativa",
+      "regla_origen": "nuevo_consejo_zona",
+      "titulo": "Nuevo consejo disponible",
+      "mensaje": "Tienes un consejo nuevo para {zona}. Revísalo en Consejos."
+    },
+    "nuevo_consejo_general": {
+      "categoria": "consejo",
+      "severidad": "informativa",
+      "regla_origen": "nuevo_consejo_general",
+      "titulo": "Nuevo consejo disponible",
+      "mensaje": "Tienes un consejo nuevo para revisar tus hábitos del mes. Revísalo en Consejos."
+    }
+  },
+  "consejos": [
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "cocina",
+      "prioridad": "media",
+      "variante": 1,
+      "titulo": "Revisa los equipos de la cocina",
+      "descripcion": "Comprueba qué electrodomésticos están encendidos y apaga los que no estés usando."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "cocina",
+      "prioridad": "media",
+      "variante": 2,
+      "titulo": "Cierra bien la nevera",
+      "descripcion": "Revisa que la puerta selle bien y evita abrirla más de lo necesario."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "cocina",
+      "prioridad": "alta",
+      "variante": 1,
+      "titulo": "Revisa ya los equipos de la cocina",
+      "descripcion": "El consumo de la cocina está muy alto. Apaga los equipos que no necesites y revisa los que siguen encendidos."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "cocina",
+      "prioridad": "alta",
+      "variante": 2,
+      "titulo": "Desenchufa lo que no uses en la cocina",
+      "descripcion": "Al terminar de usar hornos, freidoras o licuadoras, desenchúfalos y confirma que no queden encendidos."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "sala",
+      "prioridad": "media",
+      "variante": 1,
+      "titulo": "Apaga lo que no veas en la sala",
+      "descripcion": "Si nadie ve la televisión o usa el equipo de sonido, apágalos en lugar de dejarlos en espera."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "sala",
+      "prioridad": "media",
+      "variante": 2,
+      "titulo": "Aprovecha la luz natural en la sala",
+      "descripcion": "Durante el día, abre las cortinas y deja menos luces encendidas."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "sala",
+      "prioridad": "alta",
+      "variante": 1,
+      "titulo": "Revisa los equipos de la sala",
+      "descripcion": "El consumo de la sala está muy alto. Apaga televisor, consolas y luces que no estés usando."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "sala",
+      "prioridad": "alta",
+      "variante": 2,
+      "titulo": "Revisa el aire o ventilador de la sala",
+      "descripcion": "Si hay climatización encendida, confirma que la necesitas y que puertas y ventanas estén cerradas."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "dormitorio",
+      "prioridad": "media",
+      "variante": 1,
+      "titulo": "Apaga los equipos al dormir",
+      "descripcion": "Antes de acostarte, apaga el televisor y los cargadores que no necesites durante la noche."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "dormitorio",
+      "prioridad": "media",
+      "variante": 2,
+      "titulo": "Programa el termostato para la noche",
+      "descripcion": "Configura un horario acorde con tu rutina de descanso."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "dormitorio",
+      "prioridad": "alta",
+      "variante": 1,
+      "titulo": "Revisa el dormitorio ahora",
+      "descripcion": "El consumo del dormitorio está muy alto. Apaga los equipos que no estés usando."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "dormitorio",
+      "prioridad": "alta",
+      "variante": 2,
+      "titulo": "Apaga el aire acondicionado al salir",
+      "descripcion": "Antes de salir, comprueba que el equipo quede apagado."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "bano",
+      "prioridad": "media",
+      "variante": 1,
+      "titulo": "Apaga la luz del baño al salir",
+      "descripcion": "Es un hábito sencillo: apaga la luz cada vez que salgas, aunque vuelvas pronto."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "bano",
+      "prioridad": "media",
+      "variante": 2,
+      "titulo": "Revisa el calentador de agua",
+      "descripcion": "Si usas calentador eléctrico, ajusta la temperatura y apágalo cuando no lo necesites."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "bano",
+      "prioridad": "alta",
+      "variante": 1,
+      "titulo": "Revisa los equipos del baño",
+      "descripcion": "El consumo del baño está muy alto. Confirma que calentador, secador y extractor estén apagados si no los usas."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "bano",
+      "prioridad": "alta",
+      "variante": 2,
+      "titulo": "Reduce el uso del calentador de agua",
+      "descripcion": "Con el consumo tan alto, prueba duchas más cortas y revisa que el calentador no quede encendido."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "oficina",
+      "prioridad": "media",
+      "variante": 1,
+      "titulo": "Apaga el computador al terminar",
+      "descripcion": "Al finalizar la jornada, apaga el computador y el monitor en lugar de dejarlos en reposo."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "oficina",
+      "prioridad": "media",
+      "variante": 2,
+      "titulo": "Apaga la regleta cuando no la uses",
+      "descripcion": "Si dejas equipos conectados a una regleta, apágala al terminar para evitar consumos innecesarios."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "oficina",
+      "prioridad": "alta",
+      "variante": 1,
+      "titulo": "Revisa los equipos de la oficina",
+      "descripcion": "El consumo de la oficina está muy alto. Apaga impresoras, pantallas y equipos que no estés usando."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "oficina",
+      "prioridad": "alta",
+      "variante": 2,
+      "titulo": "Revisa la climatización de la oficina",
+      "descripcion": "Si usas aire o ventilador, confirma que lo necesitas y mantén puertas y ventanas cerradas."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "lavanderia",
+      "prioridad": "media",
+      "variante": 1,
+      "titulo": "Lava con cargas completas",
+      "descripcion": "Espera a juntar una carga completa antes de usar la lavadora o la secadora."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "lavanderia",
+      "prioridad": "media",
+      "variante": 2,
+      "titulo": "Aprovecha el secado al aire",
+      "descripcion": "Si el clima lo permite, tiende la ropa en lugar de usar la secadora."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "lavanderia",
+      "prioridad": "alta",
+      "variante": 1,
+      "titulo": "Revisa la lavandería ahora",
+      "descripcion": "El consumo de la lavandería está muy alto. Confirma que lavadora y secadora no estén funcionando sin necesidad."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "lavanderia",
+      "prioridad": "alta",
+      "variante": 2,
+      "titulo": "Evita usar varios equipos a la vez",
+      "descripcion": "Procura no usar lavadora y secadora al mismo tiempo; espacia los ciclos durante el día."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "terraza",
+      "prioridad": "media",
+      "variante": 1,
+      "titulo": "Apaga la iluminación de la terraza",
+      "descripcion": "Si nadie la usa, apaga las luces y los adornos eléctricos de la terraza."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "terraza",
+      "prioridad": "media",
+      "variante": 2,
+      "titulo": "Usa un temporizador en la terraza",
+      "descripcion": "Un temporizador o un sensor evita que las luces queden encendidas toda la noche."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "terraza",
+      "prioridad": "alta",
+      "variante": 1,
+      "titulo": "Revisa los equipos de la terraza",
+      "descripcion": "El consumo de la terraza está muy alto. Confirma que luces, calefactores o ventiladores estén apagados."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "terraza",
+      "prioridad": "alta",
+      "variante": 2,
+      "titulo": "Apaga lo que no uses en la terraza",
+      "descripcion": "Apaga los equipos que no estés usando. Si hay humedad, no los manipules con las manos mojadas."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "garaje",
+      "prioridad": "media",
+      "variante": 1,
+      "titulo": "Apaga la luz del garaje",
+      "descripcion": "Si no hay nadie en el garaje, apaga las luces; un sensor de movimiento ayuda."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "garaje",
+      "prioridad": "media",
+      "variante": 2,
+      "titulo": "Revisa los cargadores del garaje",
+      "descripcion": "Si cargas herramientas o baterías, desconéctalas cuando terminen."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "garaje",
+      "prioridad": "alta",
+      "variante": 1,
+      "titulo": "Revisa los equipos del garaje",
+      "descripcion": "El consumo del garaje está muy alto. Confirma que luces y cargadores no estén encendidos sin uso."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "garaje",
+      "prioridad": "alta",
+      "variante": 2,
+      "titulo": "Revisa la carga de vehículos",
+      "descripcion": "Si cargas un vehículo en casa, confirma que la carga termine y no quede conectado de más."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "cuarto_servicio",
+      "prioridad": "media",
+      "variante": 1,
+      "titulo": "Apaga equipos del cuarto de servicio",
+      "descripcion": "Si no hay nadie en el cuarto de servicio, apaga luces, televisor y ventilador."
+    },
+    {
+      "regla_origen": "zona_elevada",
+      "zona": "cuarto_servicio",
+      "prioridad": "media",
+      "variante": 2,
+      "titulo": "Revisa lo que queda enchufado",
+      "descripcion": "Apaga o desenchufa los equipos del cuarto de servicio que no se usen durante el día."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "cuarto_servicio",
+      "prioridad": "alta",
+      "variante": 1,
+      "titulo": "Revisa el cuarto de servicio ahora",
+      "descripcion": "El consumo del cuarto de servicio está muy alto. Apaga los equipos que no estén en uso."
+    },
+    {
+      "regla_origen": "zona_critica",
+      "zona": "cuarto_servicio",
+      "prioridad": "alta",
+      "variante": 2,
+      "titulo": "Revisa planchas y equipos de calor",
+      "descripcion": "Comprueba que plancha, calentadores y otros equipos de calor estén apagados y desenchufados."
+    },
+    {
+      "regla_origen": "cierre_mes_encima",
+      "zona": null,
+      "prioridad": "baja",
+      "variante": 1,
+      "titulo": "Revisa tus hábitos de este mes",
+      "descripcion": "Cerraste {mes} por encima de tu referencia. En Historial puedes ver qué zonas pesaron más."
+    },
+    {
+      "regla_origen": "cierre_mes_encima",
+      "zona": null,
+      "prioridad": "baja",
+      "variante": 2,
+      "titulo": "Compara tus zonas de este mes",
+      "descripcion": "En Historial, mira qué zonas pesaron más en {mes} y empieza por la de mayor participación."
+    }
+  ],
+  "correos": {
+    "invitacion": {
+      "asunto": "{invitador} te invitó a {hogar} en Zentheris",
+      "preheader": "Acepta la invitación para ver el consumo y las alertas del hogar.",
+      "saludo": "Hola,",
+      "cuerpo": "{invitador} te invitó a unirte a {hogar} en Zentheris, la app para entender y gestionar el consumo de energía del hogar.",
+      "boton": "Abrir invitación",
+      "vigencia": "Esta invitación vence en 7 días, el {fecha_vencimiento}.",
+      "sin_cuenta": "Si aún no tienes cuenta, créala con este mismo correo ({correo}) y luego acepta la invitación.",
+      "enlace_alterno": "Si el botón no funciona, copia y pega este enlace en tu teléfono: {enlace}",
+      "seguridad": "Si no esperabas este correo, puedes ignorarlo. No compartas este enlace con nadie.",
+      "pie": "Zentheris · Proyecto formativo SENA"
+    }
+  }
+}

@@ -4,13 +4,13 @@ Puerta de entrada de la integración (PENDIENTES #23). Una fila por operación d
 
 **Reglas**
 - Ninguna operación sin fila; ninguna fila sin archivo en el esqueleto; ninguna pantalla sin hook; todo texto visible sale del catálogo.
-- `scripts/check_integration.py` (parte B) comprueba en el CI que las 40 operaciones del contrato, los routers y esta tabla coinciden: método, ruta, `operationId`, función del router y función del servicio.
+- `scripts/check_integration.py` (parte B) comprueba en el CI que las 40 operaciones del contrato, los routers, el cliente de la app y esta tabla coinciden: método, ruta, `operationId`, función del router, función del servicio y función de la app.
 - **Tablas:** deducidas de las reglas v4.9 §3 y de la especificación §4; se confirman en la sesión de cada endpoint.
 - **Prueba:** todas las filas llevan además **C-01** (respuesta igual al esquema).
 - **Textos:** solo prefijos que existen en `docs/textos/catalogo.es-CO.json`.
-- Las columnas **App** y **Pantalla** son **previsto (PR 6)**: se escriben y se comprueban al crear el esqueleto de la app.
+- **App:** la función existe en `app/src/api/` con su etiqueta `@operationId` y la parte B la comprueba (PR 6). El **hook** y la **pantalla** son previstos: se crean y se comprueban desde la sesión 9.
 
-| # | Contrato | operationId | Router | Servicio | Dominio / datos | Tablas | Prueba | App: función → hook · previsto (PR 6) | Pantalla · previsto (PR 6) | Textos |
+| # | Contrato | operationId | Router | Servicio | Dominio / datos | Tablas | Prueba | App: función → hook (hook previsto) | Pantalla (prevista) | Textos |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 | `GET /salud` | `obtenerSalud` | system.get_health | system.get_health | — | — | test_health, S-01 | getHealth → (sin hook, uso interno) | ComponentCatalogScreen (solo desarrollo) | — |
 | 2 | `GET /usuarios/me` | `obtenerUsuarioActual` | users.get_current_user | users.get_current_user | data.users, data.memberships | usuarios, preferencias_usuario, hogar_miembros | C-01 | getCurrentUser → useSettingsData, useWelcomeData | SettingsScreen, WelcomeScreen | config.*, error.ficha_no_creada |

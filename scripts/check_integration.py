@@ -1,10 +1,10 @@
 """Comprobaciones de integración del repositorio de Zentheris.
 
-Parte A (PR 3): las copias de `api/app/config_files/` deben ser idénticas, byte a byte,
-a sus originales en `docs/` (PENDIENTES #4 y #5). Se compara el SHA-256.
-Parte B (PR 5): contrato ↔ routers ↔ servicios ↔ mapa de integración, sin importar la app:
-lee el contrato con PyYAML, los routers y servicios con `ast` y la tabla del mapa.
-La columna de la app (`app/src/api/`) se agrega en el PR 6.
+Parte A (PR 3 y 6): las copias de `api/app/config_files/` y el catálogo de la app deben ser
+idénticos, byte a byte, a sus originales en `docs/` (PENDIENTES #4 y #5). Se compara el SHA-256.
+Parte B (PR 5 y 6): contrato ↔ routers ↔ servicios ↔ app ↔ mapa de integración, sin importar
+código: lee el contrato con PyYAML, los routers y servicios con `ast`, las etiquetas
+`@operationId` de `app/src/api/*.ts` y la tabla del mapa. Los hooks se agregan en la sesión 9.
 
 Uso: `cd api && uv run python ../scripts/check_integration.py` (la parte B necesita PyYAML).
 Termina con código 0 si todo coincide y con código 1 si algo falta o difiere.
@@ -20,12 +20,14 @@ ROOT = Path(__file__).resolve().parent.parent
 CONTRACT = ROOT / "docs/api/zentheris-api-v0.2.5.yaml"
 ROUTERS_DIR = ROOT / "api/app/routers"
 SERVICES_DIR = ROOT / "api/app/services"
+APP_API_DIR = ROOT / "app/src/api"
 MAP_FILE = ROOT / "docs/MAPA-DE-INTEGRACION.md"
 HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 
 CONFIG_COPIES = (
     ("api/app/config_files/umbrales-estado.v1.json", "docs/datos/umbrales-estado.v1.json"),
     ("api/app/config_files/textos-backend.es-CO.json", "docs/textos/textos-backend.es-CO.json"),
+    ("app/src/texts/catalogo.es-CO.json", "docs/textos/catalogo.es-CO.json"),
 )
 
 
@@ -100,17 +102,30 @@ def service_functions() -> set[str]:
     return names
 
 
-def map_rows() -> dict[str, tuple[str, str, str, str]]:
-    """operationId → (MÉTODO, ruta, router, servicio) de la tabla del mapa."""
+def app_functions() -> tuple[dict[str, str], list[str]]:
+    """operationId → 'modulo.funcion' de app/src/api/*.ts (etiqueta `@operationId`)."""
+    ops, problems = {}, []
+    pattern = re.compile(r"@operationId (\w+)\s*\*/\s*export function (\w+)")
+    for file in sorted(APP_API_DIR.glob("*.ts")):
+        for op_id, func in pattern.findall(file.read_text(encoding="utf-8")):
+            if op_id in ops:
+                problems.append(f"operationId repetido en la app: {op_id}")
+            ops[op_id] = f"{file.stem}.{func}"
+    return ops, problems
+
+
+def map_rows() -> dict[str, tuple[str, str, str, str, str]]:
+    """operationId → (MÉTODO, ruta, router, servicio, función de la app) de la tabla del mapa."""
     rows = {}
     for line in MAP_FILE.read_text(encoding="utf-8").splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 5 or not cells[0].isdigit():
+        if len(cells) < 9 or not cells[0].isdigit():
             continue
         match = re.fullmatch(r"`(GET|POST|PUT|PATCH|DELETE) (\S+)`", cells[1])
         op_id = cells[2].strip("`")
         if match:
-            rows[op_id] = (match.group(1), match.group(2), cells[3], cells[4])
+            app_func = cells[8].split("→")[0].strip()
+            rows[op_id] = (match.group(1), match.group(2), cells[3], cells[4], app_func)
     return rows
 
 
@@ -121,11 +136,17 @@ def check_integration_map() -> tuple[list[str], str]:
     routers, router_problems = router_operations()
     problems += router_problems
     services = service_functions()
+    app, app_problems = app_functions()
+    problems += app_problems
     mapa = map_rows()
     for op_id in sorted(set(contract) - set(routers)):
         problems.append(f"falta en routers: {op_id}")
     for op_id in sorted(set(routers) - set(contract)):
         problems.append(f"sobra en routers (no está en el contrato): {op_id}")
+    for op_id in sorted(set(contract) - set(app)):
+        problems.append(f"falta en la app (app/src/api/): {op_id}")
+    for op_id in sorted(set(app) - set(contract)):
+        problems.append(f"sobra en la app (no está en el contrato): {op_id}")
     for op_id in sorted(set(contract) - set(mapa)):
         problems.append(f"falta en el mapa: {op_id}")
     for op_id in sorted(set(mapa) - set(contract)):
@@ -137,7 +158,7 @@ def check_integration_map() -> tuple[list[str], str]:
                 problems.append(f"{op_id}: el router dice {r_method} {r_path}; "
                                 f"el contrato, {method} {path}")
         if op_id in mapa:
-            m_method, m_path, m_router, m_service = mapa[op_id]
+            m_method, m_path, m_router, m_service, m_app = mapa[op_id]
             if (m_method, m_path) != (method, path):
                 problems.append(f"{op_id}: el mapa dice {m_method} {m_path}; "
                                 f"el contrato, {method} {path}")
@@ -146,7 +167,11 @@ def check_integration_map() -> tuple[list[str], str]:
                                 f"el código, {routers[op_id][2]}")
             if m_service not in services:
                 problems.append(f"{op_id}: el servicio {m_service} del mapa no existe")
-    summary = f"Contrato {len(contract)} · routers {len(routers)} · mapa {len(mapa)}"
+            if op_id in app and m_app != app[op_id].split(".")[1]:
+                problems.append(f"{op_id}: el mapa dice función de la app {m_app}; "
+                                f"el código, {app[op_id]}")
+    summary = (f"Contrato {len(contract)} · routers {len(routers)} · app {len(app)} · "
+               f"mapa {len(mapa)}")
     return problems, summary
 
 
@@ -156,12 +181,12 @@ def main() -> int:
     total = len(CONFIG_COPIES)
     if problems:
         failed = True
-        print("config_files: las copias no coinciden con docs/ · ERROR")
+        print("copias: no coinciden con docs/ · ERROR")
         for problem in problems:
             print(f"- {problem}")
-        print("Se editan en docs/ y se vuelven a copiar a api/app/config_files/.")
+        print("Se editan en docs/ y se vuelven a copiar.")
     else:
-        print(f"config_files: {total}/{total} copias iguales a docs/ · OK")
+        print(f"copias: {total}/{total} iguales a docs/ · OK")
 
     try:
         problems, summary = check_integration_map()

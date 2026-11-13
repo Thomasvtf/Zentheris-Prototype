@@ -1,6 +1,6 @@
 # Registro de decisiones de cierre de pendientes · 03/11/2026
 
-Versión 1.1 · 2026-11-03, ampliada el 2026-11-11 con DC-59 a DC-68 (America/Bogota). **Origen:** autonomía delegada por Nicolás el 03/11/2026. Cada decisión cuenta como **aprobada**, salvo que Nicolás pida revertirla. Para revertir una, basta con citar su ID (por ejemplo, «revertir DC-12»).
+Versión 1.1 · 2026-11-03, ampliada el 2026-11-11 con DC-59 a DC-69 (America/Bogota). **Origen:** autonomía delegada por Nicolás el 03/11/2026. Cada decisión cuenta como **aprobada**, salvo que Nicolás pida revertirla. Para revertir una, basta con citar su ID (por ejemplo, «revertir DC-12»).
 
 Antes de tomar cada decisión se verificó su coherencia con las reglas v4.8, el contrato 0.2.4, el catálogo de textos v1, el sistema de diseño y la arquitectura del prototipo. Todas quedan incorporadas en las **reglas v4.9** (sección 9.5) y en el **contrato 0.2.5**.
 
@@ -89,7 +89,7 @@ Leyenda de evidencia: **[V]** verificado con prueba o ejecución; **[D]** docume
 | DC-57 | Desarrollo con Claude y Claude Code | Contexto dentro del repositorio: `CLAUDE.md` en la raíz, `app/`, `api/` y `supabase/`, y la carpeta `docs/` con las fuentes vigentes (paquete en `11_guias-de-desarrollo/paquete-repo/`). Una fase por sesión y un PR por fase, con revisión humana obligatoria. Claude Code no aplica migraciones remotas, no fusiona y no maneja secretos. Archivos_Zentheris sigue siendo el original. | [P] |
 | DC-58 | Fuente de los tokens para el código | `tokens.json` y `tokens.css` del artifact «Zentheris» (02/11/2026, incluyen `chart-peak` y `surfaceAlt`), guardados en `05_sistema-de-diseno/tokens-vigentes-2026-11-03/`. Los `tokens.ts` del kit v3.2 (30/10) no traen el pico y quedan como antecedente. | [V] comparación de archivos |
 
-## F. Refactorización del repositorio (10/11/2026, confirmadas por Nicolás el 11/11/2026; DC-67 y DC-68 el mismo día)
+## F. Refactorización del repositorio (10/11/2026, confirmadas por Nicolás el 11/11/2026; DC-67 a DC-69 el mismo día)
 
 Origen: respuestas de Nicolás en el chat de revisión de las Fases 0 a 2. Nicolás aprobó esta numeración el 11/11/2026. **Estado:** decididas; la ejecución en GitHub aún no empieza (Fase 3 sin autorizar).
 
@@ -105,6 +105,7 @@ Origen: respuestas de Nicolás en el chat de revisión de las Fases 0 a 2. Nicol
 | DC-66 | Fuentes abiertas | Las fuentes abiertas (Inter y JetBrains Mono) van **como archivos** en `app/assets/fonts/`, con su `OFL.txt`, todas en el mismo formato. Satoshi sigue sin versionarse (DC-06). | DC-06, Guía 2 | [P] confirmada por Nicolás |
 | DC-67 | Props de los componentes en español | Los nombres de las props de los componentes siguen como en `docs/diseno/componentes/index.d.ts` (`valor`, `estado`, `tarifaVigente`…), aunque el código va en inglés (DC-62). Los componentes ya tienen el mismo nombre y props que `index.d.ts` (`app/CLAUDE.md`). | `app/src/components/`, `index.d.ts` | [P] confirmada por Nicolás |
 | DC-68 | Cadena de PR y condiciones de fusión | Los 6 PR de la Fase 3 van **en cadena**: cada rama sale de la anterior y cada PR apunta a la rama anterior (solo el PR 1 apunta a `main`). Condiciones: (1) fusionar con «Create a merge commit», nunca «Squash» ni «Rebase»; (2) fusionar de abajo hacia arriba y siempre hacia `main`, redirigiendo el PR antes; (3) cada descripción dice «Depende de #N»; (4) borrar la rama ya fusionada para que GitHub redirija el siguiente PR. Los PR 7 y 8 (alineación) salen de las puntas de las ramas del equipo y traen `feat/esqueleto-app`. Los PR se abren como borrador mientras no se hable con el equipo (propuesta; Nicolás no se pronunció aparte). La fusión a `main` sigue sin autorizarse. | DC-61, DC-65 | [P] confirmada por Nicolás 11/11/2026 (cadena y 4 condiciones); borrador propuesto |
+| DC-69 | Abreviaturas, signo y tiempo relativo (RN-XII-08 no los define) | **Miles «k»** siempre con 1 decimal (6.000 → «$6,0k»); desde 1.000.000 sigue con «k» (1.250.000 → «$1.250,0k»). **Negativos** con guion (−) y redondeo medio hacia arriba sobre el valor sin signo (−12,5 → −13), sin `toFixed`. **`relativeTime`:** menos de 1 min «Ahora»; menos de 60 min «Hace n min»; mismo día calendario «Hace n h»; día calendario anterior «Ayer»; de 2 a 6 días «Hace n días»; 7 días o más «dd/mm»; no usa «Hoy». «Mismo día» y «ayer» se calculan en America/Bogota. | RN-XII-08, catálogo `formato.tiempo` | [P] confirmada por Nicolás 11/11/2026 |
 
 ## Qué no se decidió (fuera de la autonomía o depende de terceros)
 

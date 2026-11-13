@@ -17,7 +17,7 @@ El contrato OpenAPI va primero: ningún endpoint ni campo se crea fuera de él.
 
 ## Por dónde empezar
 
-1. [`docs/guias/GUIA-DEL-EQUIPO.md`](docs/guias/GUIA-DEL-EQUIPO.md): estructura del repositorio, cómo arrancar y cómo trabajar (empieza aquí).
+1. [`docs/guias/GUIA-DEL-EQUIPO.md`](docs/guias/GUIA-DEL-EQUIPO.md): cómo hacer tu próxima tarea con la estructura del repositorio, paso a paso (empieza aquí).
 2. [`CLAUDE.md`](CLAUDE.md): contexto permanente, fuentes de verdad en orden y reglas que no se rompen.
 3. [`docs/README.md`](docs/README.md): índice de la documentación.
 4. [`docs/reglas/reglas-de-negocio-v4.9.md`](docs/reglas/reglas-de-negocio-v4.9.md): reglas de negocio, tablas y pantallas.

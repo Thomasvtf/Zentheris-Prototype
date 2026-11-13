@@ -6,15 +6,19 @@ dependencies = [
     "apscheduler>=3.11.3",
     "fastapi[standard]>=0.141.1",
     "psycopg2-binary>=2.9.13",
+    "pyjwt[crypto]>=2.15.1",
     "python-dotenv>=1.2.3",
     "sqlmodel>=0.0.46",
+    "tzdata>=2026.4",
 ]
 
 [dependency-groups]
 dev = [
     "black>=26.5.1",
     "httpx>=0.28.1",
+    "jsonschema>=4.26.0",
     "pytest-cov>=7.1.0",
+    "pyyaml>=6.0.3",
     "ruff>=0.16.8",
 ]
 

@@ -26,6 +26,9 @@ jobs:
         working-directory: ./api
         run: uv run pytest --cov=app --cov-report=term
 
-      - name: Comprobar copias de config_files (SHA-256)
+      - name: Comprobar integracion (copias SHA-256, contrato, routers y mapa)
         working-directory: ./api
         run: uv run python ../scripts/check_integration.py
+
+      - name: Lint oficial del contrato (C-02, DC-46)
+        run: npx --yes @redocly/cli@2.71.2 lint docs/api/zentheris-api-v0.2.5.yaml --config docs/api/redocly.yaml

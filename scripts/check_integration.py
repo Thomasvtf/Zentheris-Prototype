@@ -2,17 +2,26 @@
 
 Parte A (PR 3): las copias de `api/app/config_files/` deben ser idénticas, byte a byte,
 a sus originales en `docs/` (PENDIENTES #4 y #5). Se compara el SHA-256.
-Parte B (PR 5): contrato ↔ routers ↔ app ↔ mapa de integración. Aún no existe.
+Parte B (PR 5): contrato ↔ routers ↔ servicios ↔ mapa de integración, sin importar la app:
+lee el contrato con PyYAML, los routers y servicios con `ast` y la tabla del mapa.
+La columna de la app (`app/src/api/`) se agrega en el PR 6.
 
-Uso, desde la raíz del repositorio: `python scripts/check_integration.py`.
+Uso: `cd api && uv run python ../scripts/check_integration.py` (la parte B necesita PyYAML).
 Termina con código 0 si todo coincide y con código 1 si algo falta o difiere.
 """
 
+import ast
 import hashlib
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+CONTRACT = ROOT / "docs/api/zentheris-api-v0.2.5.yaml"
+ROUTERS_DIR = ROOT / "api/app/routers"
+SERVICES_DIR = ROOT / "api/app/services"
+MAP_FILE = ROOT / "docs/MAPA-DE-INTEGRACION.md"
+HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 
 CONFIG_COPIES = (
     ("api/app/config_files/umbrales-estado.v1.json", "docs/datos/umbrales-estado.v1.json"),
@@ -45,17 +54,128 @@ def check_config_copies() -> list[str]:
     return problems
 
 
+def contract_operations() -> dict[str, tuple[str, str]]:
+    """operationId → (MÉTODO, ruta) del contrato."""
+    import yaml  # solo la parte B lo necesita
+
+    spec = yaml.safe_load(CONTRACT.read_text(encoding="utf-8"))
+    ops = {}
+    for path, item in spec["paths"].items():
+        for method, op in item.items():
+            if method in HTTP_METHODS:
+                ops[op["operationId"]] = (method.upper(), path)
+    return ops
+
+
+def router_operations() -> tuple[dict[str, tuple[str, str, str]], list[str]]:
+    """operationId → (MÉTODO, ruta, 'modulo.funcion') leídos de los decoradores."""
+    ops, problems = {}, []
+    for file in sorted(ROUTERS_DIR.glob("*.py")):
+        tree = ast.parse(file.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            for deco in node.decorator_list:
+                if not (isinstance(deco, ast.Call) and isinstance(deco.func, ast.Attribute)
+                        and deco.func.attr in HTTP_METHODS):
+                    continue
+                path = deco.args[0].value if deco.args else None
+                op_id = next((k.value.value for k in deco.keywords if k.arg == "operation_id"), None)
+                where = f"{file.stem}.{node.name}"
+                if not op_id:
+                    problems.append(f"router sin operation_id: {where}")
+                    continue
+                if op_id in ops:
+                    problems.append(f"operation_id repetido en routers: {op_id}")
+                ops[op_id] = (deco.func.attr.upper(), path, where)
+    return ops, problems
+
+
+def service_functions() -> set[str]:
+    """'modulo.funcion' de todas las funciones de servicios/."""
+    names = set()
+    for file in SERVICES_DIR.glob("*.py"):
+        tree = ast.parse(file.read_text(encoding="utf-8"))
+        names |= {f"{file.stem}.{n.name}" for n in tree.body if isinstance(n, ast.FunctionDef)}
+    return names
+
+
+def map_rows() -> dict[str, tuple[str, str, str, str]]:
+    """operationId → (MÉTODO, ruta, router, servicio) de la tabla del mapa."""
+    rows = {}
+    for line in MAP_FILE.read_text(encoding="utf-8").splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 5 or not cells[0].isdigit():
+            continue
+        match = re.fullmatch(r"`(GET|POST|PUT|PATCH|DELETE) (\S+)`", cells[1])
+        op_id = cells[2].strip("`")
+        if match:
+            rows[op_id] = (match.group(1), match.group(2), cells[3], cells[4])
+    return rows
+
+
+def check_integration_map() -> tuple[list[str], str]:
+    """Parte B. Devuelve (problemas, resumen)."""
+    problems = []
+    contract = contract_operations()
+    routers, router_problems = router_operations()
+    problems += router_problems
+    services = service_functions()
+    mapa = map_rows()
+    for op_id in sorted(set(contract) - set(routers)):
+        problems.append(f"falta en routers: {op_id}")
+    for op_id in sorted(set(routers) - set(contract)):
+        problems.append(f"sobra en routers (no está en el contrato): {op_id}")
+    for op_id in sorted(set(contract) - set(mapa)):
+        problems.append(f"falta en el mapa: {op_id}")
+    for op_id in sorted(set(mapa) - set(contract)):
+        problems.append(f"sobra en el mapa (no está en el contrato): {op_id}")
+    for op_id, (method, path) in contract.items():
+        if op_id in routers:
+            r_method, r_path, _ = routers[op_id]
+            if (r_method, r_path) != (method, path):
+                problems.append(f"{op_id}: el router dice {r_method} {r_path}; "
+                                f"el contrato, {method} {path}")
+        if op_id in mapa:
+            m_method, m_path, m_router, m_service = mapa[op_id]
+            if (m_method, m_path) != (method, path):
+                problems.append(f"{op_id}: el mapa dice {m_method} {m_path}; "
+                                f"el contrato, {method} {path}")
+            if op_id in routers and m_router != routers[op_id][2]:
+                problems.append(f"{op_id}: el mapa dice router {m_router}; "
+                                f"el código, {routers[op_id][2]}")
+            if m_service not in services:
+                problems.append(f"{op_id}: el servicio {m_service} del mapa no existe")
+    summary = f"Contrato {len(contract)} · routers {len(routers)} · mapa {len(mapa)}"
+    return problems, summary
+
+
 def main() -> int:
+    failed = False
     problems = check_config_copies()
+    total = len(CONFIG_COPIES)
     if problems:
+        failed = True
         print("config_files: las copias no coinciden con docs/ · ERROR")
         for problem in problems:
             print(f"- {problem}")
         print("Se editan en docs/ y se vuelven a copiar a api/app/config_files/.")
+    else:
+        print(f"config_files: {total}/{total} copias iguales a docs/ · OK")
+
+    try:
+        problems, summary = check_integration_map()
+    except ModuleNotFoundError:
+        print("integración: falta PyYAML; ejecuta desde api/ con `uv run` · ERROR")
         return 1
-    total = len(CONFIG_COPIES)
-    print(f"config_files: {total}/{total} copias iguales a docs/ · OK")
-    return 0
+    if problems:
+        failed = True
+        print(f"{summary} · ERROR")
+        for problem in problems:
+            print(f"- {problem}")
+    else:
+        print(f"{summary} · OK")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

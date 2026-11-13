@@ -9,7 +9,7 @@ Versión 1 · 11/11/2026. Esta lista es corta y se marca a medida que se avanza.
 | 3 | PR 2 y 3 | Mover y adaptar la estructura en inglés (rutas de expo-router en español). Un commit solo de movimientos y otro solo de imports. | Menos conflictos con las ramas del equipo. | [x] |
 | 4 | PR 3 | Crear `api/app/config_files/` con copias exactas de `umbrales-estado.v1.json` y `textos-backend.es-CO.json`. | Decisión confirmada el 11/11/2026. | [x] |
 | 5 | PR 3 (copias) y PR 5 (integración) | Añadir a `scripts/check_integration.py` la comparación SHA-256 de cada copia contra su original en `docs/`, y ejecutarla en el CI. | Evitar que un umbral cambie en un sitio y en el otro no. | [ ] |
-| 6 | PR 4 `build/plantillas-de-entorno` | Plantillas `.env.example` solo con nombres. `RUTA_UMBRALES` y `RUTA_TEXTOS_BACKEND` apuntan a `config_files/`. | Guía de claves v3. | [ ] |
+| 6 | PR 4 `build/plantillas-de-entorno` | Plantillas `.env.example` con los nombres; solo llevan valor los que son públicos (puerto, servidor SMTP, zona horaria, rutas, enlace, origen local), nunca claves ni URL del proyecto. `RUTA_UMBRALES` y `RUTA_TEXTOS_BACKEND` apuntan a `config_files/`. | Guía de claves v3. | [x] |
 | 7 | PR 5 `feat/esqueleto-api` | Agregar `tzdata` como dependencia directa en `pyproject.toml` y regenerar `requirements.txt`. | Aprobado el 11/11/2026. `zoneinfo` necesita la base de zonas horarias en Windows para America/Bogota. | [ ] |
 | 8 | PR 6 `feat/esqueleto-app` | Cambiar `scheme` de `app` a `zentheris` en `app.json`. | DC-64. | [ ] |
 | 9 | PR 6 | Instalar y configurar librerías (gráficos, íconos, `expo-linear-gradient`, `openapi-typescript`); quitar `@react-navigation/*` solo si `npm ls` y el typecheck confirman que nada las usa. | DC-63. Se aplican a las pantallas después, una por una. | [ ] |
@@ -21,10 +21,10 @@ Versión 1 · 11/11/2026. Esta lista es corta y se marca a medida que se avanza.
 | 15 | Al final | Limpiar la plantilla de Expo; hablar con el equipo y con Thomas; ramas `setup` con etiqueta de respaldo y aprobación por rama. | DC-65. | [ ] |
 | 16 | Al aplicar las librerías a Historial | Decidir si el gráfico de área de la pila se quita o se deja (no es obligatorio). | Decisión del 11/11/2026. | [ ] |
 | 17 | Al aplicar los componentes | Las props siguen los nombres de `index.d.ts` aunque estén en español. | DC-67. | [ ] |
-| 18 | PR 3 y 4 | Borrar `.kilo/` y `app/.kilo/` (22 archivos) y el `requirements.txt` vacío de la raíz; agregar `.kilo/` al `.gitignore`. | Archivos sobrantes. | [ ] |
-| 19 | PR 3 | Regenerar `api/requirements.txt` en UTF-8 y dejar el CI del backend en verde (hoy falla en `ruff`). | Que el CI sirva como comprobante. | [ ] |
+| 18 | PR 3 y 4 | Borrar `.kilo/` y `app/.kilo/` (22 archivos) y el `requirements.txt` vacío de la raíz; agregar `.kilo/` al `.gitignore`. | Archivos sobrantes. | [x] |
+| 19 | PR 3 | Regenerar `api/requirements.txt` en UTF-8 y dejar el CI del backend en verde (hoy falla en `ruff`). | Que el CI sirva como comprobante. | [x] |
 | 20 | PR 3 | Crear `.python-version` en `api/`. | Render la lee. | [x] |
-| 21 | PR 4 | Crear `app/.easignore` para incluir la fuente Satoshi en las builds. | DC-06. | [ ] |
+| 21 | PR 4 | Crear `.easignore` en la **raíz del repositorio** (unión de `.gitignore` y `app/.gitignore` sin las líneas de Satoshi) para que las builds de EAS incluyan la fuente. | DC-06 (ajustada el 11/11/2026): EAS lo lee en la raíz y un archivo no se puede re-incluir si su carpeta está excluida. | [x] |
 | 22 | PR 5 | Crear los 35 archivos de prueba vacíos, uno por ID de la matriz, con `pytest.skip("TODO(<ID>)")`. | Cada pendiente se ve y `pytest` queda en verde. | [ ] |
 | 23 | PR 5 y 6 | Crear `docs/MAPA-DE-INTEGRACION.md` (40 filas). | Puerta de entrada de la integración. | [ ] |
 | 24 | PR 6 | Ruta `catalogo-componentes` (solo `__DEV__`) y 1 línea en `_layout.tsx` para ocultarla. | Decisión del 10/11/2026. | [ ] |

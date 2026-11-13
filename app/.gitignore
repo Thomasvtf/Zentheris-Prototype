@@ -41,3 +41,11 @@ example
 # generated native folders
 /ios
 /android
+
+# Claves (las plantillas sí se suben)
+.env
+.env.*
+!.env.example
+
+# Satoshi (DC-06)
+assets/fonts/satoshi/

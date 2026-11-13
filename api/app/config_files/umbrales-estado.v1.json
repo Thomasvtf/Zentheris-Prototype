@@ -1,0 +1,40 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "fecha": "2026-11-03",
+    "reglas": ["RN-XI-02", "RN-XI-03", "RN-XI-04", "RN-XI-05", "RN-XI-06", "RN-XI-07", "RN-XIII-01", "RN-XIII-03", "RN-XIII-05", "RN-XIV-07"],
+    "estado": "Calibrado con datos simulados (simulador de referencia zentheris-4.3-ref-1, conjuntos v1.0 del acta 04). Es configuración del backend, no tabla. Se ajusta sin cambiar el modelo de datos.",
+    "convencion": "Porcentajes sobre la referencia: var_pct = (valor / referencia - 1) x 100, calculado con los valores sin redondear para mostrar y redondeado a 6 decimales antes de comparar (evita errores de coma flotante). Los límites inferiores son inclusivos (>=).",
+    "evidencia": "04_datos-simulados/calibracion-umbrales-v1/informe-calibracion-umbrales-v1.md"
+  },
+  "referencia": {
+    "ventana_promedio_dias": 30,
+    "minimo_dias_con_dato": 7,
+    "nota": "Promedio de la misma hora del día en los 30 días completos anteriores a hoy, ignorando horas sin lectura. Con menos de 7 días con dato el estado es sin_referencia."
+  },
+  "consumo_actual": { "elevado_desde_pct": 20, "critico_desde_pct": 40 },
+  "acumulado_promedio": { "elevado_desde_pct": 15, "critico_desde_pct": 30 },
+  "acumulado_meta": {
+    "elevado_desde_pct_del_limite": 80,
+    "critico_desde_pct_del_limite": 100,
+    "nota": "pct = acumulado de hoy / (meta mensual / días del mes) x 100. Coincide con los textos «Dentro del límite», «Cerca del límite» y «Superaste el límite»."
+  },
+  "zona_estado": { "elevado_desde_pct": 30, "critico_desde_pct": 60, "exceso_minimo_kwh": 0.05 },
+  "zona_participacion": { "elevado_desde_pct": 25, "critico_desde_pct": 50, "exceso_minimo_kwh": 0.05 },
+  "dia_completo": { "elevado_desde_pct": 15, "critico_desde_pct": 30, "nota": "Día frente al promedio diario de los 30 días previos. Se usa para el pico de Semana y Mes." },
+  "pico": {
+    "minimo_pct": 10,
+    "estado_en_dia": "consumo_actual",
+    "estado_en_semana_y_mes": "dia_completo",
+    "nota": "Un valor es pico si supera su promedio histórico en al menos 10 %. Por debajo no es pico (ultimo_pico = null si ninguno)."
+  },
+  "comparacion_periodo": {
+    "menor_si_menor_que_pct": -5,
+    "similar_si_menor_que_pct": 10,
+    "muy_mayor_desde_pct": 25,
+    "estado": { "menor": "normal", "similar": "normal", "mayor": "elevado", "muy_mayor": "critico" },
+    "nota": "menor < -5; -5 <= similar < 10; 10 <= mayor < 25; muy_mayor >= 25. El costo usa el mismo resultado (contrato, opción A)."
+  },
+  "variacion_hora_anterior": { "igual_si_abs_menor_que_pct": 0.5 },
+  "cierre_mes": { "encima_si_mayor_que_referencia": true, "tolerancia_pct": 0 }
+}

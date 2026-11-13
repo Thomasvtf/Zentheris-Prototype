@@ -9,10 +9,10 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Instalar uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10.3.3
 
       - name: Instalar dependencias
         working-directory: ./api
@@ -25,3 +25,7 @@ jobs:
       - name: Ejecutar pruebas
         working-directory: ./api
         run: uv run pytest --cov=app --cov-report=term
+
+      - name: Comprobar copias de config_files (SHA-256)
+        working-directory: ./api
+        run: uv run python ../scripts/check_integration.py

@@ -1,19 +1,22 @@
-"""Pruebas del endpoint de salud."""
+"""Pruebas de GET /api/v1/salud (operationId obtenerSalud)."""
 
 from fastapi.testclient import TestClient
 
-from app.main import app
-
-cliente = TestClient(app)
-
-
-def test_raiz_responde():
-    respuesta = cliente.get("/")
-    assert respuesta.status_code == 200
-    assert "Zentheris" in respuesta.json()["mensaje"]
+from app.config import Settings
+from app.main import create_app
 
 
-def test_salud_responde_ok():
-    respuesta = cliente.get("/salud")
-    assert respuesta.status_code == 200
-    assert respuesta.json() == {"estado": "ok"}
+def test_get_health_returns_ok(client: TestClient) -> None:
+    response = client.get("/api/v1/salud")
+    assert response.status_code == 200
+    assert response.json() == {"estado": "ok"}
+
+
+def test_old_routes_are_removed(client: TestClient) -> None:
+    for path in ("/", "/salud", "/salud/bd"):
+        assert client.get(path).status_code == 404
+
+
+def test_app_starts_without_environment_variables() -> None:
+    app = create_app(Settings(_env_file=None))
+    assert TestClient(app).get("/api/v1/salud").status_code == 200

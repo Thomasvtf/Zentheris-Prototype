@@ -17,9 +17,10 @@ El contrato OpenAPI va primero: ningún endpoint ni campo se crea fuera de él.
 
 ## Por dónde empezar
 
-1. [`CLAUDE.md`](CLAUDE.md): contexto permanente, fuentes de verdad en orden y reglas que no se rompen.
-2. [`docs/README.md`](docs/README.md): índice de la documentación.
-3. [`docs/reglas/reglas-de-negocio-v4.9.md`](docs/reglas/reglas-de-negocio-v4.9.md): reglas de negocio, tablas y pantallas.
-4. [`docs/api/zentheris-api-v0.2.5.yaml`](docs/api/zentheris-api-v0.2.5.yaml): contrato de la API.
-5. [`docs/guias/`](docs/guias/): guías para el equipo (app, backend e integración con Supabase y GitHub).
-6. [`docs/PENDIENTES-DE-REFACTORIZACION.md`](docs/PENDIENTES-DE-REFACTORIZACION.md): tareas de la refactorización en curso.
+1. [`docs/guias/GUIA-DEL-EQUIPO.md`](docs/guias/GUIA-DEL-EQUIPO.md): estructura del repositorio, cómo arrancar y cómo trabajar (empieza aquí).
+2. [`CLAUDE.md`](CLAUDE.md): contexto permanente, fuentes de verdad en orden y reglas que no se rompen.
+3. [`docs/README.md`](docs/README.md): índice de la documentación.
+4. [`docs/reglas/reglas-de-negocio-v4.9.md`](docs/reglas/reglas-de-negocio-v4.9.md): reglas de negocio, tablas y pantallas.
+5. [`docs/api/zentheris-api-v0.2.5.yaml`](docs/api/zentheris-api-v0.2.5.yaml): contrato de la API.
+6. [`docs/guias/`](docs/guias/): guías para el equipo (app, backend e integración con Supabase y GitHub).
+7. [`docs/PENDIENTES-DE-REFACTORIZACION.md`](docs/PENDIENTES-DE-REFACTORIZACION.md): tareas de la refactorización en curso.

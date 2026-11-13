@@ -155,45 +155,6 @@ export function EditarPerfilScreen() {
           </TouchableOpacity>
 
           <View style={styles.divider} />
-
-          {/* Opción 2: Historial de consumo */}
-          <TouchableOpacity
-            style={styles.actionRow}
-            activeOpacity={0.7}
-            onPress={() => router.push('/historial')}
-          >
-            <View style={styles.iconBox}>
-              <Ionicons name="calendar-outline" size={20} color="#34D399" />
-            </View>
-            <View style={styles.actionTextContainer}>
-              <Text style={styles.actionTitle}>Historial de consumo</Text>
-              <Text style={styles.actionSubtitle}>
-                Consulta tu actividad energética
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#4E7063" />
-          </TouchableOpacity>
-
-          <View style={styles.divider} />
-
-          {/* Opción 3: Cerrar sesión */}
-          <View style={styles.actionRow}>
-            <View style={styles.actionTextContainer}>
-              <Text style={[styles.actionTitle, styles.actionTitleDanger]}>
-                Cerrar sesión
-              </Text>
-              <Text style={styles.actionSubtitle}>
-                Sal de tu cuenta en este dispositivo
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.btnCerrar}
-              activeOpacity={0.8}
-              onPress={handleCerrarSesion}
-            >
-              <Text style={styles.btnCerrarText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         <View style={{ height: 32 }} />

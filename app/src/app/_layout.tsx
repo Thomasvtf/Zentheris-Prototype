@@ -86,6 +86,7 @@ export default function Layout() {
             ),
           }}
         />
+        <Tabs.Screen name="catalogo-componentes" options={{ href: null }} />
         <Tabs.Screen
           name="historial"
           options={{

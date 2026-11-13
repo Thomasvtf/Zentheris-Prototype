@@ -23,3 +23,14 @@ npm-debug.*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Claves: cualquier .env.*, salvo las plantillas
+.env.*
+!.env.example
+# Copias de herramientas (PENDIENTES #18)
+.kilo/
+# Satoshi: licencia ITF FFL, no se sube (DC-06)
+app/assets/fonts/satoshi/
+Satoshi*
+# Supabase CLI
+supabase/.temp/

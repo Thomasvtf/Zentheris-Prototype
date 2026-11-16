@@ -7,7 +7,7 @@ Versión 2 · 03/11/2026 (actualizada el 10/11/2026: carpetas en inglés, nombre
 | Si eres… | Usa la guía así |
 |---|---|
 | Persona del equipo | Lee los puntos 1 a 3 para entender qué se construye y por qué. Usa los puntos 8 y 9 para revisar lo que entregue Claude Code. |
-| Claude Code | Sigue `app/CLAUDE.md` (reglas permanentes) y esta guía como especificación. Las rutas `docs/…` son las del repositorio después de instalar el paquete (`11_guias-de-desarrollo/paquete-repo/`). |
+| Claude Code | Sigue `app/CLAUDE.md` (en la carpeta: `11_guias-de-desarrollo/claude-code/app/CLAUDE.md`; reglas permanentes) y esta guía como especificación. Las rutas `docs/…` son las del repositorio; en la carpeta `Archivos_Zentheris` los mismos documentos están en las carpetas 01 a 09 (la tabla de correspondencia está en `MANIFIESTO.md`, solo en la carpeta). |
 
 Equivalencia de rutas: `Archivos_Zentheris/01_reglas-y-modelo/reglas-de-negocio-v4.9.md` = `docs/reglas/…`; contrato = `docs/api/…`; catálogo = `docs/textos/…`; tokens y fichas = `docs/diseno/…` (leer primero `docs/diseno/CORRECCIONES-LEER-PRIMERO.md`).
 
@@ -26,7 +26,7 @@ Lee solo esto:
 1. `01_reglas-y-modelo/reglas-de-negocio-v4.9.md`, sección 6 (pantallas) y las reglas de la pantalla que vas a hacer.
 2. `03_api/zentheris-api-v0.2.5.yaml`: el endpoint de tu pantalla (ver la tabla del punto 3).
 3. `06_catalogo-de-textos/catalogo-textos-v1/app/catalogo.es-CO.json`: **todos** los textos salen de aquí.
-4. El sistema de diseño: tokens (`05_sistema-de-diseno/tokens.zip`) y la ficha del componente que vas a usar.
+4. El sistema de diseño: tokens (`docs/diseno/tokens.json` y `tokens.css`; en la carpeta: `05_sistema-de-diseno/tokens-vigentes-2026-11-03/`) y la ficha del componente que vas a usar.
 5. La pantalla en Figma, en el flujo Administrador o Miembro, solo como referencia visual.
 
 **Regla de oro:** si Figma y el catálogo dicen cosas distintas, **gana el catálogo** (DC-21). Si el catálogo y las reglas dicen cosas distintas, gana la regla: avisa a Nicolás.

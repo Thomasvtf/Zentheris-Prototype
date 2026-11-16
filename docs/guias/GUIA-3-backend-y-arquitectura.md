@@ -1,6 +1,6 @@
 # Guía 3 · Construir el backend y la arquitectura general
 
-Versión 2 · 03/11/2026 (actualizada el 10/11/2026: carpetas en inglés y nombres de ramas). Para quien programa la API (FastAPI) y configura Supabase, **y para Claude Code**, que escribirá la mayor parte del código. Personas: lean los puntos 0, 1, 3 y 10. Claude Code: siga `CLAUDE.md`, `api/CLAUDE.md` y `supabase/CLAUDE.md`, y use esta guía como especificación. Las rutas `docs/…` son las del repositorio después de instalar `11_guias-de-desarrollo/paquete-repo/`. Fuentes: reglas v4.9, contrato 0.2.5, `02_base-de-datos/especificacion-supabase-v1.md`, `04_datos-simulados/` (Avance 03 y calibración de umbrales v1), catálogo de textos v1 y el prototipo (lectura estática; **no se ejecutó**).
+Versión 2 · 03/11/2026 (actualizada el 10/11/2026: carpetas en inglés y nombres de ramas). Para quien programa la API (FastAPI) y configura Supabase, **y para Claude Code**, que escribirá la mayor parte del código. Personas: lean los puntos 0, 1, 3 y 10. Claude Code: siga `CLAUDE.md`, `api/CLAUDE.md` y `supabase/CLAUDE.md` (en la carpeta: `11_guias-de-desarrollo/claude-code/`), y use esta guía como especificación. Las rutas `docs/…` son las del repositorio; en la carpeta `Archivos_Zentheris` los mismos documentos están en las carpetas 01 a 09 (la tabla de correspondencia está en `MANIFIESTO.md`, solo en la carpeta). Fuentes: reglas v4.9, contrato 0.2.5, `02_base-de-datos/especificacion-supabase-v1.md`, `04_datos-simulados/` (Avance 03 y calibración de umbrales v1), catálogo de textos v1 y el prototipo (lectura estática; **no se ejecutó**).
 
 **Antes de empezar:** la base de datos ya está creada (08/11/2026) en el proyecto `zentheris`, con las 6 migraciones aplicadas (ver `supabase/migrations/` y `docs/supabase/especificacion-supabase-v1.md`, v1.1). Nada de esto se vuelve a crear.
 
@@ -169,8 +169,8 @@ Una función está **hecha** cuando tiene código, pruebas que pasan en CI, la r
 
 ## 11. Cómo trabajar con Claude Code (DC-57)
 
-1. Instala el paquete de contexto (`11_guias-de-desarrollo/paquete-repo/LEEME-paquete-repo.md`).
-2. Una fase por sesión y un PR por fase, siguiendo la tabla de sesiones del paquete. Cada sesión empieza pidiéndole que lea `CLAUDE.md` y proponga un plan.
+1. Comprueba que el contexto del proyecto está en el repositorio: `CLAUDE.md`, `api/CLAUDE.md`, `supabase/CLAUDE.md` y `docs/` (ya están en `main` desde el 12/11/2026). Cómo se sincronizan con la carpeta: `docs/guias/COMO-EMPEZAR-integracion-supabase-y-github.md` (`11_guias-de-desarrollo/COMO-EMPEZAR-integracion-supabase-y-github.md`).
+2. Una fase por sesión y un PR por fase, siguiendo la tabla de sesiones (el original está en `11_guias-de-desarrollo/_historico/LEEME-paquete-repo.md`, solo en la carpeta). Cada sesión empieza pidiéndole que lea `CLAUDE.md` y proponga un plan.
 3. Claude Code escribe el código y las pruebas. **Una persona** revisa el diff, corre las pruebas y aprueba.
 4. Claude Code no aplica migraciones al proyecto remoto ni fusiona PR por su cuenta, y nunca maneja secretos: los `.env` los llena una persona.
 5. Si Claude Code encuentra una contradicción entre documentos, la reporta en el PR y gana la regla de número menor del `CLAUDE.md` raíz.

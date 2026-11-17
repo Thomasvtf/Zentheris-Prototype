@@ -148,13 +148,13 @@ def _pending_code_response(status_code: int) -> JSONResponse:
     )
 
 
-async def _handle_pending_code(_request: Request, exc: Exception) -> JSONResponse:
+def _handle_pending_code(_request: Request, exc: Exception) -> JSONResponse:
     # TEMPORAL: ver PendingCodeError (cuerpo sin `codigo` hasta cerrar PENDIENTES #29).
     assert isinstance(exc, PendingCodeError)
     return _pending_code_response(exc.status_code)
 
 
-async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
     """500 genérico: la excepción va al log, nunca a la respuesta (S-01)."""
     # Plantilla de la ruta (`/hogares/{hogar_id}/...`), no la URL: sin valores del cliente.
     route = request.scope.get("route")

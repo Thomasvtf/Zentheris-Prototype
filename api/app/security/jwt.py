@@ -2,8 +2,13 @@
 
 Con `SUPABASE_JWKS_URL` se valida solo con algoritmos asimétricos (`ES256`, `RS256`) y la
 clave pública del JWKS. Solo si no hay JWKS pero sí `SUPABASE_JWT_SECRET`, se acepta HS256
-con ese secreto. Nunca `alg=none`, nunca HS256 cuando se valida por JWKS. Los errores son
-`InvalidTokenError` y no llegan a la respuesta (la dependencia responde 401).
+con ese secreto. Nunca `alg=none`, nunca HS256 cuando se valida por JWKS.
+
+- `InvalidTokenError`: el token es inválido (la dependencia responde 401).
+- `AuthUnavailableError`: falla la infraestructura (configuración faltante o JWKS caído).
+  No es culpa del token: sube al manejador genérico y responde 500 (DC-16: la app muestra
+  «error del servidor», no «sesión vencida»).
+Ninguna de las dos llega a la respuesta.
 """
 
 import logging
@@ -40,16 +45,26 @@ class InvalidTokenError(Exception):
     """
 
 
+class AuthUnavailableError(RuntimeError):
+    """No se puede validar ningún token: falta configuración o el JWKS no responde.
+
+    Interna de la capa de seguridad: `current_user` no la captura y el manejador genérico
+    responde 500 sin exponerla.
+    """
+
+
 @lru_cache
 def get_jwks_client(jwks_url: str) -> jwt.PyJWKClient:
     """Cliente del JWKS de Supabase, uno por URL, con las claves en caché."""
-    return jwt.PyJWKClient(jwks_url, cache_keys=True, timeout=JWKS_TIMEOUT_SECONDS)
+    # cache_keys=False: la caché por `kid` no expira y una clave revocada seguiría válida hasta
+    # reiniciar. La caché del JWK set (cache_jwk_set, con `lifespan`) sí expira.
+    return jwt.PyJWKClient(jwks_url, cache_keys=False, timeout=JWKS_TIMEOUT_SECONDS)
 
 
 def _expected_issuer(settings: Settings) -> str:
     if not settings.supabase_url:
         logger.error("Falta SUPABASE_URL: no se puede validar el emisor del token.")
-        raise InvalidTokenError("configuración incompleta")
+        raise AuthUnavailableError("configuración incompleta")
     return f"{settings.supabase_url.rstrip('/')}/auth/v1"
 
 
@@ -65,7 +80,7 @@ def _verification_key(token: str, settings: Settings) -> tuple[Any, list[str]]:
     if settings.supabase_jwt_secret is not None:
         return settings.supabase_jwt_secret.get_secret_value(), [SYMMETRIC_ALGORITHM]
     logger.error("Faltan SUPABASE_JWKS_URL y SUPABASE_JWT_SECRET: no se puede validar el token.")
-    raise InvalidTokenError("configuración incompleta")
+    raise AuthUnavailableError("configuración incompleta")
 
 
 def validate_jwt(token: str, settings: Settings) -> dict[str, Any]:
@@ -81,6 +96,10 @@ def validate_jwt(token: str, settings: Settings) -> dict[str, Any]:
             issuer=issuer,
             options={"require": REQUIRED_CLAIMS},
         )
+    except jwt.PyJWKClientConnectionError as exc:
+        # Antes que PyJWTError (es su subclase): JWKS caído = 500, no 401. Solo el tipo.
+        logger.error("No se pudo consultar el JWKS: %s", type(exc).__name__)
+        raise AuthUnavailableError("JWKS no disponible") from None
     except jwt.PyJWTError as exc:
         # Solo el tipo de error: ni el token ni sus claims van al log.
         logger.info("Token rechazado: %s", type(exc).__name__)

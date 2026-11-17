@@ -96,7 +96,7 @@ def test_membership_dependency_builds_membership_with_permissions(
             modificar_metas=True,
         ),
     )
-    assert member.es_administrador is False
+    assert member.is_admin is False
 
 
 def test_membership_dependency_raises_404_without_active_membership(
@@ -114,4 +114,4 @@ def test_admin_membership_is_administrator() -> None:
         membresia_id=MEMBER_ID, hogar_id=HOGAR_ID, usuario_id=MEMBER_ID, rol="administrador",
         permisos=HouseholdPermissions(False, False, False, False),
     )
-    assert member.es_administrador is True
+    assert member.is_admin is True

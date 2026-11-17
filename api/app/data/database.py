@@ -16,11 +16,20 @@ from app.config import get_settings
 
 @lru_cache
 def get_engine() -> Engine:
-    """Crea el motor una vez. NullPool: requerido por el Transaction Pooler (puerto 6543)."""
+    """Crea el motor una vez. NullPool: requerido por el Transaction Pooler (puerto 6543).
+
+    hide_parameters=True: los errores de SQLAlchemy no incluyen los valores de los
+    parámetros (correos, hash de tokens), así no llegan a los logs del 500 (S-01).
+    """
     database_url = get_settings().database_url
     if database_url is None:
         raise RuntimeError("Falta DATABASE_URL en las variables de entorno.")
-    return create_engine(database_url.get_secret_value(), echo=False, poolclass=NullPool)
+    return create_engine(
+        database_url.get_secret_value(),
+        echo=False,
+        poolclass=NullPool,
+        hide_parameters=True,
+    )
 
 
 def get_session() -> Iterator[Session]:

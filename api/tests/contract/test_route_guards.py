@@ -128,6 +128,16 @@ def contract_operation_ids() -> set[str]:
     }
 
 
+def contract_response_codes() -> dict[str, set[str]]:
+    """operationId → códigos de respuesta declarados en el contrato."""
+    return {
+        op["operationId"]: {str(code) for code in op.get("responses", {})}
+        for item in CONTRACT["paths"].values()
+        for method, op in item.items()
+        if method in HTTP_METHODS
+    }
+
+
 def app_dependants() -> dict[str, Dependant]:
     """operationId → árbol de dependencias efectivo de la ruta.
 
@@ -147,6 +157,7 @@ def app_dependants() -> dict[str, Dependant]:
 
 
 ROUTES = app_dependants()
+CONTRACT_RESPONSE_CODES = contract_response_codes()
 
 
 def test_table_covers_every_contract_operation() -> None:
@@ -168,3 +179,18 @@ def test_require_permission_returns_the_same_function_per_permission() -> None:
 def test_operation_has_exactly_its_guard(operation_id: str) -> None:
     guard = EXPECTED_GUARD[operation_id]
     assert guards_in(ROUTES[operation_id]) == expected_guards(guard), guard
+
+
+DENYING_GUARDS = {ADMIN, *PERMISSIONS}
+
+
+@pytest.mark.parametrize(
+    "operation_id", sorted(op for op, guard in EXPECTED_GUARD.items() if guard in DENYING_GUARDS)
+)
+def test_denying_guard_requires_403_in_contract(operation_id: str) -> None:
+    """Un guardia que puede negar (administrador o permiso) exige el 403 en el contrato.
+
+    La inversa no aplica: resolver, aceptar y rechazar invitación declaran 403 por
+    `CORREO_NO_COINCIDE`, que lo decide el servicio y no un guardia.
+    """
+    assert "403" in CONTRACT_RESPONSE_CODES[operation_id], EXPECTED_GUARD[operation_id]

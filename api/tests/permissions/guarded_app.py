@@ -6,7 +6,6 @@ prueba es el guardia (401 → 404 → 403), no el servicio.
 
 from collections.abc import Callable
 from typing import Annotated
-from uuid import UUID
 
 import httpx
 from fastapi import Depends, FastAPI
@@ -20,13 +19,35 @@ from app.security.dependencies import (
     Membership,
     require_permission,
 )
-from tests.helpers.auth import make_membership_row, make_test_settings, override_db_session
+from tests.helpers.auth import (
+    ADMIN_ID,
+    HOGAR_ID,
+    MEMBER_ID,
+    OTHER_HOGAR_ID,
+    OUTSIDER_ID,
+    make_membership_row,
+    make_test_settings,
+    override_db_session,
+)
 
-HOGAR_ID = UUID("11111111-1111-4111-8111-111111111111")
-OTHER_HOGAR_ID = UUID("22222222-2222-4222-8222-222222222222")
-ADMIN_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-MEMBER_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
-OUTSIDER_ID = UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+# Los ids viven en tests/helpers/auth.py; se re-exportan aquí para quien ya los importe.
+__all__ = [
+    "ADMIN_ID",
+    "ADMIN_ROUTES",
+    "ALL_ROUTES",
+    "FORBIDDEN_MESSAGE",
+    "HOGAR_ID",
+    "MEMBER_ID",
+    "MEMBER_ROUTES",
+    "OTHER_HOGAR_ID",
+    "OUTSIDER_ID",
+    "PERMISSION_ROUTES",
+    "CallRoute",
+    "admin_row",
+    "build_guarded_app",
+    "member_row",
+]
+
 
 # (método, ruta relativa a /hogares/{hogar_id}) por guardia.
 MEMBER_ROUTES = [("GET", "/miembros")]

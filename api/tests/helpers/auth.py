@@ -29,6 +29,13 @@ TEST_KEY_ID = "clave-de-prueba"
 # Solo para pruebas del modo HS256 (DC-44, respaldo sin JWKS). No es un secreto real.
 TEST_JWT_SECRET = "secreto-hs256-solo-para-pruebas-sin-valor-real-0123456789"
 
+# Ids fijos de las pruebas de seguridad (hogar, hogar ajeno y personas).
+HOGAR_ID = UUID("11111111-1111-4111-8111-111111111111")
+OTHER_HOGAR_ID = UUID("22222222-2222-4222-8222-222222222222")
+ADMIN_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+MEMBER_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+OUTSIDER_ID = UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+
 TEST_PRIVATE_KEY = ec.generate_private_key(ec.SECP256R1())
 TEST_PUBLIC_JWK: dict[str, Any] = {
     **ECAlgorithm.to_jwk(TEST_PRIVATE_KEY.public_key(), as_dict=True),

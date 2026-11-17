@@ -246,7 +246,11 @@ def test_unimplemented_operations_return_501_with_operation_id(
 
 
 def test_operations_without_token_return_401() -> None:
-    """Sin token, toda operación salvo `obtenerSalud` responde 401 antes de validar la entrada."""
+    """Sin token, toda operación salvo `obtenerSalud` responde 401 antes de validar la entrada.
+
+    Salvo un cuerpo que no es JSON válido: FastAPI lo lee antes de las dependencias y
+    responde 422 `VALIDACION` (ver `test_malformed_body_without_token_returns_422`).
+    """
     app = create_app(Settings(_env_file=None))
     app.dependency_overrides[get_settings] = make_test_settings
     client = TestClient(app)
@@ -260,6 +264,24 @@ def test_operations_without_token_return_401() -> None:
         assert response.headers.get("WWW-Authenticate") == "Bearer", operation_id
         checked += 1
     assert checked == len(contract_operations()) - 1
+
+
+def test_malformed_body_without_token_returns_422() -> None:
+    """Documenta la excepción al 401: un cuerpo que no es JSON se rechaza antes de autenticar."""
+    app = create_app(Settings(_env_file=None))
+    app.dependency_overrides[get_settings] = make_test_settings
+    client = TestClient(app)
+    method, path, op, _params = contract_operations()["crearFichaUsuario"]
+    assert method == "post" and op.get("requestBody")
+    response = client.request(
+        method.upper(),
+        sample_url(path),
+        content=b'{"nombre_completo": ',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert response.json()["codigo"] == "VALIDACION"
+    assert "WWW-Authenticate" not in response.headers
 
 
 FORBIDDEN_IN_DOMAIN = ("fastapi", "sqlmodel", "sqlalchemy", "psycopg2", "app.data",

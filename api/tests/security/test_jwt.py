@@ -3,6 +3,8 @@
 Reglas: DC-44 (firmas públicas por JWKS; HS256 con `SUPABASE_JWT_SECRET` solo si no hay
 JWKS), RN-I-03 (el usuario sale del claim `sub`). Algoritmos explícitos: nunca `alg=none`
 ni HS256 cuando se valida por JWKS. Sin red: el JWKS es una clave EC generada en memoria.
+DC-16: un token inválido es 401 (sesión vencida); una falla de infraestructura
+(configuración faltante o JWKS caído) es 500 (error del servidor), sin exponer nada.
 """
 
 import base64
@@ -12,6 +14,7 @@ import json
 from collections.abc import Callable, Iterator
 from uuid import UUID
 
+import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -23,7 +26,13 @@ from app.config import Settings, get_settings
 from app.errors import ERROR_DESCRIPTIONS, register_error_handlers
 from app.security import jwt as jwt_module
 from app.security.dependencies import CurrentUser
-from app.security.jwt import ASYMMETRIC_ALGORITHMS, AUDIENCE, InvalidTokenError, validate_jwt
+from app.security.jwt import (
+    ASYMMETRIC_ALGORITHMS,
+    AUDIENCE,
+    AuthUnavailableError,
+    InvalidTokenError,
+    validate_jwt,
+)
 from tests.helpers.auth import (
     TEST_ISSUER,
     TEST_JWT_SECRET,
@@ -38,6 +47,21 @@ from tests.helpers.auth import (
 
 USER_ID = UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
 UNAUTHORIZED_BODY = {"mensaje": ERROR_DESCRIPTIONS[401], "detalles": None}
+INTERNAL_ERROR_BODY = {"mensaje": ERROR_DESCRIPTIONS[500], "detalles": None}
+MISSING_CONFIGURATIONS = [
+    pytest.param(Settings(_env_file=None), id="sin-nada"),
+    pytest.param(Settings(_env_file=None, SUPABASE_URL=TEST_SUPABASE_URL), id="sin-claves"),
+    pytest.param(
+        Settings(_env_file=None, SUPABASE_JWT_SECRET=TEST_JWT_SECRET), id="sin-supabase-url"
+    ),
+]
+
+
+class BrokenJwksClient:
+    """JWKS caído: la consulta de la clave falla por red."""
+
+    def get_signing_key_from_jwt(self, _token: str) -> jwt.PyJWK:
+        raise jwt.PyJWKClientConnectionError("sin red: detalle-de-red-interno")
 
 
 @pytest.fixture
@@ -132,14 +156,17 @@ def test_hs256_signed_with_public_key_is_rejected_with_jwks() -> None:
         validate_jwt(token, make_test_settings())
 
 
-def test_jwks_network_error_is_invalid_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    class BrokenClient:
-        def get_signing_key_from_jwt(self, _token: str) -> jwt.PyJWK:
-            raise jwt.PyJWKClientConnectionError("sin red")
-
-    monkeypatch.setattr(jwt_module, "get_jwks_client", lambda _url: BrokenClient())
-    with pytest.raises(InvalidTokenError):
-        validate_jwt(make_token(USER_ID), make_test_settings())
+def test_jwks_network_error_is_auth_unavailable(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Infraestructura, no token: no debe tratarse como InvalidTokenError (401).
+    monkeypatch.setattr(jwt_module, "get_jwks_client", lambda _url: BrokenJwksClient())
+    token = make_token(USER_ID)
+    with pytest.raises(AuthUnavailableError):
+        validate_jwt(token, make_test_settings())
+    assert not issubclass(AuthUnavailableError, InvalidTokenError)
+    assert "PyJWKClientConnectionError" in caplog.text
+    assert token not in caplog.text
 
 
 def test_get_jwks_client_is_cached_per_url() -> None:
@@ -149,6 +176,9 @@ def test_get_jwks_client_is_cached_per_url() -> None:
         assert first is jwt_module.get_jwks_client("https://a.example/jwks.json")
         assert isinstance(first, jwt.PyJWKClient)
         assert first is not jwt_module.get_jwks_client("https://b.example/jwks.json")
+        # Sin caché por `kid` (no expira); sí la del JWK set, que expira con `lifespan`.
+        assert not hasattr(first.get_signing_key, "cache_info")
+        assert first.jwk_set_cache is not None
     finally:
         jwt_module.get_jwks_client.cache_clear()
 
@@ -184,20 +214,11 @@ def test_jwks_wins_over_secret_when_both_are_configured() -> None:
         validate_jwt(make_token(USER_ID, algorithm="HS256"), settings)
 
 
-@pytest.mark.parametrize(
-    "settings",
-    [
-        pytest.param(Settings(_env_file=None), id="sin-nada"),
-        pytest.param(Settings(_env_file=None, SUPABASE_URL=TEST_SUPABASE_URL), id="sin-claves"),
-        pytest.param(
-            Settings(_env_file=None, SUPABASE_JWT_SECRET=TEST_JWT_SECRET), id="sin-supabase-url"
-        ),
-    ],
-)
-def test_missing_configuration_is_invalid_token(
+@pytest.mark.parametrize("settings", MISSING_CONFIGURATIONS)
+def test_missing_configuration_is_auth_unavailable(
     settings: Settings, caplog: pytest.LogCaptureFixture
 ) -> None:
-    with pytest.raises(InvalidTokenError):
+    with pytest.raises(AuthUnavailableError):
         validate_jwt(make_token(USER_ID, algorithm="HS256"), settings)
     assert caplog.records, "la configuración faltante debe quedar en el log"
     assert TEST_JWT_SECRET not in caplog.text
@@ -249,7 +270,8 @@ def test_current_user_rejects_with_401(client: TestClient, headers: dict[str, st
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
-def test_current_user_without_configuration_is_401(monkeypatch: pytest.MonkeyPatch) -> None:
+def _get_me_with(settings: Settings) -> httpx.Response:
+    """`GET /yo` con un token válido y la configuración dada; el 500 no se relanza."""
     app = FastAPI()
     register_error_handlers(app)
 
@@ -257,13 +279,31 @@ def test_current_user_without_configuration_is_401(monkeypatch: pytest.MonkeyPat
     def me(user: CurrentUser) -> dict[str, str]:
         return {"id": str(user.id)}
 
-    app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None)
+    app.dependency_overrides[get_settings] = lambda: settings
     try:
-        response = TestClient(app).get("/yo", headers=auth_header(make_token(USER_ID)))
+        client = TestClient(app, raise_server_exceptions=False)
+        return client.get("/yo", headers=auth_header(make_token(USER_ID)))
     finally:
         app.dependency_overrides.clear()
-    assert response.status_code == 401
-    assert response.json() == UNAUTHORIZED_BODY
+
+
+def _assert_generic_500(response: httpx.Response) -> None:
+    assert response.status_code == 500
+    assert response.json() == INTERNAL_ERROR_BODY
+    assert "WWW-Authenticate" not in response.headers
+    for fragment in ("AuthUnavailableError", "PyJWKClientConnectionError", "detalle-de-red",
+                     "configuración incompleta", "JWKS", "SUPABASE", "Traceback"):
+        assert fragment not in response.text
+
+
+@pytest.mark.parametrize("settings", MISSING_CONFIGURATIONS)
+def test_current_user_without_configuration_is_500(settings: Settings) -> None:
+    _assert_generic_500(_get_me_with(settings))
+
+
+def test_current_user_with_jwks_down_is_500(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(jwt_module, "get_jwks_client", lambda _url: BrokenJwksClient())
+    _assert_generic_500(_get_me_with(make_test_settings()))
 
 
 def test_rejected_token_is_never_echoed(client: TestClient) -> None:

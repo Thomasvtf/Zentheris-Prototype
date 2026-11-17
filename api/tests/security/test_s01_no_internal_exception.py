@@ -21,15 +21,16 @@ from app.errors import ERROR_DESCRIPTIONS
 from app.main import API_PREFIX, create_app
 from app.security.dependencies import CurrentMembership
 from tests.helpers.auth import (
+    ADMIN_ID,
+    HOGAR_ID,
     auth_header,
     install_test_jwks,
     make_test_settings,
     make_token,
     override_db_session,
 )
-from tests.permissions.guarded_app import ADMIN_ID, HOGAR_ID
 
-SECRET_DETAIL = "detalle-interno-que-no-debe-salir postgresql://usuario:clave@host/db"
+SECRET_DETAIL = "detalle-interno-que-no-debe-salir postgresql://<redactado>"
 INTERNAL_ERROR_BODY = {"mensaje": ERROR_DESCRIPTIONS[500], "detalles": None}
 
 

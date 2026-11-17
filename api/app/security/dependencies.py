@@ -1,8 +1,11 @@
 """Dependencias de FastAPI para autenticación, membresía y permisos.
 
-Orden garantizado en cada llamada: 401 (token) → 404 (membresía activa, RN-I-03) → 403
-(rol o permiso, RN-XVII y RN-X-08). El 403 lleva el `CodigoError` exacto; el
-administrador pasa todos los permisos aunque estén desactivados (RN-XVII-05).
+Orden en cada llamada: 401 (token) → 404 (membresía activa, RN-I-03) → 403 (rol o permiso,
+RN-XVII, RN-X-08 y RN-XVI-05). Excepción: un cuerpo que no es JSON válido da 422 antes,
+porque FastAPI lo lee antes de resolver las dependencias. El 403 lleva el `CodigoError`
+exacto; el administrador pasa todos los permisos aunque estén desactivados (RN-XVII-05).
+Si no se puede validar ningún token (configuración faltante o JWKS caído), la
+`AuthUnavailableError` no se captura aquí y responde 500, no 401 (DC-16).
 """
 
 from collections.abc import Callable
@@ -51,7 +54,7 @@ class Membership:
     permisos: HouseholdPermissions
 
     @property
-    def es_administrador(self) -> bool:
+    def is_admin(self) -> bool:
         """El administrador ve y hace todo, con o sin permisos activados (RN-XVII-05)."""
         return self.rol == "administrador"
 
@@ -68,7 +71,10 @@ def current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AuthenticatedUser:
-    """Valida el token con `validate_jwt` y devuelve el usuario; si no, 401."""
+    """Valida el token con `validate_jwt` y devuelve el usuario; si no, 401.
+
+    `AuthUnavailableError` (infraestructura) no se captura: el manejador genérico da 500.
+    """
     if credentials is None or not credentials.credentials:
         raise _unauthorized()
     try:
@@ -89,6 +95,7 @@ def current_user(
 CurrentUser = Annotated[AuthenticatedUser, Depends(current_user)]
 
 
+# TODO(pendiente: sesión compartida guardia-servicio; decidir antes del primer servicio que escribe si el router pasa la misma Session al servicio o si el servicio revalida la membresía en su transacción)
 def membership(
     hogar_id: UUID,
     user: CurrentUser,
@@ -132,20 +139,25 @@ def require_permission(permission: Permission) -> Callable[..., Membership]:
     """
     if permission not in PERMISSION_ERRORS:
         raise ValueError(f"Permiso desconocido: {permission}")
-    codigo = PERMISSION_ERRORS[permission]
+    error_code = PERMISSION_ERRORS[permission]
 
     def dependency(member: CurrentMembership) -> Membership:
-        if member.es_administrador or getattr(member.permisos, permission):
+        if member.is_admin or getattr(member.permisos, permission):
             return member
-        raise ApiError(403, codigo, ERROR_DESCRIPTIONS[403])
+        raise ApiError(403, error_code, ERROR_DESCRIPTIONS[403])
 
     dependency.__name__ = dependency.__qualname__ = f"require_permission_{permission}"
     return dependency
 
 
 def require_admin(member: CurrentMembership) -> Membership:
-    """Exige el rol de administrador; 403 `NO_ES_ADMINISTRADOR` si no lo es (RN-X-08)."""
-    if not member.es_administrador:
+    """Exige el rol de administrador; 403 `NO_ES_ADMINISTRADOR` si no lo es.
+
+    Reglas: RN-X-08 (invitar, expulsar, transferir, cancelar invitaciones y mover los
+    permisos es exclusivo del administrador) y RN-XVI-05 (solo el administrador edita la
+    tarifa).
+    """
+    if not member.is_admin:
         raise ApiError(403, CodigoError.NO_ES_ADMINISTRADOR, ERROR_DESCRIPTIONS[403])
     return member
 

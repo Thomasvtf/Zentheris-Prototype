@@ -3,13 +3,20 @@
 Solo valida la entrada y llama al servicio (api/CLAUDE.md).
 """
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.errors import error_responses
 from app.schemas.goals_tariff import Meta, MetaCrear, MetaVista, Tarifa, TarifaCrear, TarifaVista
-from app.security.dependencies import CurrentUser
+from app.security.dependencies import (
+    AdminMembership,
+    CurrentMembership,
+    CurrentUser,
+    Membership,
+    require_permission,
+)
 from app.services import goals_tariff as service
 
 router = APIRouter(tags=["Metas y tarifa"])
@@ -22,7 +29,7 @@ router = APIRouter(tags=["Metas y tarifa"])
     response_model=MetaVista,
     responses=error_responses(401, 404),
 )
-def get_goal(hogar_id: UUID, user: CurrentUser) -> MetaVista:
+def get_goal(hogar_id: UUID, user: CurrentUser, member: CurrentMembership) -> MetaVista:
     """Meta activa del hogar y promedio de referencia (RN-V-03, RN-XVI-04)."""
     return service.get_goal(user.id, hogar_id)
 
@@ -35,7 +42,12 @@ def get_goal(hogar_id: UUID, user: CurrentUser) -> MetaVista:
     status_code=201,
     responses=error_responses(401, 403, 404, 422),
 )
-def create_goal(hogar_id: UUID, user: CurrentUser, payload: MetaCrear) -> Meta:
+def create_goal(
+    hogar_id: UUID,
+    user: CurrentUser,
+    member: Annotated[Membership, Depends(require_permission("modificar_metas"))],
+    payload: MetaCrear,
+) -> Meta:
     """Guardar una meta nueva (RN-V-03, RN-XVI-04, RN-XVII-04)."""
     return service.create_goal(user.id, hogar_id, payload)
 
@@ -47,7 +59,7 @@ def create_goal(hogar_id: UUID, user: CurrentUser, payload: MetaCrear) -> Meta:
     response_model=TarifaVista,
     responses=error_responses(401, 404),
 )
-def get_tariff(hogar_id: UUID, user: CurrentUser) -> TarifaVista:
+def get_tariff(hogar_id: UUID, user: CurrentUser, member: CurrentMembership) -> TarifaVista:
     """Tarifa vigente del hogar (RN-XVI-05)."""
     return service.get_tariff(user.id, hogar_id)
 
@@ -60,6 +72,8 @@ def get_tariff(hogar_id: UUID, user: CurrentUser) -> TarifaVista:
     status_code=201,
     responses=error_responses(401, 403, 404, 422),
 )
-def create_tariff(hogar_id: UUID, user: CurrentUser, payload: TarifaCrear) -> Tarifa:
+def create_tariff(
+    hogar_id: UUID, user: CurrentUser, member: AdminMembership, payload: TarifaCrear
+) -> Tarifa:
     """Guardar una tarifa nueva (RN-V-01, RN-V-02, RN-XVI-05)."""
     return service.create_tariff(user.id, hogar_id, payload)

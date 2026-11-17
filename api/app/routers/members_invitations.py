@@ -18,7 +18,7 @@ from app.schemas.members_invitations import (
     MiembrosHogar,
 )
 from app.schemas.users import MembresiaResumen
-from app.security.dependencies import CurrentUser
+from app.security.dependencies import AdminMembership, CurrentMembership, CurrentUser
 from app.services import members_invitations as service
 
 router = APIRouter(tags=["Miembros e invitaciones"])
@@ -31,7 +31,7 @@ router = APIRouter(tags=["Miembros e invitaciones"])
     response_model=MiembrosHogar,
     responses=error_responses(401, 404),
 )
-def list_members(hogar_id: UUID, user: CurrentUser) -> MiembrosHogar:
+def list_members(hogar_id: UUID, user: CurrentUser, member: CurrentMembership) -> MiembrosHogar:
     """Miembros activos, invitaciones pendientes y permisos (RN-XVI-07)."""
     return service.list_members(user.id, hogar_id)
 
@@ -43,7 +43,9 @@ def list_members(hogar_id: UUID, user: CurrentUser) -> MiembrosHogar:
     response_model=Permisos,
     responses=error_responses(401, 403, 404, 422),
 )
-def update_permissions(hogar_id: UUID, user: CurrentUser, payload: PermisosActualizar) -> Permisos:
+def update_permissions(
+    hogar_id: UUID, user: CurrentUser, member: AdminMembership, payload: PermisosActualizar
+) -> Permisos:
     """Cambiar los permisos generales del hogar (RN-II-03, RN-X-08)."""
     return service.update_permissions(user.id, hogar_id, payload)
 
@@ -57,7 +59,9 @@ def update_permissions(hogar_id: UUID, user: CurrentUser, payload: PermisosActua
     status_code=204,
     responses=error_responses(401, 403, 404, 409),
 )
-def remove_member(hogar_id: UUID, membresia_id: UUID, user: CurrentUser) -> None:
+def remove_member(
+    hogar_id: UUID, membresia_id: UUID, user: CurrentUser, member: AdminMembership
+) -> None:
     """Expulsar a un miembro (RN-II-04, RN-X-07)."""
     return service.remove_member(user.id, hogar_id, membresia_id)
 
@@ -69,7 +73,9 @@ def remove_member(hogar_id: UUID, membresia_id: UUID, user: CurrentUser) -> None
     response_model=MiembrosHogar,
     responses=error_responses(401, 403, 404, 409),
 )
-def transfer_admin(hogar_id: UUID, membresia_id: UUID, user: CurrentUser) -> MiembrosHogar:
+def transfer_admin(
+    hogar_id: UUID, membresia_id: UUID, user: CurrentUser, member: AdminMembership
+) -> MiembrosHogar:
     """Transferir el rol de administrador a otro miembro activo (RN-II-04, RN-X-07)."""
     return service.transfer_admin(user.id, hogar_id, membresia_id)
 
@@ -83,7 +89,7 @@ def transfer_admin(hogar_id: UUID, membresia_id: UUID, user: CurrentUser) -> Mie
     status_code=204,
     responses=error_responses(401, 404, 409),
 )
-def leave_household(hogar_id: UUID, user: CurrentUser) -> None:
+def leave_household(hogar_id: UUID, user: CurrentUser, member: CurrentMembership) -> None:
     """Salir voluntariamente del hogar (RN-II-04, RN-X-07)."""
     return service.leave_household(user.id, hogar_id)
 
@@ -97,7 +103,7 @@ def leave_household(hogar_id: UUID, user: CurrentUser) -> None:
     responses=error_responses(401, 403, 404, 409, 422),
 )
 def create_invitation(
-    hogar_id: UUID, user: CurrentUser, payload: InvitacionCrear
+    hogar_id: UUID, user: CurrentUser, member: AdminMembership, payload: InvitacionCrear
 ) -> InvitacionPendiente:
     """Invitar a una persona por correo (RN-X-05)."""
     return service.create_invitation(user.id, hogar_id, payload)
@@ -112,7 +118,9 @@ def create_invitation(
     status_code=204,
     responses=error_responses(401, 403, 404, 409),
 )
-def revoke_invitation(hogar_id: UUID, invitacion_id: UUID, user: CurrentUser) -> None:
+def revoke_invitation(
+    hogar_id: UUID, invitacion_id: UUID, user: CurrentUser, member: AdminMembership
+) -> None:
     """Cancelar una invitación pendiente (RN-X-06)."""
     return service.revoke_invitation(user.id, hogar_id, invitacion_id)
 

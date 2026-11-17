@@ -6,7 +6,7 @@ Solo valida la entrada y llama al servicio (api/CLAUDE.md).
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.errors import error_responses
 from app.schemas.alerts_tips import (
@@ -19,7 +19,12 @@ from app.schemas.alerts_tips import (
     ConsejoEstadoActualizar,
     ConsejosLista,
 )
-from app.security.dependencies import CurrentUser
+from app.security.dependencies import (
+    CurrentMembership,
+    CurrentUser,
+    Membership,
+    require_permission,
+)
 from app.services import alerts_tips as service
 
 router = APIRouter(tags=["Alertas y consejos"])
@@ -35,6 +40,7 @@ router = APIRouter(tags=["Alertas y consejos"])
 def list_alerts(
     hogar_id: UUID,
     user: CurrentUser,
+    member: Annotated[Membership, Depends(require_permission("recibir_alertas"))],
     categoria: Annotated[CategoriaAlerta | None, Query()] = None,
     limite: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> AlertasLista:
@@ -49,7 +55,11 @@ def list_alerts(
     response_model=AlertasNoLeidas,
     responses=error_responses(401, 403, 404),
 )
-def count_unread_alerts(hogar_id: UUID, user: CurrentUser) -> AlertasNoLeidas:
+def count_unread_alerts(
+    hogar_id: UUID,
+    user: CurrentUser,
+    member: Annotated[Membership, Depends(require_permission("recibir_alertas"))],
+) -> AlertasNoLeidas:
     """Indicador de la campana (RN-XII-02)."""
     return service.count_unread_alerts(user.id, hogar_id)
 
@@ -61,7 +71,12 @@ def count_unread_alerts(hogar_id: UUID, user: CurrentUser) -> AlertasNoLeidas:
     response_model=AlertasMarcadas,
     responses=error_responses(401, 403, 404, 422),
 )
-def mark_alerts_read(hogar_id: UUID, user: CurrentUser, payload: AlertasMarcar) -> AlertasMarcadas:
+def mark_alerts_read(
+    hogar_id: UUID,
+    user: CurrentUser,
+    member: Annotated[Membership, Depends(require_permission("recibir_alertas"))],
+    payload: AlertasMarcar,
+) -> AlertasMarcadas:
     """Marcar como leídas las alertas visibles al entrar (RN-XIV-03, RN-VI-05)."""
     return service.mark_alerts_read(user.id, hogar_id, payload)
 
@@ -73,7 +88,7 @@ def mark_alerts_read(hogar_id: UUID, user: CurrentUser, payload: AlertasMarcar) 
     response_model=ConsejosLista,
     responses=error_responses(401, 404),
 )
-def list_tips(hogar_id: UUID, user: CurrentUser) -> ConsejosLista:
+def list_tips(hogar_id: UUID, user: CurrentUser, member: CurrentMembership) -> ConsejosLista:
     """Consejos visibles para el usuario (RN-VI-03, RN-XV-02, RN-XV-03, RN-XV-04, RN-XV-05)."""
     return service.list_tips(user.id, hogar_id)
 
@@ -86,7 +101,11 @@ def list_tips(hogar_id: UUID, user: CurrentUser) -> ConsejosLista:
     responses=error_responses(401, 404, 422),
 )
 def update_tip_status(
-    hogar_id: UUID, consejo_id: UUID, user: CurrentUser, payload: ConsejoEstadoActualizar
+    hogar_id: UUID,
+    consejo_id: UUID,
+    user: CurrentUser,
+    member: CurrentMembership,
+    payload: ConsejoEstadoActualizar,
 ) -> Consejo:
     """Marcar o desmarcar un consejo (RN-XV-03, RN-VI-05)."""
     return service.update_tip_status(user.id, hogar_id, consejo_id, payload)

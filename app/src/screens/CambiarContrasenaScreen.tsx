@@ -1,283 +1,340 @@
-// @ts-nocheck
-import React, { useState } from 'react';
+/**
+ * Cambiar contraseña (sección 6.12; RN-IX-02). Contrato:
+ * POST /usuarios/me/contrasena/verificar (verificarContrasenaActual) y
+ * POST /usuarios/me/contrasena (cambiarContrasena). Mapa: docs/MAPA-DE-INTEGRACION.md,
+ * filas 10 y 11.
+ *
+ * - Primero se verifica la contraseña actual; solo con la actual correcta se habilitan
+ *   «Nueva» y «Confirmar».
+ * - Requisitos: mínimo 8 caracteres, una mayúscula, un número y diferente a la actual
+ *   (ícono + texto, nunca solo color). El botón se habilita solo al cumplirlos todos.
+ * - Las contraseñas nunca se guardan ni se muestran en registros; solo viven en el estado.
+ * - Esta pantalla no tiene `hogarId`: no depende del hogar.
+ */
+import React, { useCallback, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  SafeAreaView,
   StatusBar,
+  StyleSheet,
+  Text,
   TextInput,
-  Alert,
+  TextStyle,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
+import { toErrorTextKey } from '@/api/errors';
+import { changePassword, verifyCurrentPassword } from '@/api/users';
+import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { t } from '@/texts';
+
+type VerifyState =
+  | { status: 'idle' }
+  | { status: 'verifying' }
+  | { status: 'verified' }
+  | { status: 'error'; errorKey: string };
+
+type SaveState =
+  | { status: 'idle' }
+  | { status: 'saving' }
+  | { status: 'saved' }
+  | { status: 'error'; errorKey: string };
+
+/**
+ * Hook de datos de la pantalla: verificar la actual y guardar la nueva.
+ * TODO(pendiente: provider de React Query): cuando exista, este hook pasa a
+ * `useCambiarContrasenaData.ts` con useMutation. Aquí usa estado local.
+ */
+function useChangePasswordData() {
+  const [verify, setVerify] = useState<VerifyState>({ status: 'idle' });
+  const [save, setSave] = useState<SaveState>({ status: 'idle' });
+
+  const verifyCurrent = useCallback(async (current: string) => {
+    if (current.length === 0) return;
+    setVerify({ status: 'verifying' });
+    try {
+      await verifyCurrentPassword({ contrasena_actual: current });
+      setVerify({ status: 'verified' });
+    } catch (error: unknown) {
+      setVerify({ status: 'error', errorKey: toErrorTextKey(error) });
+    }
+  }, []);
+
+  const resetVerification = useCallback(() => {
+    setVerify({ status: 'idle' });
+    setSave({ status: 'idle' });
+  }, []);
+
+  const savePassword = useCallback(async (current: string, next: string) => {
+    setSave({ status: 'saving' });
+    try {
+      await changePassword({ contrasena_actual: current, contrasena_nueva: next });
+      setSave({ status: 'saved' });
+      setVerify({ status: 'idle' });
+    } catch (error: unknown) {
+      setSave({ status: 'error', errorKey: toErrorTextKey(error) });
+    }
+  }, []);
+
+  return { verify, save, verifyCurrent, resetVerification, savePassword };
+}
+
+function textStyle(name: keyof typeof typography): TextStyle {
+  const style = typography[name];
+  return {
+    fontFamily: fontFamilyFor(style.family, style.fontWeight),
+    fontSize: style.fontSize,
+    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
+  };
+}
+
+interface PasswordFieldProps {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  disabled?: boolean;
+  hasError?: boolean;
+  onBlur?: () => void;
+  onSubmitEditing?: () => void;
+  busy?: boolean;
+}
+
+function PasswordField({
+  label,
+  value,
+  onChangeText,
+  disabled = false,
+  hasError = false,
+  onBlur,
+  onSubmitEditing,
+  busy = false,
+}: PasswordFieldProps) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <View style={styles.fieldGroup}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View
+        style={[
+          styles.inputContainer,
+          hasError && styles.inputError,
+          disabled && styles.inputDisabled,
+        ]}
+      >
+        <TextInput
+          style={[styles.textInput, disabled && styles.textInputDisabled]}
+          value={value}
+          onChangeText={onChangeText}
+          secureTextEntry={!visible}
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!disabled && !busy}
+          onBlur={onBlur}
+          onSubmitEditing={onSubmitEditing}
+          returnKeyType="done"
+          accessibilityLabel={label}
+        />
+        <TouchableOpacity
+          style={styles.eyeBtn}
+          onPress={() => setVisible((v) => !v)}
+          activeOpacity={0.7}
+          disabled={disabled}
+          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          accessibilityRole="button"
+          accessibilityLabel={t(visible ? 'a11y.ocultar_contrasena' : 'a11y.mostrar_contrasena')}
+        >
+          <Ionicons
+            name={visible ? 'eye-outline' : 'eye-off-outline'}
+            size={20}
+            color={disabled ? colors['text-disabled'] : colors['text-muted']}
+          />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function FieldMessage({ children, tone }: { children: string; tone: 'error' | 'success' }) {
+  return (
+    <View style={styles.messageRow} accessibilityRole="alert">
+      <Ionicons
+        name={tone === 'error' ? 'close-circle-outline' : 'checkmark-circle-outline'}
+        size={16}
+        color={tone === 'error' ? colors['text-error'] : colors['text-success']}
+      />
+      <Text
+        style={[styles.messageText, { color: tone === 'error' ? colors['text-error'] : colors['text-success'] }]}
+      >
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+function Requirement({ text, met }: { text: string; met: boolean }) {
+  return (
+    <View
+      style={[styles.reqChip, met && styles.reqChipSatisfied]}
+      accessible
+      accessibilityLabel={text}
+      accessibilityState={{ checked: met }}
+    >
+      <Ionicons
+        name={met ? 'checkmark-circle' : 'ellipse-outline'}
+        size={14}
+        color={met ? colors['accent-primary'] : colors['text-disabled']}
+      />
+      <Text style={[styles.reqChipText, met && styles.reqChipTextSatisfied]}>{text}</Text>
+    </View>
+  );
+}
+
 export function CambiarContrasenaScreen() {
   const router = useRouter();
+  const { verify, save, verifyCurrent, resetVerification, savePassword } = useChangePasswordData();
 
-  // Estados de inputs
-  const [actual, setActual] = useState('');
-  const [nueva, setNueva] = useState('');
-  const [confirmar, setConfirmar] = useState('');
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
 
-  // Visibilidad de contraseñas
-  const [showActual, setShowActual] = useState(false);
-  const [showNueva, setShowNueva] = useState(false);
-  const [showConfirmar, setShowConfirmar] = useState(false);
-
-  // Validación de requisitos en tiempo real
-  const hasMinLen = nueva.length >= 8;
-  const hasUpperCase = /[A-Z]/.test(nueva);
-  const hasNumber = /[0-9]/.test(nueva);
-  const isDifferent = nueva.length > 0 && actual.length > 0 && nueva !== actual;
+  const verified = verify.status === 'verified';
+  const hasMinLen = next.length >= 8;
+  const hasUpperCase = /[A-Z]/.test(next);
+  const hasNumber = /[0-9]/.test(next);
+  const isDifferent = next.length > 0 && current.length > 0 && next !== current;
+  const mismatch = confirm.length > 0 && next !== confirm;
 
   const isValid =
-    actual.length > 0 &&
-    hasMinLen &&
-    hasUpperCase &&
-    hasNumber &&
-    isDifferent &&
-    nueva === confirmar;
+    verified && hasMinLen && hasUpperCase && hasNumber && isDifferent && next === confirm;
+  const saving = save.status === 'saving';
 
-  const handleGuardar = () => {
-    if (!actual) {
-      Alert.alert('Error', 'Por favor ingresa tu contraseña actual.');
-      return;
-    }
-    if (!hasMinLen || !hasUpperCase || !hasNumber) {
-      Alert.alert(
-        'Contraseña no segura',
-        'La nueva contraseña debe cumplir con todos los requisitos de seguridad.'
-      );
-      return;
-    }
-    if (nueva !== confirmar) {
-      Alert.alert('Error', 'Las contraseñas no coinciden.');
-      return;
-    }
-
-    Alert.alert(
-      'Contraseña actualizada',
-      'Tu contraseña ha sido cambiada exitosamente.',
-      [{ text: 'Aceptar', onPress: () => router.back() }]
-    );
+  const handleCurrentChange = (value: string) => {
+    setCurrent(value);
+    if (verify.status !== 'idle') resetVerification();
   };
+
+  const handleSave = async () => {
+    if (!isValid || saving) return;
+    await savePassword(current, next);
+  };
+
+  // Tras guardar con éxito se limpian los campos (nunca se conservan contraseñas en pantalla).
+  React.useEffect(() => {
+    if (save.status === 'saved') {
+      setCurrent('');
+      setNext('');
+      setConfirm('');
+    }
+  }, [save.status]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#071510" />
+      <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
 
-      {/* ─── Header ─────────────────────────────────────────── */}
       <View style={styles.header}>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.headerBtn}
           activeOpacity={0.7}
           onPress={() => router.back()}
+          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.volver')}
         >
-          <Ionicons name="chevron-back" size={24} color="#E6FAF0" />
+          <Ionicons name="chevron-back" size={24} color={colors['text-primary']} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Cambiar contraseña</Text>
-        <View style={styles.headerSpacer} />
+        <Text style={styles.headerTitle}>{t('contrasena.encabezado')}</Text>
+        <View style={styles.headerBtn} />
       </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* ─── Tarjeta: Protege tu cuenta ─────────────────────── */}
         <View style={styles.bannerCard}>
           <View style={styles.bannerIconBox}>
-            <Ionicons name="shield-outline" size={24} color="#34D399" />
+            <Ionicons name="shield-outline" size={24} color={colors['text-accent']} />
           </View>
           <View style={styles.bannerTextContainer}>
-            <Text style={styles.bannerTitle}>Protege tu cuenta</Text>
-            <Text style={styles.bannerSubtitle}>
-              Verifica tu contraseña actual antes de crear una nueva.
-            </Text>
+            <Text style={styles.bannerTitle}>{t('contrasena.titulo')}</Text>
+            <Text style={styles.bannerSubtitle}>{t('contrasena.cuerpo')}</Text>
           </View>
         </View>
 
-        {/* ─── Tarjeta: Formulario de contraseñas ─────────────── */}
         <View style={styles.formCard}>
-          {/* Campo 1: Contraseña actual */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Contraseña actual</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.textInput}
-                value={actual}
-                onChangeText={setActual}
-                placeholder="**********"
-                placeholderTextColor="#64748B"
-                secureTextEntry={!showActual}
-                autoCapitalize="none"
-              />
-              <TouchableOpacity
-                style={styles.eyeBtn}
-                onPress={() => setShowActual(!showActual)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={showActual ? 'eye-outline' : 'eye-off-outline'}
-                  size={20}
-                  color="#8EA299"
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
+          <PasswordField
+            label={t('contrasena.actual')}
+            value={current}
+            onChangeText={handleCurrentChange}
+            hasError={verify.status === 'error'}
+            onBlur={() => void verifyCurrent(current)}
+            onSubmitEditing={() => void verifyCurrent(current)}
+            busy={verify.status === 'verifying'}
+          />
+          {verify.status === 'verifying' && (
+            <Text style={styles.statusText}>{t('comun.cargando')}</Text>
+          )}
+          {verify.status === 'error' && (
+            <FieldMessage tone="error">{t(`${verify.errorKey}.titulo`)}</FieldMessage>
+          )}
 
-          {/* Campo 2: Nueva contraseña */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Nueva contraseña</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.textInput}
-                value={nueva}
-                onChangeText={setNueva}
-                placeholder="**********"
-                placeholderTextColor="#64748B"
-                secureTextEntry={!showNueva}
-                autoCapitalize="none"
-              />
-              <TouchableOpacity
-                style={styles.eyeBtn}
-                onPress={() => setShowNueva(!showNueva)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={showNueva ? 'eye-outline' : 'eye-off-outline'}
-                  size={20}
-                  color="#8EA299"
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
+          <PasswordField
+            label={t('contrasena.nueva')}
+            value={next}
+            onChangeText={setNext}
+            disabled={!verified}
+          />
+          <PasswordField
+            label={t('contrasena.confirmar')}
+            value={confirm}
+            onChangeText={setConfirm}
+            disabled={!verified}
+            hasError={mismatch}
+          />
+          {mismatch && (
+            <FieldMessage tone="error">{t('error.campo.contrasenas_no_coinciden')}</FieldMessage>
+          )}
 
-          {/* Campo 3: Confirmar contraseña */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Confirmar contraseña</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.textInput}
-                value={confirmar}
-                onChangeText={setConfirmar}
-                placeholder="**********"
-                placeholderTextColor="#64748B"
-                secureTextEntry={!showConfirmar}
-                autoCapitalize="none"
-              />
-              <TouchableOpacity
-                style={styles.eyeBtn}
-                onPress={() => setShowConfirmar(!showConfirmar)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={showConfirmar ? 'eye-outline' : 'eye-off-outline'}
-                  size={20}
-                  color="#8EA299"
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Requisitos de la contraseña */}
           <View style={styles.requirementsBox}>
-            <Text style={styles.requirementsTitle}>
-              Tu contraseña debe incluir:
-            </Text>
+            <Text style={styles.requirementsTitle}>{t('auth.requisitos.titulo')}</Text>
             <View style={styles.chipsRow}>
-              <View
-                style={[
-                  styles.reqChip,
-                  hasMinLen && styles.reqChipSatisfied,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.reqChipText,
-                    hasMinLen && styles.reqChipTextSatisfied,
-                  ]}
-                >
-                  8 caracteres
-                </Text>
-              </View>
-
-              <View
-                style={[
-                  styles.reqChip,
-                  hasUpperCase && styles.reqChipSatisfied,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.reqChipText,
-                    hasUpperCase && styles.reqChipTextSatisfied,
-                  ]}
-                >
-                  Una mayúscula
-                </Text>
-              </View>
-
-              <View
-                style={[
-                  styles.reqChip,
-                  hasNumber && styles.reqChipSatisfied,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.reqChipText,
-                    hasNumber && styles.reqChipTextSatisfied,
-                  ]}
-                >
-                  Un número
-                </Text>
-              </View>
-
-              <View
-                style={[
-                  styles.reqChip,
-                  isDifferent && styles.reqChipSatisfied,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.reqChipText,
-                    isDifferent && styles.reqChipTextSatisfied,
-                  ]}
-                >
-                  Ser diferente
-                </Text>
-              </View>
+              <Requirement text={t('auth.requisitos.minimo')} met={hasMinLen} />
+              <Requirement text={t('auth.requisitos.mayuscula')} met={hasUpperCase} />
+              <Requirement text={t('auth.requisitos.numero')} met={hasNumber} />
+              <Requirement text={t('auth.requisitos.diferente')} met={isDifferent} />
             </View>
           </View>
 
           <View style={styles.divider} />
 
-          {/* Botón Guardar nueva contraseña */}
+          {save.status === 'error' && (
+            <View style={styles.saveError} accessibilityRole="alert">
+              <Text style={styles.saveErrorTitle}>{t(`${save.errorKey}.titulo`)}</Text>
+              <Text style={styles.saveErrorBody}>{t(`${save.errorKey}.cuerpo`)}</Text>
+            </View>
+          )}
+          {save.status === 'saved' && (
+            <FieldMessage tone="success">{t('toast.contrasena_cambiada')}</FieldMessage>
+          )}
+
           <TouchableOpacity
-            style={[
-              styles.btnGuardar,
-              isValid && styles.btnGuardarActive,
-            ]}
+            style={[styles.btnGuardar, (!isValid || saving) && styles.btnDisabled]}
             activeOpacity={0.85}
-            onPress={handleGuardar}
+            onPress={handleSave}
+            disabled={!isValid || saving}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !isValid || saving, busy: saving }}
           >
-            <Text
-              style={[
-                styles.btnGuardarText,
-                isValid && styles.btnGuardarTextActive,
-              ]}
-            >
-              Guardar nueva contraseña
+            <Text style={[styles.btnGuardarText, (!isValid || saving) && styles.btnDisabledText]}>
+              {saving ? t('comun.cargando') : t('contrasena.boton')}
             </Text>
           </TouchableOpacity>
         </View>
 
-        <View style={{ height: 32 }} />
+        <View style={styles.bottomSpace} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -286,181 +343,206 @@ export function CambiarContrasenaScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#071510',
+    backgroundColor: colors['background-default'],
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 10,
+    paddingHorizontal: spacing[16],
+    paddingTop: spacing[12],
+    paddingBottom: spacing[8],
   },
-  backButton: {
-    width: 36,
-    height: 36,
+  headerBtn: {
+    width: sizes['iconButton-size'],
+    height: sizes['iconButton-size'],
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerSpacer: {
-    width: 36,
-  },
   headerTitle: {
-    color: '#E6FAF0',
-    fontSize: 21,
-    fontWeight: '700',
-    letterSpacing: -0.2,
+    ...textStyle('display-m'),
+    color: colors['text-primary'],
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingHorizontal: spacing[16],
+    paddingTop: spacing[8],
   },
 
-  // ─── Banner Superior ───────────────────────────────────────────
   bannerCard: {
-    backgroundColor: '#0E241E',
-    borderRadius: 16,
+    backgroundColor: colors['status-info-bg'],
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#17392E',
-    padding: 16,
+    borderColor: colors['status-info-border'],
+    padding: spacing[16],
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: spacing[20],
   },
   bannerIconBox: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: '#133027',
+    width: spacing[40] + spacing[4],
+    height: spacing[40] + spacing[4],
+    borderRadius: radius.lg,
+    backgroundColor: colors['background-surfaceAlt'],
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14,
+    marginRight: spacing[12],
   },
   bannerTextContainer: {
     flex: 1,
   },
   bannerTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 3,
+    ...textStyle('display-s-16'),
+    color: colors['text-primary'],
+    marginBottom: spacing[4],
   },
   bannerSubtitle: {
-    color: '#8EA299',
-    fontSize: 12.5,
-    lineHeight: 17,
+    ...textStyle('body-s-regular'),
+    color: colors['text-muted'],
   },
 
-  // ─── Tarjeta Formulario ────────────────────────────────────────
   formCard: {
-    backgroundColor: '#0E241E',
-    borderRadius: 16,
+    backgroundColor: colors['background-surface'],
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#17392E',
-    padding: 18,
+    borderColor: colors['border-subtle'],
+    padding: spacing[16],
   },
   fieldGroup: {
-    marginBottom: 16,
+    marginBottom: spacing[16],
   },
   fieldLabel: {
-    color: '#E2E8F0',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
+    ...textStyle('body-s-medium'),
+    color: colors['text-primary'],
+    marginBottom: spacing[8],
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#091913',
-    borderRadius: 12,
+    backgroundColor: colors['background-surfaceAlt'],
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#1C3F33',
-    paddingHorizontal: 14,
-    height: 50,
+    borderColor: colors['border-medium'],
+    height: sizes['button-height'],
+    paddingLeft: spacing[16],
+  },
+  inputError: {
+    borderColor: colors['border-error'],
+  },
+  inputDisabled: {
+    backgroundColor: colors['state-disabled-bg'],
+    borderColor: colors['state-disabled-border'],
   },
   textInput: {
+    ...textStyle('body-m-regular'),
     flex: 1,
-    color: '#FFFFFF',
-    fontSize: 15,
-    letterSpacing: 1.5,
+    color: colors['text-primary'],
+  },
+  textInputDisabled: {
+    color: colors['state-disabled-text'],
   },
   eyeBtn: {
-    padding: 6,
+    width: sizes['button-height'],
+    height: sizes['button-height'],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusText: {
+    ...textStyle('body-xs-regular'),
+    color: colors['text-muted'],
+    marginTop: -spacing[8],
+    marginBottom: spacing[16],
+  },
+  messageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[4],
+    marginTop: -spacing[8],
+    marginBottom: spacing[16],
+  },
+  messageText: {
+    ...textStyle('body-xs-regular'),
+    flex: 1,
   },
 
-  // ─── Requisitos Box ───────────────────────────────────────────
   requirementsBox: {
-    backgroundColor: '#091A14',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#16362B',
-    padding: 14,
-    marginTop: 4,
-    marginBottom: 6,
+    marginTop: spacing[4],
   },
   requirementsTitle: {
-    color: '#8EA299',
-    fontSize: 12.5,
-    marginBottom: 10,
-    fontWeight: '500',
+    ...textStyle('body-s-medium'),
+    color: colors['text-primary'],
+    marginBottom: spacing[12],
   },
   chipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing[8],
   },
   reqChip: {
-    backgroundColor: '#0E241E',
-    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[4],
+    borderRadius: radius.full,
     borderWidth: 1,
-    borderColor: '#1E3E33',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    borderColor: colors['border-medium'],
+    paddingHorizontal: spacing[12],
+    paddingVertical: spacing[4],
   },
   reqChipSatisfied: {
-    backgroundColor: '#102E24',
-    borderColor: '#26654F',
+    backgroundColor: colors['accent-soft'],
+    borderColor: colors['border-accent'],
   },
   reqChipText: {
-    color: '#8EA299',
-    fontSize: 11.5,
-    fontWeight: '500',
+    ...textStyle('body-xs-medium'),
+    color: colors['text-muted'],
   },
   reqChipTextSatisfied: {
-    color: '#34D399',
-    fontWeight: '600',
+    color: colors['text-primary'],
   },
-
-  // ─── Divider y Botón Guardar ──────────────────────────────────
   divider: {
     height: 1,
-    backgroundColor: '#16362B',
-    marginVertical: 18,
+    backgroundColor: colors['border-subtle'],
+    marginVertical: spacing[16],
   },
-  btnGuardar: {
-    backgroundColor: '#102821',
-    borderRadius: 12,
+
+  saveError: {
+    backgroundColor: colors['status-error-bg'],
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#1B3F34',
-    height: 48,
+    borderColor: colors['status-error-border'],
+    padding: spacing[12],
+    marginBottom: spacing[16],
+    gap: spacing[4],
+  },
+  saveErrorTitle: {
+    ...textStyle('ui-s-semibold'),
+    color: colors['text-primary'],
+  },
+  saveErrorBody: {
+    ...textStyle('body-s-regular'),
+    color: colors['text-muted'],
+  },
+
+  btnGuardar: {
+    backgroundColor: colors['accent-primary'],
+    borderRadius: radius.md,
+    height: sizes['button-height'],
     alignItems: 'center',
     justifyContent: 'center',
   },
-  btnGuardarActive: {
-    backgroundColor: '#34D399',
-    borderColor: '#34D399',
+  btnDisabled: {
+    backgroundColor: colors['state-disabled-bg'],
   },
   btnGuardarText: {
-    color: '#4B6B5F',
-    fontSize: 14.5,
-    fontWeight: '600',
+    ...textStyle('ui-m-semibold'),
+    color: colors['text-inverse'],
   },
-  btnGuardarTextActive: {
-    color: '#062218',
-    fontWeight: '700',
+  btnDisabledText: {
+    color: colors['state-disabled-text'],
+  },
+  bottomSpace: {
+    height: spacing[24],
   },
 });
-

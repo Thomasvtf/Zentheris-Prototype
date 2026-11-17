@@ -6,6 +6,7 @@
  * - Tiempos de espera: 15 s; 60 s en POST /onboarding (app/CLAUDE.md).
  * - Los errores llegan como ApiRequestError; errors.ts los convierte en claves del catálogo.
  */
+import { handleMockRequest, USE_MOCKS } from './devMocks';
 import type { components, paths } from './schema';
 
 export type Schemas = components['schemas'];
@@ -72,6 +73,8 @@ export async function apiRequest<T>(
   path: string,
   { body, query, timeoutMs = DEFAULT_TIMEOUT_MS, auth = true }: RequestOptions = {},
 ): Promise<T> {
+  // Modo de ejemplo solo en desarrollo (EXPO_PUBLIC_USE_MOCKS=true); en producción es false.
+  if (USE_MOCKS) return handleMockRequest<T>(method, path, body);
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (auth) {

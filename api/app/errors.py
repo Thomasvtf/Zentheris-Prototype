@@ -1,9 +1,11 @@
 """Errores de la API con la forma del contrato: {codigo, mensaje, detalles}.
 
 `CodigoError` copia el enum del contrato docs/api/zentheris-api-v0.2.5.yaml; sus
-valores no se traducen (DC-62).
+valores no se traducen (DC-62). Ningún manejador devuelve el texto, el tipo ni la traza
+de una excepción interna (guía 3 §7, prueba S-01).
 """
 
+import logging
 from enum import StrEnum
 from typing import Any
 
@@ -11,6 +13,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class CodigoError(StrEnum):
@@ -114,6 +118,52 @@ async def _handle_validation_error(_request: Request, exc: Exception) -> JSONRes
     )
 
 
+class PendingCodeError(Exception):
+    """TEMPORAL: error sin `CodigoError` en el contrato 0.2.5 (decisión abierta #29).
+
+    Cubre el 401 (token ausente, inválido o vencido), el 404 por falta de membresía activa
+    (RN-I-03) y el 500 genérico. Responde `{"mensaje": ERROR_DESCRIPTIONS[status], "detalles":
+    null}` sin `codigo`; la app los distingue por el estado HTTP (DC-16). El 401 lleva la
+    cabecera `WWW-Authenticate: Bearer`.
+    """
+
+    # TODO(pendiente: código de error del 401, PENDIENTES #29; contrato 0.2.6)
+    # TODO(pendiente: código de error del 404, PENDIENTES #29; contrato 0.2.6)
+    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato 0.2.6)
+    ALLOWED_STATUS_CODES = frozenset({401, 404, 500})
+
+    def __init__(self, status_code: int) -> None:
+        if status_code not in self.ALLOWED_STATUS_CODES:
+            raise ValueError(f"PendingCodeError solo admite 401, 404 o 500, no {status_code}.")
+        super().__init__(ERROR_DESCRIPTIONS[status_code])
+        self.status_code = status_code
+
+
+def _pending_code_response(status_code: int) -> JSONResponse:
+    headers = {"WWW-Authenticate": "Bearer"} if status_code == 401 else None
+    return JSONResponse(
+        status_code=status_code,
+        content={"mensaje": ERROR_DESCRIPTIONS[status_code], "detalles": None},
+        headers=headers,
+    )
+
+
+async def _handle_pending_code(_request: Request, exc: Exception) -> JSONResponse:
+    # TEMPORAL: ver PendingCodeError (cuerpo sin `codigo` hasta cerrar PENDIENTES #29).
+    assert isinstance(exc, PendingCodeError)
+    return _pending_code_response(exc.status_code)
+
+
+async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    """500 genérico: la excepción va al log, nunca a la respuesta (S-01)."""
+    # Plantilla de la ruta (`/hogares/{hogar_id}/...`), no la URL: sin valores del cliente.
+    route = request.scope.get("route")
+    path = getattr(route, "path", None) or "(ruta desconocida)"
+    logger.exception("Error interno no controlado en %s %s", request.method, path, exc_info=exc)
+    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato 0.2.6)
+    return _pending_code_response(500)
+
+
 class NotImplementedOperation(Exception):
     """TEMPORAL (esqueleto del PR 5): la operación del contrato aún no está implementada.
 
@@ -136,8 +186,10 @@ def register_error_handlers(app: FastAPI) -> None:
     """Registra los manejadores que devuelven {codigo, mensaje, detalles}."""
     app.add_exception_handler(ApiError, _handle_api_error)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
+    # TEMPORAL (PENDIENTES #29): 401, 404 sin membresía y 500 sin `codigo`.
+    app.add_exception_handler(PendingCodeError, _handle_pending_code)
     # TEMPORAL (esqueleto): 501 para las operaciones que aún no están implementadas.
     app.add_exception_handler(NotImplementedOperation, _handle_not_implemented)
-    # TODO(contrato): el contrato 0.2.5 no tiene un `CodigoError` para el error 500
-    # genérico. Cuando se decida, agregar aquí el manejador de `Exception` sin exponer
-    # la excepción interna (guía 3 §7, prueba S-01).
+    # 500 genérico sin exponer la excepción interna (guía 3 §7, prueba S-01).
+    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato 0.2.6)
+    app.add_exception_handler(Exception, _handle_unexpected_error)

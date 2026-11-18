@@ -1,22 +1,6 @@
-import { View, Text, StyleSheet } from 'react-native';
+import React from 'react';
+import { HistorialScreen } from '../screens/HistorialScreen';
 
-export default function Screen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.texto}>Pantalla en desarrollo</Text>
-    </View>
-  );
+export default function Page() {
+  return <HistorialScreen />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#05110E',
-  },
-  texto: {
-    color: '#FFFFFF',
-    fontSize: 18,
-  },
-});

@@ -48,6 +48,7 @@ export default function Layout() {
             ),
           }}
         />
+        <Tabs.Screen name="catalogo-componentes" options={{ href: null }} />
         <Tabs.Screen
           name="historial"
           options={{
@@ -82,7 +83,7 @@ export default function Layout() {
           }}
         />
         <Tabs.Screen
-            name="configuracion"
+          name="configuracion"
           options={{
             title: 'Configuración',
             tabBarIcon: ({ focused }) => focused ? (
@@ -90,6 +91,42 @@ export default function Layout() {
             ) : (
               <IconoConfiguracion width={20} height={20}  />
             ),
+          }}
+        />
+        <Tabs.Screen
+          name="editar-perfil"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="cambiar-contrasena"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="gestionar-correo"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="establecer-meta"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="configurar-tarifa"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="fuentes-datos"
+          options={{
+            href: null,
           }}
         />
       </Tabs>

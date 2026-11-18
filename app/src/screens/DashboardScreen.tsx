@@ -10,31 +10,11 @@ import {
   RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle } from 'react-native-svg';
 import { Gauge } from '../components/Gauge';
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-const estadoColor = (estado?: string) => {
-  switch (estado) {
-    case 'Elevado':  return '#D69E2E';
-    case 'Crítico':  return '#E53E3E';
-    default:          return '#5DD39E';
-  }
-};
-const estadoBadgeBg = (estado?: string) => {
-  switch (estado) {
-    case 'Elevado':  return '#3B2A10';
-    case 'Crítico':  return '#3B1010';
-    default:          return '#0E2D22';
-  }
-};
-const estadoIcon = (estado?: string) => {
-  switch (estado) {
-    case 'Elevado':  return 'warning-outline';
-    case 'Crítico':  return 'alert-circle-outline';
-    default:          return 'checkmark-circle-outline';
-  }
-};
+import { DonutChart } from '../components/DonutChart';
+import { StatusBadge } from '../components/StatusBadge';
+import { StatusChip } from '../components/StatusChip';
+import { estadoColor, estadoBadgeBg, estadoIcon } from '../utils/statusHelpers';
 
 interface Zona {
   id: number;
@@ -45,87 +25,12 @@ interface Zona {
   porcentaje?: number; // 0-100
 }
 
-
 // Datos mock (se reemplazan con API cuando devuelve datos)
 const ZONAS_MOCK: Zona[] = [
   { id: 1, nombre: 'Room',    consumo: '0.6 Kw',  estado: 'Normal',  porcentaje: 25 },
   { id: 2, nombre: 'Kitchen', consumo: '0.75 Kw', estado: 'Elevado', porcentaje: 75 },
   { id: 3, nombre: 'Oficine', consumo: '0.5 Kw',  estado: 'Normal',  porcentaje: 50 },
 ];
-
-// ─── Componente DonutChart (SVG) ──────────────────────────────────────────────
-interface DonutChartProps {
-  value: number;       // ej: 7.2
-  maxValue: number;    // ej: 10
-  unit: 'KW' | 'COP';
-  size?: number;
-  strokeWidth?: number;
-}
-
-const DonutChart: React.FC<DonutChartProps> = ({
-  value,
-  maxValue = 10,
-  unit,
-  size = 200,
-  strokeWidth = 26,
-}) => {
-  const center = size / 2;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const percentage = Math.min(Math.max(value / maxValue, 0), 1);
-  const strokeDashoffset = circumference - percentage * circumference;
-
-  const displayVal = unit === 'COP' ? (value * 1200).toFixed(0) : value.toFixed(1);
-  const displayUnit = unit === 'COP' ? 'COP' : 'kW';
-
-  return (
-    <View style={{ alignItems: 'center', marginTop: 16, marginBottom: 8 }}>
-      <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-        <Svg width={size} height={size}>
-          {/* Círculo de fondo oscuro/apagado */}
-          <Circle
-            cx={center}
-            cy={center}
-            r={radius}
-            stroke="#20382E"
-            strokeWidth={strokeWidth}
-            fill="none"
-          />
-          {/* Círculo de progreso coloreado (comienza arriba a las 12 en punto) */}
-          <Circle
-            cx={center}
-            cy={center}
-            r={radius}
-            stroke="#F6D543"
-            strokeWidth={strokeWidth}
-            strokeDasharray={`${circumference} ${circumference}`}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="butt"
-            fill="none"
-            rotation="-90"
-            origin={`${center}, ${center}`}
-          />
-        </Svg>
-
-        {/* Texto central en el hueco del donut */}
-        <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: '#FFFFFF', fontSize: 36, fontWeight: 'bold' }}>
-            {displayVal}
-          </Text>
-          <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '500', marginTop: -2 }}>
-            {displayUnit}
-          </Text>
-        </View>
-      </View>
-
-      {/* Subtítulo bajo la gráfica */}
-      <Text style={{ color: '#F6D543', fontSize: 15, fontWeight: '500', marginTop: 14 }}>
-        Por encima de lo normal
-      </Text>
-    </View>
-  );
-};
-
 
 export const DashboardScreen: React.FC = () => {
   const [unit, setUnit] = useState<'KW' | 'COP'>('KW');
@@ -177,21 +82,17 @@ export const DashboardScreen: React.FC = () => {
             <Ionicons name="flash-outline" size={15} color="#5DD39E" style={{ marginRight: 6 }} />
             <Text style={styles.cardSubTitle}>Panel principal · Consumo actual</Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: '#0E2D22' }]}>
-            <Text style={[styles.badgeText, { color: '#5DD39E' }]}>Normal</Text>
-          </View>
+          <StatusBadge estado="Normal" />
         </View>
 
         <Text style={styles.mainStatText}>2.25 Kw</Text>
         <Text style={styles.hintText}>revisar comparación según estado</Text>
 
-        <View style={styles.statusChip}>
-          <Ionicons name="checkmark-circle-outline" size={16} color="#5DD39E" />
-          <Text style={styles.statusChipText}>
-            {'Consumo (normal, elevado, crítico)\n'}
-            <Text style={styles.statusChipSub}>Revisar consumo según state</Text>
-          </Text>
-        </View>
+        <StatusChip
+          title="Consumo (normal, elevado, crítico)"
+          subtitle="Revisar consumo según state"
+          estado="Normal"
+        />
       </View>
 
       {/* ── CARD 2: CONSUMO ACTUAL ────────────────────────────────── */}
@@ -235,7 +136,7 @@ export const DashboardScreen: React.FC = () => {
             <Text style={styles.gaugeStatusText}>Dentro de lo esperado</Text>
           </View>
         ) : (
-          /* ── Vista donut circular ── */
+          /* ── Vista donut circular extraída ── */
           <DonutChart value={7.2} maxValue={10} unit={unit} />
         )}
 
@@ -251,7 +152,7 @@ export const DashboardScreen: React.FC = () => {
             style={[styles.toggleBtn, unit === 'COP' ? styles.toggleBtnActive : null]}
             onPress={() => setUnit('COP')}
           >
-            <Ionicons name="flash-outline" size={14} color={unit === 'COP' ? '#5DD39E' : '#A0AEC0'} />
+            <Ionicons name="cash-outline" size={14} color={unit === 'COP' ? '#5DD39E' : '#A0AEC0'} />
             <Text style={[styles.toggleText, unit === 'COP' ? styles.toggleTextActive : null]}>COP</Text>
           </TouchableOpacity>
         </View>
@@ -264,9 +165,7 @@ export const DashboardScreen: React.FC = () => {
             <Ionicons name="analytics-outline" size={15} color="#5DD39E" style={{ marginRight: 6 }} />
             <Text style={styles.cardSubTitle} numberOfLines={1}>Panel principal · Consumo acumulado · Hoy</Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: '#0E2D22' }]}>
-            <Text style={[styles.badgeText, { color: '#5DD39E' }]}>Normal</Text>
-          </View>
+          <StatusBadge estado="Normal" />
         </View>
 
         <Text style={styles.mainStatText}>127 KWh · COP</Text>
@@ -284,15 +183,11 @@ export const DashboardScreen: React.FC = () => {
           <Text style={styles.limitValue}>187 kWh</Text>
         </View>
 
-        <View style={styles.statusChip}>
-          <Ionicons name="checkmark-circle-outline" size={16} color="#5DD39E" />
-          <Text style={styles.statusChipText}>
-            {'Consumo de acuerdo al límite(normal, elevado,crítico)\n'}
-            <Text style={styles.statusChipSub}>
-              Estas por (de acuerdo al estado) del límite o consumo
-            </Text>
-          </Text>
-        </View>
+        <StatusChip
+          title="Consumo de acuerdo al límite(normal, elevado,crítico)"
+          subtitle="Estás por (de acuerdo al estado) del límite o consumo"
+          estado="Normal"
+        />
       </View>
 
       {/* ── SECCIÓN ZONES ───────────────────────────────────────── */}
@@ -335,7 +230,6 @@ export const DashboardScreen: React.FC = () => {
         <View style={styles.zonesGrid}>
           {zonas.map((zona) => {
             const color   = estadoColor(zona.estado);
-            const bgBadge = estadoBadgeBg(zona.estado);
             const icon    = estadoIcon(zona.estado);
             return (
               <View key={zona.id} style={styles.zoneCardGrid}>
@@ -382,20 +276,17 @@ export const DashboardScreen: React.FC = () => {
         /* ── VISTA LISTA (detallada, 1 columna) ── */
         <View>
           {zonas.map((zona) => {
-            const color   = estadoColor(zona.estado);
-            const bgBadge = estadoBadgeBg(zona.estado);
-            const icon    = estadoIcon(zona.estado);
+            const color = estadoColor(zona.estado);
             return (
               <View key={zona.id} style={styles.zoneCard}>
-                {/* Fila: icono + nombre + badge */}
+                {/* Fila: icono + nombre + badge reutilizable */}
                 <View style={styles.zoneTopRow}>
                   <View style={styles.zoneIconBox}>
                     <Ionicons name="bed-outline" size={18} color="#FFFFFF" />
                   </View>
                   <Text style={styles.zoneName}>{zona.nombre}</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: bgBadge, marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-                    <Ionicons name={icon as any} size={12} color={color} />
-                    <Text style={[styles.badgeText, { color }]}>{zona.estado || 'Normal'}</Text>
+                  <View style={{ marginLeft: 'auto' }}>
+                    <StatusBadge estado={zona.estado || 'Normal'} showIcon />
                   </View>
                 </View>
 
@@ -493,19 +384,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
 
-  // ── Status badge ──────────────────────────────────────────────
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 20,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-
   // ── Main stat ─────────────────────────────────────────────────
   mainStatText: {
     color: '#FFFFFF',
@@ -517,30 +395,6 @@ const styles = StyleSheet.create({
     color: '#718096',
     fontSize: 12,
     marginTop: 4,
-  },
-
-  // ── Status chip ───────────────────────────────────────────────
-  statusChip: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: '#0D2119',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: '#1A3B2D',
-  },
-  statusChipText: {
-    color: '#5DD39E',
-    fontSize: 12,
-    fontWeight: '500',
-    flex: 1,
-  },
-  statusChipSub: {
-    color: '#718096',
-    fontSize: 11,
-    fontWeight: '400',
   },
 
   // ── Gauge ────────────────────────────────────────────────────
@@ -720,4 +574,4 @@ const styles = StyleSheet.create({
     color: '#718096',
     fontSize: 11,
   },
-});
+});

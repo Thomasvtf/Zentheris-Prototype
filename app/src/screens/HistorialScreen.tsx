@@ -1,707 +1,1074 @@
-// @ts-nocheck
-import React, { useState } from 'react';
+/**
+ * Historial (reglas v4.9 §6.5 y §7.3; RN-XIII-01 a RN-XIII-07).
+ * Datos: useHistorialData (fila 30 de docs/MAPA-DE-INTEGRACION.md, obtenerHistorial).
+ *
+ * - Botones Día · Semana · Mes cambian todas las cards (RN-XIII-02); sin flechas ni calendario.
+ * - Cards: Pico del periodo, Consumo (barras, línea o anillo; selector de unidad y filtro por
+ *   zona), Comparación y Costo estimado; botón Ver consejos.
+ * - Pico (RN-XIII-03): el gráfico marca `es_pico_maximo` con `chart-peak` y la etiqueta
+ *   «Pico», sin componentes ni palabras de estado; la card de Pico muestra su estado en texto.
+ * - Anillo solo con General; más de 4 zonas → 4 + «Otras zonas»; la lista muestra todas
+ *   (RN-XIII-04). Colores de zona, nunca rojo ni amarillo (ZoneDonutChart).
+ * - Unidades (RN-XIII-06): Día por hora en kW; Semana y Mes por día en kWh; totales en kWh.
+ * - Estados: cargando (Skeleton), error (InlineNotice + Reintentar), sin permiso
+ *   (StateMessage; encabezado y selector visibles), vacío (sin lecturas en el periodo),
+ *   falta la última hora, sin tarifa (sin COP y card «Configura tu tarifa») y sin periodo
+ *   anterior («—» y estado neutro).
+ * - Colores, espacios y tipografía desde @/theme; textos con t(); cifras con @/format.
+ *
+ * TODO(pendiente: componentes del sistema de diseño): src/components/ aún no tiene
+ * BarChart, LineChart, ZoneDonutChart, PeakMarker, StatusBadge, Chip, Skeleton,
+ * StateMessage, InlineNotice ni ScreenHeader con las props de index.d.ts. Aquí son piezas
+ * locales de presentación para moverlas a src/components/ cuando se apruebe.
+ * TODO(pendiente: formato de fechas): @/format solo trae relativeTime; las etiquetas de hora,
+ * día y fecha se arman aquí con las plantillas del catálogo (formato.dia_corto.*,
+ * formato.dia.*, formato.tiempo.fecha) hasta tener un helper en @/format.
+ */
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
+  AccessibilityInfo,
+  Animated,
+  LayoutChangeEvent,
+  Pressable,
+  RefreshControl,
   ScrollView,
-  TouchableOpacity,
-  SafeAreaView,
   StatusBar,
+  StyleSheet,
+  Text,
+  TextStyle,
+  View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-
-// Componentes reutilizables
-import { StatusBadge } from '../components/StatusBadge';
-import { StatusChip } from '../components/StatusChip';
-import { HistoryBarChart } from '../components/charts/HistoryBarChart';
-import { HistoryLineChart } from '../components/charts/HistoryLineChart';
-import { HistoryAreaChart } from '../components/charts/HistoryAreaChart';
+import { BarChart, LineChart, PieChart } from 'react-native-gifted-charts';
 import {
-  Periodo,
-  UnitType,
-  getPeriodoMeta,
-  formatValue,
-} from '../components/charts/chartData';
+  Bath,
+  Bed,
+  CalendarDays,
+  Car,
+  ChartColumn,
+  ChartPie,
+  ChartSpline,
+  CircleAlert,
+  CircleCheck,
+  CircleX,
+  Clock,
+  Coins,
+  CookingPot,
+  DoorClosed,
+  Fence,
+  Info,
+  MapPin,
+  Monitor,
+  Shield,
+  Sofa,
+  TrendingUp,
+  TriangleAlert,
+  WashingMachine,
+  Zap,
+} from 'lucide-react-native';
+import type { LucideIcon } from 'lucide-react-native';
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
-type ChartType = 'bar' | 'line' | 'time';
-type Zona = 'general' | 'cuartos' | 'cocina' | 'oficina' | 'sala';
-type Estado = 'normal' | 'elevado' | 'critico';
+import { DECIMALES, formatCOP, formatNumber, formatPercent } from '@/format';
+import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { t } from '@/texts';
 
-export function HistorialScreen() {
-  const router = useRouter();
+import { isEmptyHistory, isMissingLastHour, useHistorialData } from './useHistorialData';
+import type {
+  ConsumptionState,
+  History,
+  HistorialMockScenario,
+  Period,
+  SeriesPoint,
+  ZoneOption,
+  ZoneShare,
+} from './useHistorialData';
 
-  // Estados interactivos
-  const [periodo, setPeriodo] = useState<Periodo>('dia');
-  const [chartType, setChartType] = useState<ChartType>('bar');
-  const [unit, setUnit] = useState<UnitType>('KW');
-  const [selectedZona, setSelectedZona] = useState<Zona>('general');
-  const [estado, setEstado] = useState<Estado>('normal');
+/* ───────────────────────────── Utilidades ───────────────────────────────── */
 
-  // Datos calculados según el período y la unidad seleccionada
-  const meta = getPeriodoMeta(periodo, unit);
+type Severity = 'normal' | 'elevado' | 'critico';
+type ChartView = 'barras' | 'linea' | 'anillo';
+/** Unidad del gráfico: energía del periodo (kW en Día, kWh en Semana y Mes) o COP. */
+type ChartUnit = 'energia' | 'COP';
 
-  // Textos descriptivos según el período
-  const periodoLabel =
-    periodo === 'dia' ? 'Día' : periodo === 'semana' ? 'Semana' : 'Mes';
+const PERIODS: Period[] = ['dia', 'semana', 'mes'];
 
-  const compareLabelThis =
-    periodo === 'dia'
-      ? 'ESTE DÍA'
-      : periodo === 'semana'
-      ? 'ESTA SEMANA'
-      : 'ESTE MES';
+function textStyle(name: keyof typeof typography): TextStyle {
+  const style = typography[name];
+  return {
+    fontFamily: fontFamilyFor(style.family, style.fontWeight),
+    fontSize: style.fontSize,
+    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
+  };
+}
 
-  const compareLabelPrev =
-    periodo === 'dia'
-      ? 'DÍA ANTERIOR'
-      : periodo === 'semana'
-      ? 'SEMANA ANTERIOR'
-      : 'MES ANTERIOR';
+function isSeverity(estado: ConsumptionState): estado is Severity {
+  return estado === 'normal' || estado === 'elevado' || estado === 'critico';
+}
 
-  const compareSubtitle =
-    periodo === 'dia'
-      ? 'Este día vs ayer'
-      : periodo === 'semana'
-      ? 'Esta semana vs anterior'
-      : 'Este mes vs mes anterior';
+/* Fechas en hora de Bogotá (UTC−5, sin horario de verano), con plantillas del catálogo. */
+const BOGOTA_OFFSET_MS = -5 * 60 * 60 * 1000;
+const DAY_KEYS = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'] as const;
 
-  const costSubtitle =
-    periodo === 'dia'
-      ? 'Día actual'
-      : periodo === 'semana'
-      ? 'Semana actual'
-      : 'Mes actual';
+function local(iso: string, shiftMs = 0): Date {
+  return new Date(new Date(iso).getTime() + BOGOTA_OFFSET_MS + shiftMs);
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+/** «14:00». */
+function hourLabel(iso: string): string {
+  return `${pad2(local(iso).getUTCHours())}:00`;
+}
+
+/** «15/07» (formato.tiempo.fecha). */
+function dateLabel(iso: string, shiftMs = 0): string {
+  const d = local(iso, shiftMs);
+  return t('formato.tiempo.fecha', { dd: pad2(d.getUTCDate()), mm: pad2(d.getUTCMonth() + 1) });
+}
+
+/** «Lun» (formato.dia_corto.*). */
+function shortDay(iso: string, shiftMs = 0): string {
+  return t(`formato.dia_corto.${DAY_KEYS[local(iso, shiftMs).getUTCDay()]}`);
+}
+
+/** Tramo del periodo para los títulos: «00:00–15:00», «Lun–Mié», «01/07–18/07». */
+function tramoLabel(data: History): string {
+  if (data.periodo === 'dia') return `${hourLabel(data.inicio)}–${hourLabel(data.fin)}`;
+  if (data.periodo === 'semana') return `${shortDay(data.inicio)}–${shortDay(data.fin, -1)}`;
+  return `${dateLabel(data.inicio)}–${dateLabel(data.fin, -1)}`;
+}
+
+/** Momento de un punto: hora en Día, día corto en Semana, fecha en Mes. */
+function pointWhen(periodo: Period, point: { inicio: string }): string {
+  if (periodo === 'dia') return hourLabel(point.inicio);
+  if (periodo === 'semana') return shortDay(point.inicio);
+  return dateLabel(point.inicio);
+}
+
+/** «Último pico: 11:00–12:00 · sábado · 15/07». */
+function peakWhen(periodo: Period, peak: { inicio: string; fin: string }): string {
+  if (periodo === 'dia') return `${hourLabel(peak.inicio)}–${hourLabel(peak.fin)}`;
+  if (periodo === 'semana') return t(`formato.dia.${DAY_KEYS[local(peak.inicio).getUTCDay()]}`);
+  return dateLabel(peak.inicio);
+}
+
+/** Texto de la unidad de energía: kW por hora en Día, kWh por día (RN-XIII-06). */
+function energyUnitKey(periodo: Period): 'comun.kw' | 'comun.kwh' {
+  return periodo === 'dia' ? 'comun.kw' : 'comun.kwh';
+}
+
+function energyText(v: number | null, periodo: Period): string {
+  if (v === null) return formatNumber(null);
+  const dec = periodo === 'dia' ? DECIMALES.kW : DECIMALES.kWh;
+  return `${formatNumber(v, dec)} ${t(energyUnitKey(periodo))}`;
+}
+
+function kwhText(v: number | null): string {
+  return v === null ? formatNumber(null) : `${formatNumber(v, DECIMALES.kWh)} ${t('comun.kwh')}`;
+}
+
+/** Colores de severidad desde los tokens; los estados sin severidad van en neutro. */
+function stateTokens(estado: ConsumptionState) {
+  switch (estado) {
+    case 'normal':
+      return { bg: colors['status-success-bg'], border: colors['status-success-border'], text: colors['status-success-text'], icon: colors['status-success-default'], Glyph: CircleCheck };
+    case 'elevado':
+      return { bg: colors['status-warning-bg'], border: colors['status-warning-border'], text: colors['status-warning-text'], icon: colors['status-warning-default'], Glyph: TriangleAlert };
+    case 'critico':
+      return { bg: colors['status-error-bg'], border: colors['status-error-border'], text: colors['text-error'], icon: colors['status-error-default'], Glyph: CircleAlert };
+    default:
+      return { bg: colors['background-surfaceAlt'], border: colors['border-subtle'], text: colors['text-muted'], icon: colors['text-muted'], Glyph: estado === 'sin_datos' ? Clock : Info };
+  }
+}
+
+const ZONE_TYPES = ['bano', 'cocina', 'cuarto_servicio', 'dormitorio', 'garaje', 'lavanderia', 'oficina', 'sala', 'terraza'] as const;
+const ZONE_ICONS: Record<(typeof ZONE_TYPES)[number], LucideIcon> = {
+  bano: Bath,
+  cocina: CookingPot,
+  cuarto_servicio: DoorClosed,
+  dormitorio: Bed,
+  garaje: Car,
+  lavanderia: WashingMachine,
+  oficina: Monitor,
+  sala: Sofa,
+  terraza: Fence,
+};
+
+/** Ícono por nombre de zona (el contrato del historial trae `nombre`, no `tipo`). */
+function zoneIcon(nombre: string): LucideIcon {
+  const tipo = ZONE_TYPES.find((z) => t(`zona.${z}`) === nombre);
+  return tipo ? ZONE_ICONS[tipo] : MapPin;
+}
+
+/* ─────────────────────── Piezas de presentación ─────────────────────────── */
+
+function StatusBadge({ estado }: { estado: Severity }) {
+  const tk = stateTokens(estado);
+  return (
+    <View style={[styles.badge, { backgroundColor: tk.bg, borderColor: tk.border }]}>
+      <Text style={[styles.badgeText, { color: tk.text }]}>{t(`estado.palabra.${estado}`)}</Text>
+    </View>
+  );
+}
+
+function StateBlock({ estado, titulo, cuerpo }: { estado: ConsumptionState; titulo: string; cuerpo?: string }) {
+  const tk = stateTokens(estado);
+  return (
+    <View style={[styles.stateBlock, { backgroundColor: tk.bg, borderColor: tk.border }]}>
+      <tk.Glyph size={16} color={tk.icon} />
+      <View style={styles.flex}>
+        <Text style={[styles.stateBlockTitle, { color: tk.text }]}>{titulo}</Text>
+        {cuerpo ? <Text style={styles.mutedXs}>{cuerpo}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+function Chip({ activo, icono: Icono, onPress, children }: { activo: boolean; icono: LucideIcon; onPress: () => void; children: string }) {
+  const color = activo ? colors['text-accent'] : colors['text-muted'];
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityState={{ checked: activo }}
+      hitSlop={spacing['8']}
+      style={[styles.chip, activo && styles.chipActive]}
+    >
+      <Icono size={20} color={color} />
+      <Text style={[styles.chipText, { color }]}>{children}</Text>
+    </Pressable>
+  );
+}
+
+function ViewToggle({ activo, icono: Icono, onPress }: { activo: boolean; icono: LucideIcon; onPress: () => void }) {
+  return (
+    // TODO(pendiente: a11y): el catálogo no tiene etiquetas para «ver barras/línea/anillo».
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: activo }}
+      style={[styles.iconButton, activo && styles.iconButtonActive]}
+    >
+      <Icono size={20} color={activo ? colors['accent-primary'] : colors['text-muted']} />
+    </Pressable>
+  );
+}
+
+function CardHeader({ icono: Icono, titulo, estado }: { icono: LucideIcon; titulo: string; estado?: ConsumptionState }) {
+  return (
+    <View style={styles.cardHeaderRow}>
+      <View style={styles.cardIcon}>
+        <Icono size={24} color={colors['accent-primary']} />
+      </View>
+      <Text style={[styles.cardTitle, styles.flex]}>{titulo}</Text>
+      {estado && isSeverity(estado) ? <StatusBadge estado={estado} /> : null}
+    </View>
+  );
+}
+
+function Metric({ value, unit, size = 'xl' }: { value: string; unit: string; size?: 'xl' | 'l' }) {
+  return (
+    <View style={styles.metricRow}>
+      <Text style={size === 'xl' ? styles.metricValue : styles.metricValueL} adjustsFontSizeToFit numberOfLines={1}>
+        {value}
+      </Text>
+      {unit ? <Text style={styles.metricUnit}>{unit}</Text> : null}
+    </View>
+  );
+}
+
+function StateMessage({ icono: Icono, titulo, descripcion, accion, onAccion }: { icono: LucideIcon; titulo: string; descripcion?: string; accion?: string; onAccion?: () => void }) {
+  return (
+    <View style={[styles.card, styles.stateMessage]}>
+      <Icono size={32} color={colors['text-muted']} />
+      <View style={styles.flex}>
+        <Text style={styles.stateMessageTitle}>{titulo}</Text>
+        {descripcion ? <Text style={styles.mutedXs}>{descripcion}</Text> : null}
+        {accion && onAccion ? (
+          <Pressable onPress={onAccion} accessibilityRole="link" hitSlop={spacing['12']} style={styles.linkTouch}>
+            <Text style={styles.linkText}>{accion}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function InlineNotice({ tono, titulo, descripcion, onReintentar }: { tono: 'error' | 'informacion'; titulo: string; descripcion?: string; onReintentar?: () => void }) {
+  const isError = tono === 'error';
+  const Glyph = isError ? CircleX : Info;
+  return (
+    <View
+      style={[
+        styles.notice,
+        isError
+          ? { backgroundColor: colors['status-error-bg'], borderColor: colors['status-error-border'] }
+          : { backgroundColor: colors['status-info-bg'], borderColor: colors['border-subtle'] },
+      ]}
+      accessibilityRole={isError ? 'alert' : 'summary'}
+    >
+      <View style={styles.noticeRow}>
+        <Glyph size={16} color={isError ? colors['status-error-default'] : colors['status-info-default']} />
+        <View style={styles.flex}>
+          <Text style={[styles.stateBlockTitle, { color: isError ? colors['status-error-text'] : colors['text-primary'] }]}>{titulo}</Text>
+          {descripcion ? <Text style={styles.mutedXs}>{descripcion}</Text> : null}
+        </View>
+      </View>
+      {onReintentar ? (
+        <Pressable onPress={onReintentar} accessibilityRole="button" hitSlop={spacing['12']} style={styles.noticeAction}>
+          <Text style={styles.linkText}>{t('comun.reintentar')}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/** Pulso suave; se detiene con «reducir movimiento» (ficha Skeleton). */
+function useSkeletonPulse() {
+  const opacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    let loop: Animated.CompositeAnimation | null = null;
+    let cancelled = false;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((reduce) => {
+        if (cancelled || reduce) return;
+        loop = Animated.loop(
+          Animated.sequence([
+            Animated.timing(opacity, { toValue: 0.5, duration: 700, useNativeDriver: true }),
+            Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+          ]),
+        );
+        loop.start();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      loop?.stop();
+    };
+  }, [opacity]);
+  return opacity;
+}
+
+function Skeleton({ tamano = 'estandar' }: { tamano?: 'estandar' | 'grafico' }) {
+  const opacity = useSkeletonPulse();
+  return (
+    <Animated.View style={[styles.card, { opacity }]} accessible accessibilityLabel={t('comun.cargando')}>
+      <View style={styles.cardHeaderRow}>
+        <View style={[styles.skeletonBlock, styles.skeletonIcon]} />
+        <View style={[styles.skeletonBlock, styles.skeletonLine, styles.flex]} />
+      </View>
+      {tamano === 'grafico' ? (
+        <View style={[styles.skeletonBlock, styles.skeletonChart]} />
+      ) : (
+        <>
+          <View style={[styles.skeletonBlock, styles.skeletonValue]} />
+          <View style={[styles.skeletonBlock, styles.skeletonStateBlock]} />
+        </>
+      )}
+    </Animated.View>
+  );
+}
+
+/* ───────────────────────────── Gráficos ─────────────────────────────────── */
+
+const SECTIONS = 3;
+const Y_LABEL_WIDTH = 44;
+const CHART_HEIGHT = 160;
+const AXIS_TEXT: TextStyle = {
+  fontFamily: fontFamilyFor('data', typography['data-s-mono-regular-12'].fontWeight),
+  fontSize: typography['data-s-mono-regular-12'].fontSize,
+  color: colors['chart-label'],
+};
+
+interface ChartPoint {
+  valor: number | null;
+  /** Momento del punto («11:00», «Sáb», «15/07»). */
+  cuando: string;
+  /** Texto del eje (solo en algunos puntos para que no se encimen). */
+  eje: string;
+  pico: boolean;
+}
+
+/** Paso «redondo» (1, 2, 2,5 o 5 × 10ⁿ) para que el máximo del eje quede hacia arriba. */
+function niceStep(rawStep: number): number {
+  const power = 10 ** Math.floor(Math.log10(rawStep));
+  const factor = [1, 2, 2.5, 5, 10].find((f) => f * power >= rawStep) ?? 10;
+  return factor * power;
+}
+
+function chartValueText(v: number | null, unit: ChartUnit, periodo: Period, abreviar = false): string {
+  if (unit === 'COP') return formatCOP(v, { abreviar });
+  return v === null ? formatNumber(null) : formatNumber(v, periodo === 'dia' ? DECIMALES.kW : DECIMALES.kWh);
+}
+
+function axisFor(points: ChartPoint[], unit: ChartUnit, periodo: Period) {
+  const max = Math.max(...points.map((p) => p.valor ?? 0), 0);
+  const step = niceStep(max > 0 ? max / SECTIONS : 1);
+  const labels = Array.from({ length: SECTIONS + 1 }, (_, i) => chartValueText(step * i, unit, periodo, true));
+  return { maxValue: step * SECTIONS, stepValue: step, labels };
+}
+
+/** Eje X: cada 6 h en Día, cada día en Semana y cada 7 días en Mes. */
+function toChartPoints(data: History, unit: ChartUnit): ChartPoint[] {
+  const every = data.periodo === 'dia' ? 6 : data.periodo === 'semana' ? 1 : 7;
+  return data.serie.map((p: SeriesPoint, i) => ({
+    valor: unit === 'COP' ? p.costo_cop : p.energia_kwh,
+    cuando: pointWhen(data.periodo, p),
+    eje: i % every === 0 ? (data.periodo === 'dia' ? pad2(local(p.inicio).getUTCHours()) : pointWhen(data.periodo, p)) : '',
+    pico: p.es_pico_maximo,
+  }));
+}
+
+function chartSummary(kind: 'barras' | 'linea', points: ChartPoint[], unit: ChartUnit, periodo: Period): string {
+  const periodoText = t(`formato.periodo.${periodo}`);
+  const peak = points.find((p) => p.pico);
+  if (!peak) return t('a11y.grafico_sin_pico', { periodo: periodoText });
+  const unitText = unit === 'COP' ? '' : ` ${t(energyUnitKey(periodo))}`;
+  return t(kind === 'barras' ? 'a11y.grafico_barras' : 'a11y.grafico_linea', {
+    periodo: periodoText,
+    valor: `${chartValueText(peak.valor, unit, periodo)}${unitText}`,
+    cuando: peak.cuando,
+  });
+}
+
+/** Píldora «Pico», opción A de PeakMarker: fondo accent-soft, borde y texto chart-peak. */
+function PeakPill({ texto, alinear = 'izquierda' }: { texto: string; alinear?: 'izquierda' | 'derecha' }) {
+  return (
+    <View style={[styles.peakRow, { justifyContent: alinear === 'derecha' ? 'flex-end' : 'flex-start' }]}>
+      <View style={styles.peakPill}>
+        <Text numberOfLines={1} style={styles.peakText}>
+          {texto}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+interface SeriesChartProps {
+  points: ChartPoint[];
+  unit: ChartUnit;
+  periodo: Period;
+  width: number;
+}
+
+/** Ficha BarChart (gifted-charts, DC-12): pico con `chart-peak` y «Pico»; `null` sin barra. */
+function HistoryBarChart({ points, unit, periodo, width }: SeriesChartProps) {
+  const axis = axisFor(points, unit, periodo);
+  const plot = Math.max(width - Y_LABEL_WIDTH - spacing['8'], 120);
+  const slot = plot / Math.max(points.length, 1);
+  const barWidth = Math.min(24, Math.max(4, slot * 0.65));
+  const gap = Math.max(2, slot - barWidth);
+  return (
+    <View accessible accessibilityLabel={chartSummary('barras', points, unit, periodo)}>
+      <BarChart
+        data={points.map((p) => ({
+          value: p.valor ?? 0,
+          label: p.eje,
+          labelWidth: 44,
+          frontColor: p.pico ? colors['chart-peak'] : colors['chart-series1'],
+          topLabelComponent: p.pico
+            ? () => <PeakPill texto={t('estado.historial_pico.etiqueta')} />
+            : p.valor === null
+              ? () => <Text style={AXIS_TEXT}>{t('comun.sin_dato')}</Text>
+              : undefined,
+        }))}
+        width={plot}
+        height={CHART_HEIGHT}
+        maxValue={axis.maxValue}
+        stepValue={axis.stepValue}
+        noOfSections={SECTIONS}
+        yAxisLabelTexts={axis.labels}
+        yAxisLabelWidth={Y_LABEL_WIDTH}
+        yAxisTextStyle={AXIS_TEXT}
+        xAxisLabelTextStyle={AXIS_TEXT}
+        rulesColor={colors['chart-grid']}
+        rulesType="dashed"
+        yAxisColor="transparent"
+        xAxisColor={colors['chart-grid']}
+        barWidth={barWidth}
+        spacing={gap}
+        initialSpacing={gap / 2}
+        endSpacing={0}
+        barBorderRadius={radius.xs}
+        disableScroll
+        isAnimated={false}
+      />
+    </View>
+  );
+}
+
+const PILL_WIDTH = 170;
+/** Espacio sobre la rejilla para que la píldora no se recorte cuando el pico está arriba. */
+const OVERFLOW_TOP = 32;
+
+/** Ficha LineChart: línea suave que se interrumpe con `null`; la píldora se voltea si no cabe. */
+function HistoryLineChart({ points, unit, periodo, width }: SeriesChartProps) {
+  const axis = axisFor(points, unit, periodo);
+  const plot = Math.max(width - Y_LABEL_WIDTH - spacing['8'], 120);
+  const initial = spacing['12'];
+  const stepX = (plot - initial * 2) / Math.max(points.length - 1, 1);
+  const peakIdx = points.findIndex((p) => p.pico);
+  const peak = peakIdx >= 0 ? points[peakIdx] : null;
+  const flip = peakIdx >= 0 && initial + stepX * peakIdx + PILL_WIDTH > plot;
+  const unitText = unit === 'COP' ? '' : ` ${t(energyUnitKey(periodo))}`;
+  const label = peak
+    ? t('estado.historial_pico.etiqueta_grafico', { cuando: peak.cuando, valor: `${chartValueText(peak.valor, unit, periodo)}${unitText}` })
+    : '';
+  return (
+    <View accessible accessibilityLabel={chartSummary('linea', points, unit, periodo)} style={{ marginTop: OVERFLOW_TOP }}>
+      <LineChart
+        data={points.map((p, i) => ({
+          ...(p.valor === null ? {} : { value: p.valor }),
+          label: p.eje,
+          labelWidth: 44,
+          hideDataPoint: i !== peakIdx,
+          ...(i === peakIdx
+            ? {
+                dataPointColor: colors['chart-peak'],
+                dataPointRadius: 5,
+                dataPointLabelComponent: () => <PeakPill texto={label} alinear={flip ? 'derecha' : 'izquierda'} />,
+                dataPointLabelWidth: PILL_WIDTH,
+                // gifted-charts centra la etiqueta en el punto: borde izquierdo = x − ancho/2 + desplazamiento.
+                dataPointLabelShiftX: flip ? -PILL_WIDTH / 2 - spacing['8'] : PILL_WIDTH / 2 + spacing['8'],
+                dataPointLabelShiftY: -22 + OVERFLOW_TOP,
+              }
+            : {}),
+        }))}
+        interpolateMissingValues={false}
+        overflowTop={OVERFLOW_TOP}
+        curved
+        thickness={2}
+        color={colors['chart-series1']}
+        width={plot}
+        height={CHART_HEIGHT}
+        maxValue={axis.maxValue}
+        stepValue={axis.stepValue}
+        noOfSections={SECTIONS}
+        yAxisLabelTexts={axis.labels}
+        yAxisLabelWidth={Y_LABEL_WIDTH}
+        yAxisTextStyle={AXIS_TEXT}
+        xAxisLabelTextStyle={AXIS_TEXT}
+        rulesColor={colors['chart-grid']}
+        rulesType="dashed"
+        yAxisColor="transparent"
+        xAxisColor={colors['chart-grid']}
+        initialSpacing={initial}
+        spacing={stepX}
+        endSpacing={initial}
+        disableScroll
+        isAnimated={false}
+      />
+    </View>
+  );
+}
+
+/** Ficha ZoneDonutChart, opción A: por orden de participación; «Otras zonas» en neutral-500. */
+const ZONE_COLORS = [colors['green-400'], colors['green-200'], colors['neutral-300'], colors['green-600']] as const;
+const OTHER_COLOR = colors['neutral-500'];
+const RING_RADIUS = 72;
+
+function ZoneDonutChart({ zonas, total, periodo }: { zonas: ZoneShare[]; total: number; periodo: Period }) {
+  const sorted = [...zonas].sort((a, b) => b.participacion_pct - a.participacion_pct);
+  const top = sorted.length > 4 ? sorted.slice(0, 4) : sorted;
+  const rest = sorted.length > 4 ? sorted.slice(4) : [];
+  const restPct = rest.reduce((sum, z) => sum + z.participacion_pct, 0);
+  const restKwh = rest.reduce((sum, z) => sum + z.energia_kwh, 0);
+
+  const slices = [
+    ...top.map((z, i) => ({ value: z.participacion_pct, color: ZONE_COLORS[i] })),
+    ...(rest.length > 0 ? [{ value: restPct, color: OTHER_COLOR }] : []),
+  ];
+  const summaryZones = [
+    ...top.map((z) => `${z.nombre} ${formatPercent(z.participacion_pct)}`),
+    ...(rest.length > 0
+      ? [`${t('historial.anillo_otras')} ${formatPercent(restPct)} (${rest.map((z) => `${z.nombre} ${formatPercent(z.participacion_pct)}`).join(', ')})`]
+      : []),
+  ].join(', ');
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#06120E" />
+    <View
+      style={styles.donutRow}
+      accessible
+      accessibilityLabel={t('a11y.grafico_anillo', { periodo: t(`formato.periodo.${periodo}`), zonas: summaryZones })}
+    >
+      <PieChart
+        data={slices}
+        donut
+        radius={RING_RADIUS}
+        innerRadius={RING_RADIUS * 0.74}
+        innerCircleColor={colors['background-surface']}
+        strokeWidth={2}
+        strokeColor={colors['background-surface']}
+        centerLabelComponent={() => (
+          <View style={styles.donutCenter}>
+            <Text style={styles.donutTotal} adjustsFontSizeToFit numberOfLines={1}>
+              {kwhText(total)}
+            </Text>
+            <Text style={styles.mutedXs}>{t(`historial.anillo_total_${periodo}`)}</Text>
+          </View>
+        )}
+      />
+      <View style={styles.donutLegend}>
+        {top.map((z, i) => (
+          <LegendRow key={z.zona_id} color={ZONE_COLORS[i]} nombre={z.nombre} pct={z.participacion_pct} kwh={z.energia_kwh} />
+        ))}
+        {rest.length > 0 && (
+          <>
+            <LegendRow color={OTHER_COLOR} nombre={t('historial.anillo_otras')} pct={restPct} kwh={restKwh} />
+            {rest.map((z) => (
+              <LegendRow key={z.zona_id} nombre={z.nombre} pct={z.participacion_pct} kwh={z.energia_kwh} grouped />
+            ))}
+          </>
+        )}
+      </View>
+    </View>
+  );
+}
 
-      {/* ─── Header Superior ────────────────────────────────────── */}
-      <View style={styles.topHeader}>
-        <View style={{ width: 28 }} />
-        <Text style={styles.headerTitle}>Historial</Text>
-        <TouchableOpacity
-          style={styles.headerIconBtn}
-          activeOpacity={0.7}
-          onPress={() => console.log('Descargar historial')}
-        >
-          <Ionicons name="download-outline" size={22} color="#D1FAE5" />
-        </TouchableOpacity>
+function LegendRow({ color, nombre, pct, kwh, grouped = false }: { color?: string; nombre: string; pct: number; kwh: number; grouped?: boolean }) {
+  return (
+    <View style={[styles.legendRow, grouped && styles.legendGrouped]}>
+      {color ? <View style={[styles.legendDot, { backgroundColor: color }]} /> : null}
+      <Text style={[styles.legendName, grouped && { color: colors['text-muted'] }]} numberOfLines={1}>
+        {nombre}
+      </Text>
+      <Text style={styles.legendValue}>{formatPercent(pct)}</Text>
+      <Text style={styles.legendKwh}>{kwhText(kwh)}</Text>
+    </View>
+  );
+}
+
+/* ─────────────────────────────── Cards ──────────────────────────────────── */
+
+/** Card Pico del periodo (RN-XIII-03): estado en texto, nunca con el color del pico. */
+function PeakCard({ data }: { data: History }) {
+  const peak = data.ultimo_pico;
+  const title = t(`historial.pico_${data.periodo}`);
+  if (!peak) {
+    return (
+      <View style={styles.card}>
+        <CardHeader icono={TrendingUp} titulo={title} />
+        <StateBlock estado="sin_datos" titulo={t('estado.historial_pico.ninguno.titulo')} cuerpo={t('estado.historial_pico.ninguno.cuerpo')} />
+      </View>
+    );
+  }
+  const dec = data.periodo === 'dia' ? DECIMALES.kW : DECIMALES.kWh;
+  return (
+    <View style={styles.card}>
+      <CardHeader icono={TrendingUp} titulo={title} estado={peak.estado} />
+      <View>
+        <Metric value={formatNumber(peak.energia_kwh, dec)} unit={t(energyUnitKey(data.periodo))} />
+        <Text style={styles.mutedXs}>{t('estado.historial_pico.ultimo', { cuando: peakWhen(data.periodo, peak) })}</Text>
+      </View>
+      <View style={styles.divider} />
+      <StateBlock
+        estado={peak.estado}
+        titulo={isSeverity(peak.estado) ? t(`estado.historial_pico.${peak.estado}.titulo`) : t(`estado.palabra.${peak.estado}`)}
+        cuerpo={t(data.periodo === 'dia' ? 'estado.historial_pico.cuerpo.dia' : 'estado.historial_pico.cuerpo.periodo')}
+      />
+    </View>
+  );
+}
+
+interface ConsumptionCardProps {
+  data: History;
+  zones: ZoneOption[];
+  zonaId: string | null;
+  onZona: (id: string | null) => void;
+}
+
+/** Card Consumo: barras, línea o anillo (solo General), unidad y filtro por zona (RN-XIII-04). */
+function ConsumptionChartCard({ data, zones, zonaId, onZona }: ConsumptionCardProps) {
+  const [view, setView] = useState<ChartView>('barras');
+  const [unitChoice, setUnitChoice] = useState<ChartUnit>('energia');
+  const [width, setWidth] = useState(0);
+
+  const general = zonaId === null;
+  const effectiveView: ChartView = view === 'anillo' && (!general || !data.participacion_zonas) ? 'barras' : view;
+  // COP solo con tarifa vigente; el anillo se expresa en kWh (el contrato no trae COP por zona).
+  const unit: ChartUnit = data.tarifa_vigente && effectiveView !== 'anillo' ? unitChoice : 'energia';
+  const empty = isEmptyHistory(data);
+  const points = useMemo(() => toChartPoints(data, unit), [data, unit]);
+  const sortedZones = useMemo(() => [...zones].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')), [zones]);
+
+  const tramo = tramoLabel(data);
+  const title =
+    effectiveView === 'anillo'
+      ? t('historial.anillo_titulo', { periodo: t(`formato.periodo.${data.periodo}`), tramo })
+      : t(`historial.consumo_${data.periodo}`, { tramo });
+
+  const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHeaderRow}>
+        <Text style={[styles.cardTitle, styles.flex]}>{title}</Text>
+        {!empty && (
+          <View style={styles.toggleRow}>
+            <ViewToggle activo={effectiveView === 'barras'} icono={ChartColumn} onPress={() => setView('barras')} />
+            <ViewToggle activo={effectiveView === 'linea'} icono={ChartSpline} onPress={() => setView('linea')} />
+            {general && data.participacion_zonas ? (
+              <ViewToggle activo={effectiveView === 'anillo'} icono={ChartPie} onPress={() => setView('anillo')} />
+            ) : null}
+          </View>
+        )}
+      </View>
+
+      <View onLayout={onLayout}>
+        {empty ? (
+          <View style={styles.emptyChart}>
+            <Clock size={32} color={colors['text-muted']} />
+            {/* TODO(pendiente: texto): el catálogo no trae «Sin datos para este periodo» (BarChart.md). */}
+            <Text style={styles.stateMessageTitle}>{t('estado.palabra.sin_datos')}</Text>
+          </View>
+        ) : width > 0 ? (
+          effectiveView === 'anillo' && data.participacion_zonas ? (
+            <ZoneDonutChart zonas={data.participacion_zonas} total={data.total_kwh} periodo={data.periodo} />
+          ) : effectiveView === 'linea' ? (
+            <HistoryLineChart points={points} unit={unit} periodo={data.periodo} width={width} />
+          ) : (
+            <HistoryBarChart points={points} unit={unit} periodo={data.periodo} width={width} />
+          )
+        ) : null}
+      </View>
+
+      {!empty && effectiveView !== 'anillo' && (
+        <View style={styles.chipRow} accessibilityRole="radiogroup">
+          <Chip activo={unit === 'energia'} icono={Zap} onPress={() => setUnitChoice('energia')}>
+            {t(energyUnitKey(data.periodo))}
+          </Chip>
+          {data.tarifa_vigente && (
+            <Chip activo={unit === 'COP'} icono={Coins} onPress={() => setUnitChoice('COP')}>
+              {t('comun.cop')}
+            </Chip>
+          )}
+        </View>
+      )}
+
+      {sortedZones.length > 0 && (
+        <View style={styles.filterBlock}>
+          <Text style={styles.filterLabel}>{t('historial.filtrar_zona')}</Text>
+          <View style={styles.chipWrap} accessibilityRole="radiogroup">
+            <Chip activo={general} icono={CalendarDays} onPress={() => onZona(null)}>
+              {t('comun.general')}
+            </Chip>
+            {sortedZones.map((z) => (
+              <Chip key={z.zona_id} activo={zonaId === z.zona_id} icono={zoneIcon(z.nombre)} onPress={() => onZona(z.zona_id)}>
+                {z.nombre}
+              </Chip>
+            ))}
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** Card Comparación (RN-XIII-01): mismo tramo del periodo anterior; sin anterior → «—». */
+function ComparisonCard({ data }: { data: History }) {
+  const c = data.comparacion;
+  const tramo = tramoLabel(data);
+  return (
+    <View style={styles.card}>
+      <CardHeader icono={CalendarDays} titulo={t(`historial.comparacion_${data.periodo}`, { tramo })} estado={c.estado} />
+      <View style={styles.compareRow}>
+        <View style={styles.flex}>
+          <Text style={styles.compareLabel}>{t('historial.este_periodo')}</Text>
+          <Metric value={formatNumber(c.actual_kwh, DECIMALES.kWh)} unit={t('comun.kwh')} size="l" />
+        </View>
+        <View style={styles.compareDivider} />
+        <View style={styles.flex}>
+          <Text style={styles.compareLabel}>{t('historial.periodo_anterior')}</Text>
+          <Metric value={formatNumber(c.anterior_kwh, DECIMALES.kWh)} unit={t('comun.kwh')} size="l" />
+        </View>
+      </View>
+      <View style={styles.divider} />
+      <StateBlock
+        estado={c.estado}
+        titulo={c.mensaje_codigo ? t(`estado.${c.mensaje_codigo}.titulo`) : t(`estado.palabra.${c.estado}`)}
+        cuerpo={c.mensaje_codigo ? t(`estado.${c.mensaje_codigo}.cuerpo`) : undefined}
+      />
+    </View>
+  );
+}
+
+/** Card Costo estimado (RN-XIII-05; §7.3 «Sin tarifa»): sin barra de progreso. */
+function CostCard({ data, onConfigureTariff }: { data: History; onConfigureTariff: () => void }) {
+  if (!data.tarifa_vigente) {
+    return (
+      <StateMessage
+        icono={Coins}
+        titulo={t('estado.historial_costo.sin_tarifa.titulo')}
+        descripcion={t('estado.historial_costo.sin_tarifa.cuerpo')}
+        accion={t('comun.configurar_tarifa')}
+        onAccion={onConfigureTariff}
+      />
+    );
+  }
+  const c = data.costo;
+  // El costo sigue el código de la comparación (contrato, opción A): historial_comparacion.<x>.
+  const suffix = c.mensaje_codigo?.split('.').pop();
+  const projection = c.incluye_cargo_fijo
+    ? t('historial.proyeccion_mes', { valor: formatCOP(c.proyeccion_cierre_cop) })
+    : t('historial.proyeccion', { periodo_cierre: t(`formato.cierre.${data.periodo}`), valor: formatCOP(c.proyeccion_cierre_cop) });
+  return (
+    <View style={styles.card}>
+      <CardHeader icono={Coins} titulo={t(`historial.costo_${data.periodo}`)} estado={c.estado} />
+      <View>
+        <Metric value={formatCOP(c.costo_cop)} unit={c.costo_cop === null ? '' : t('comun.cop')} />
+        <Text style={styles.mutedXs}>{projection}</Text>
+      </View>
+      <View style={styles.divider} />
+      <StateBlock
+        estado={c.estado}
+        titulo={suffix ? t(`estado.historial_costo.${suffix}.titulo`) : t(`estado.palabra.${c.estado}`)}
+        cuerpo={suffix ? t(`estado.historial_costo.${suffix}.cuerpo`) : undefined}
+      />
+    </View>
+  );
+}
+
+/* ─────────────────────────────── Pantalla ───────────────────────────────── */
+
+export interface HistorialScreenProps {
+  /** TODO(pendiente: hogarId): vendrá del estado de sesión/hogar (fila 12 del mapa). */
+  hogarId?: string | null;
+  /** Solo desarrollo: fuerza un escenario del modo de ejemplo. */
+  mockScenario?: HistorialMockScenario;
+}
+
+export function HistorialScreen({ hogarId = null, mockScenario }: HistorialScreenProps) {
+  const router = useRouter();
+  const [periodo, setPeriodo] = useState<Period>('dia');
+  const [zonaId, setZonaId] = useState<string | null>(null);
+  const { state, zones, retry, refresh, refreshing } = useHistorialData(hogarId, periodo, zonaId, { mockScenario });
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
+      <View style={styles.header}>
+        <Text style={styles.headerTitle} accessibilityRole="header">
+          {t('historial.encabezado')}
+        </Text>
       </View>
 
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        style={styles.flex}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            tintColor={colors['accent-primary']}
+            colors={[colors['accent-primary']]}
+            progressBackgroundColor={colors['background-surface']}
+          />
+        }
       >
-        {/* ─── Saludo ───────────────────────────────────────────── */}
-        <Text style={styles.greeting}>Buenos días, Nicolás</Text>
-
-        {/* ─── Selector de Período (Día / Semana / Mes) ─────────── */}
-        <View style={styles.periodSelectorContainer}>
-          <TouchableOpacity
-            style={[
-              styles.periodTab,
-              periodo === 'dia' && styles.periodTabActive,
-            ]}
-            onPress={() => setPeriodo('dia')}
-          >
-            <Ionicons
-              name="calendar-outline"
-              size={15}
-              color={periodo === 'dia' ? '#5DD39E' : '#718096'}
-            />
-            <Text
-              style={[
-                styles.periodTabText,
-                periodo === 'dia' && styles.periodTabTextActive,
-              ]}
-            >
-              Día
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.periodTab,
-              periodo === 'semana' && styles.periodTabActive,
-            ]}
-            onPress={() => setPeriodo('semana')}
-          >
-            <Ionicons
-              name="calendar-outline"
-              size={15}
-              color={periodo === 'semana' ? '#5DD39E' : '#718096'}
-            />
-            <Text
-              style={[
-                styles.periodTabText,
-                periodo === 'semana' && styles.periodTabTextActive,
-              ]}
-            >
-              Semana
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.periodTab,
-              periodo === 'mes' && styles.periodTabActive,
-            ]}
-            onPress={() => setPeriodo('mes')}
-          >
-            <Ionicons
-              name="calendar-outline"
-              size={15}
-              color={periodo === 'mes' ? '#5DD39E' : '#718096'}
-            />
-            <Text
-              style={[
-                styles.periodTabText,
-                periodo === 'mes' && styles.periodTabTextActive,
-              ]}
-            >
-              Mes
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.periodRow} accessibilityRole="radiogroup">
+          {PERIODS.map((p) => (
+            <Chip key={p} activo={periodo === p} icono={CalendarDays} onPress={() => setPeriodo(p)}>
+              {t(`formato.periodo.${p}`)}
+            </Chip>
+          ))}
         </View>
 
-        {/* ─── CARD 1: Pico del período ─────────────────────────── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardLabelRow}>
-              <View style={styles.iconMiniBox}>
-                <Ionicons name="trending-up" size={14} color="#5DD39E" />
-              </View>
-              <Text style={styles.cardSubTitle}>
-                Historial · Pico del período · {periodoLabel}
-              </Text>
-            </View>
-            <StatusBadge estado={estado} />
-          </View>
+        {state.status === 'loading' && (
+          <>
+            <Skeleton />
+            <Skeleton tamano="grafico" />
+            <Skeleton />
+            <Skeleton />
+          </>
+        )}
 
-          <View style={styles.metricRow}>
-            <Text style={styles.bigNumber}>{formatValue(meta.peakVal, unit)}</Text>
-            <Text style={styles.unitText}> {unit}</Text>
-          </View>
-          <Text style={styles.hintText}>{meta.peakText}</Text>
+        {state.status === 'error' && (
+          <InlineNotice tono="error" titulo={t(`${state.errorKey}.titulo`)} descripcion={t(`${state.errorKey}.cuerpo`)} onReintentar={retry} />
+        )}
 
-          {/* Notificación de estado reutilizable */}
-          <StatusChip
-            title="Pico dentro del promedio"
-            subtitle="Sigue así para mantener un consumo eficiente"
-            estado={estado}
-          />
-        </View>
+        {state.status === 'forbidden' && (
+          <StateMessage icono={Shield} titulo={t('error.sin_permiso_ver_historial.titulo')} descripcion={t('error.sin_permiso_ver_historial.cuerpo')} />
+        )}
 
-        {/* ─── CARD 2: Consumo día | semana | mes (Gráfico y Filtros) ── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardSubTitle}>
-              Historial · Consumo del {periodoLabel.toLowerCase()}
-            </Text>
-            <View style={styles.rightIconsGroup}>
-              {/* Botón Gráfica de Barras */}
-              <TouchableOpacity
-                style={[
-                  styles.chartIconBtn,
-                  chartType === 'bar' && styles.chartIconBtnActive,
-                ]}
-                onPress={() => setChartType('bar')}
-              >
-                <Ionicons
-                  name="bar-chart-outline"
-                  size={16}
-                  color={chartType === 'bar' ? '#5DD39E' : '#718096'}
-                />
-              </TouchableOpacity>
-
-              {/* Botón Gráfica de Líneas */}
-              <TouchableOpacity
-                style={[
-                  styles.chartIconBtn,
-                  chartType === 'line' && styles.chartIconBtnActive,
-                ]}
-                onPress={() => setChartType('line')}
-              >
-                <Ionicons
-                  name="stats-chart-outline"
-                  size={16}
-                  color={chartType === 'line' ? '#5DD39E' : '#718096'}
-                />
-              </TouchableOpacity>
-
-              {/* Botón Gráfica Temporal / Stepped Area */}
-              <TouchableOpacity
-                style={[
-                  styles.chartIconBtn,
-                  chartType === 'time' && styles.chartIconBtnActive,
-                ]}
-                onPress={() => setChartType('time')}
-              >
-                <Ionicons
-                  name="time-outline"
-                  size={16}
-                  color={chartType === 'time' ? '#5DD39E' : '#718096'}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Renderizado dinámico según el botón de gráfica presionado */}
-          {chartType === 'bar' && (
-            <HistoryBarChart periodo={periodo} unit={unit} />
-          )}
-          {chartType === 'line' && (
-            <HistoryLineChart periodo={periodo} unit={unit} />
-          )}
-          {chartType === 'time' && (
-            <HistoryAreaChart periodo={periodo} unit={unit} />
-          )}
-
-          {/* Selector de Unidades: Kw / COP */}
-          <View style={styles.unitToggleGroup}>
-            <TouchableOpacity
-              style={[
-                styles.unitToggleBtn,
-                unit === 'KW' && styles.unitToggleBtnActive,
-              ]}
-              onPress={() => setUnit('KW')}
+        {state.status === 'ready' && (
+          <>
+            {isMissingLastHour(state.data) && (
+              <InlineNotice tono="informacion" titulo={t('historial.faltan_titulo')} descripcion={t('historial.faltan_cuerpo')} />
+            )}
+            {!isEmptyHistory(state.data) && <PeakCard data={state.data} />}
+            <ConsumptionChartCard data={state.data} zones={zones} zonaId={zonaId} onZona={setZonaId} />
+            {!isEmptyHistory(state.data) && (
+              <>
+                <ComparisonCard data={state.data} />
+                <CostCard data={state.data} onConfigureTariff={() => router.push('/configurar-tarifa')} />
+              </>
+            )}
+            <Pressable
+              onPress={() => router.push('/consejos')}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.primaryButton, pressed && { backgroundColor: colors['accent-primaryActive'] }]}
             >
-              <Ionicons
-                name="flash"
-                size={14}
-                color={unit === 'KW' ? '#5DD39E' : '#718096'}
-              />
-              <Text
-                style={[
-                  styles.unitToggleText,
-                  unit === 'KW' && styles.unitToggleTextActive,
-                ]}
-              >
-                Kw
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.unitToggleBtn,
-                unit === 'COP' && styles.unitToggleBtnActive,
-              ]}
-              onPress={() => setUnit('COP')}
-            >
-              <Ionicons
-                name="cash-outline"
-                size={14}
-                color={unit === 'COP' ? '#5DD39E' : '#718096'}
-              />
-              <Text
-                style={[
-                  styles.unitToggleText,
-                  unit === 'COP' && styles.unitToggleTextActive,
-                ]}
-              >
-                COP
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Filtrar por zona */}
-          <Text style={styles.filterSectionTitle}>Filtrar por zona:</Text>
-          <View style={styles.zoneChipsWrapper}>
-            {[
-              { id: 'general', label: 'General', icon: 'apps-outline' },
-              { id: 'cuartos', label: 'Cuartos', icon: 'bed-outline' },
-              { id: 'cocina', label: 'Cocina', icon: 'restaurant-outline' },
-              { id: 'oficina', label: 'Oficina', icon: 'laptop-outline' },
-              { id: 'sala', label: 'Sala', icon: 'car-outline' },
-            ].map((z) => {
-              const isSelected = selectedZona === z.id;
-              return (
-                <TouchableOpacity
-                  key={z.id}
-                  style={[styles.zoneChip, isSelected && styles.zoneChipActive]}
-                  onPress={() => setSelectedZona(z.id as Zona)}
-                >
-                  <Ionicons
-                    name={z.icon as any}
-                    size={14}
-                    color={isSelected ? '#5DD39E' : '#718096'}
-                  />
-                  <Text
-                    style={[
-                      styles.zoneChipText,
-                      isSelected && styles.zoneChipTextActive,
-                    ]}
-                  >
-                    {z.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* ─── CARD 3: Comparación (Este período vs anterior) ─────── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardLabelRow}>
-              <View style={styles.iconMiniBox}>
-                <Ionicons name="calendar-outline" size={14} color="#5DD39E" />
-              </View>
-              <Text style={styles.cardSubTitle}>
-                Historial · Comparación · {compareSubtitle}
-              </Text>
-            </View>
-            <StatusBadge estado={estado} />
-          </View>
-
-          {/* Comparativa a dos columnas con línea divisoria */}
-          <View style={styles.compareRow}>
-            <View style={styles.compareCol}>
-              <Text style={styles.compareLabel}>{compareLabelThis}</Text>
-              <View style={styles.metricRowInline}>
-                <Text style={styles.compareBigNumber}>
-                  {formatValue(meta.thisPeriodCompare, unit)}
-                </Text>
-                <Text style={styles.compareUnitText}> {unit}</Text>
-              </View>
-            </View>
-
-            <View style={styles.verticalDivider} />
-
-            <View style={styles.compareCol}>
-              <Text style={styles.compareLabel}>{compareLabelPrev}</Text>
-              <View style={styles.metricRowInline}>
-                <Text style={styles.compareBigNumber}>
-                  {formatValue(meta.prevPeriodCompare, unit)}
-                </Text>
-                <Text style={styles.compareUnitText}> {unit}</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Notificación de estado */}
-          <StatusChip
-            title={meta.compareDesc}
-            subtitle="Información comparativa frente al ciclo anterior"
-            estado={estado}
-          />
-        </View>
-
-        {/* ─── CARD 4: Costo estimado (Período actual) ───────────── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardLabelRow}>
-              <View style={styles.iconMiniBox}>
-                <Ionicons name="cash-outline" size={14} color="#5DD39E" />
-              </View>
-              <Text style={styles.cardSubTitle}>
-                Historial · Costo estimado · {costSubtitle}
-              </Text>
-            </View>
-            <StatusBadge estado={estado} />
-          </View>
-
-          <View style={styles.metricRow}>
-            <Text style={styles.bigNumber}>
-              {formatValue(meta.costEstimated, unit)}
-            </Text>
-            <Text style={styles.unitText}> {unit}</Text>
-          </View>
-          <Text style={styles.hintText}>
-            Proyección estimada al cierre: {formatValue(meta.costProjection, unit)} {unit}
-          </Text>
-
-          {/* Notificación de impacto económico */}
-          <StatusChip
-            title={meta.costDesc}
-            subtitle="Revisar impacto económico según el período seleccionado"
-            estado={estado}
-          />
-        </View>
-
-        {/* ─── BOTÓN DE ACCIÓN: Ver consejos ───────────────────── */}
-        <TouchableOpacity
-          style={styles.ctaButton}
-          activeOpacity={0.85}
-          onPress={() => router.push('/consejos')}
-        >
-          <Text style={styles.ctaButtonText}>Ver consejos</Text>
-        </TouchableOpacity>
-
-        {/* Espacio extra inferior para scroll */}
-        <View style={{ height: 20 }} />
+              <Text style={styles.primaryButtonText}>{t('comun.ver_consejos')}</Text>
+            </Pressable>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ─── Estilos ──────────────────────────────────────────────────────────────────
+/* ─────────────────────────────── Estilos ────────────────────────────────── */
+
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#06120E',
-  },
-  topHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  headerIconBtn: {
-    padding: 6,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-  },
-  greeting: {
-    color: '#9EAEA8',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 6,
-    marginBottom: 16,
+  safeArea: { flex: 1, backgroundColor: colors['background-default'] },
+  flex: { flex: 1 },
+  content: {
+    paddingHorizontal: sizes['grid-margin'],
+    paddingTop: spacing['16'],
+    paddingBottom: spacing['40'],
+    gap: spacing['16'],
   },
 
-  // ─── Selector Período ───────────────────────────────────────
-  periodSelectorContainer: {
-    flexDirection: 'row',
+  // Cabecera
+  header: {
+    height: sizes['topBar-height'],
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: colors['border-subtle'],
   },
-  periodTab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#18382C',
-    backgroundColor: '#0A1E17',
-    gap: 6,
-  },
-  periodTabActive: {
-    backgroundColor: '#113E2E',
-    borderColor: '#246A4F',
-  },
-  periodTabText: {
-    color: '#718096',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  periodTabTextActive: {
-    color: '#5DD39E',
-    fontWeight: '600',
-  },
+  headerTitle: { ...textStyle('display-l-24'), color: colors['text-primary'] },
 
-  // ─── Estilos Comunes de Cards ──────────────────────────────
+  // Selector de periodo
+  periodRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing['8'] },
+
+  // Card base
   card: {
-    backgroundColor: '#0B1D17',
-    borderRadius: 16,
+    backgroundColor: colors['background-surface'],
+    borderColor: colors['border-subtle'],
     borderWidth: 1,
-    borderColor: '#153328',
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: radius.lg,
+    padding: sizes['card-padding'],
+    gap: spacing['12'],
   },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cardLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  iconMiniBox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    backgroundColor: '#0E2E23',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  cardSubTitle: {
-    color: '#8BA198',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-
-  // ─── Métricas ───────────────────────────────────────────────
-  metricRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginTop: 12,
-  },
-  metricRowInline: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginTop: 6,
-  },
-  bigNumber: {
-    color: '#FFFFFF',
-    fontSize: 34,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-  },
-  unitText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  hintText: {
-    color: '#73877F',
-    fontSize: 12,
-    marginTop: 4,
-  },
-
-  // ─── Gráfico de Consumo ─────────────────────────────────────
-  rightIconsGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  chartIconBtn: {
-    padding: 6,
-    borderRadius: 6,
-  },
-  chartIconBtnActive: {
-    backgroundColor: '#163B30',
-  },
-
-  // ─── Selector Unidad Kw / COP ───────────────────────────────
-  unitToggleGroup: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-    marginTop: 16,
-  },
-  unitToggleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#1B3F31',
-    backgroundColor: '#0A1C16',
-    gap: 6,
-  },
-  unitToggleBtnActive: {
-    backgroundColor: '#123D2E',
-    borderColor: '#267355',
-  },
-  unitToggleText: {
-    color: '#718096',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  unitToggleTextActive: {
-    color: '#5DD39E',
-    fontWeight: '600',
-  },
-
-  // ─── Filtros de Zona ────────────────────────────────────────
-  filterSectionTitle: {
-    color: '#D1FAE5',
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 18,
-    marginBottom: 10,
-  },
-  zoneChipsWrapper: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  zoneChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#1B3F31',
-    backgroundColor: '#0A1C16',
-    gap: 6,
-  },
-  zoneChipActive: {
-    backgroundColor: '#123D2E',
-    borderColor: '#267355',
-  },
-  zoneChipText: {
-    color: '#718096',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  zoneChipTextActive: {
-    color: '#5DD39E',
-    fontWeight: '600',
-  },
-
-  // ─── Comparación Columnas ───────────────────────────────────
-  compareRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 14,
-  },
-  compareCol: {
-    flex: 1,
-  },
-  verticalDivider: {
-    width: 1,
-    height: 45,
-    backgroundColor: '#1A3B2F',
-    marginHorizontal: 12,
-  },
-  compareLabel: {
-    color: '#7E9289',
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  compareBigNumber: {
-    color: '#FFFFFF',
-    fontSize: 32,
-    fontWeight: '700',
-  },
-  compareUnitText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
-    marginLeft: 6,
-  },
-
-  // ─── Botón CTA ──────────────────────────────────────────────
-  ctaButton: {
-    backgroundColor: '#57D49D',
-    borderRadius: 12,
-    paddingVertical: 14,
+  cardHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing['8'] },
+  cardIcon: {
+    width: spacing['40'],
+    height: spacing['40'],
+    borderRadius: radius.md,
+    backgroundColor: colors['accent-soft'],
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 6,
   },
-  ctaButtonText: {
-    color: '#061D15',
-    fontSize: 15,
-    fontWeight: '700',
+  cardTitle: { ...textStyle('body-s-medium'), color: colors['text-primary'] },
+  mutedXs: { ...textStyle('body-xs-regular'), color: colors['text-muted'] },
+  divider: { height: 1, backgroundColor: colors['border-subtle'] },
+
+  // Metric
+  metricRow: { flexDirection: 'row', alignItems: 'baseline', gap: spacing['4'] },
+  metricValue: { ...textStyle('data-xl-32'), color: colors['text-primary'], flexShrink: 1 },
+  metricValueL: { ...textStyle('data-l'), color: colors['text-primary'], flexShrink: 1 },
+  metricUnit: { ...textStyle('body-s-regular'), color: colors['text-muted'] },
+
+  // StatusBadge y bloque de estado
+  badge: {
+    paddingVertical: spacing['4'],
+    paddingHorizontal: spacing['8'],
+    borderRadius: radius.full,
+    borderWidth: 1,
   },
+  badgeText: { ...textStyle('ui-s-semibold-12') },
+  stateBlock: {
+    flexDirection: 'row',
+    gap: spacing['8'],
+    padding: spacing['12'],
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  stateBlockTitle: { ...textStyle('ui-s-semibold') },
+
+  // Selectores
+  toggleRow: { flexDirection: 'row', gap: spacing['4'] },
+  iconButton: {
+    width: sizes['iconButtonLg-size'],
+    height: sizes['iconButtonLg-size'],
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconButtonActive: { backgroundColor: colors['accent-soft'] },
+  chipRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing['8'] },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing['8'] },
+  chip: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing['4'],
+    paddingHorizontal: spacing['16'],
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors['border-medium'],
+  },
+  chipActive: { backgroundColor: colors['accent-soft'], borderColor: colors['border-accent'] },
+  chipText: { ...textStyle('ui-s-semibold') },
+  filterBlock: { gap: spacing['8'] },
+  filterLabel: { ...textStyle('body-s-medium'), color: colors['text-primary'] },
+
+  // Gráficos
+  emptyChart: { alignItems: 'center', gap: spacing['8'], paddingVertical: spacing['32'] },
+  peakRow: { flexDirection: 'row' },
+  peakPill: {
+    paddingHorizontal: spacing['8'],
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors['chart-peak'],
+    backgroundColor: colors['accent-soft'],
+  },
+  peakText: { ...textStyle('ui-s-etiqueta-12'), color: colors['chart-peak'] },
+  donutRow: { flexDirection: 'row', alignItems: 'center', gap: spacing['16'], flexWrap: 'wrap', justifyContent: 'center' },
+  donutCenter: { alignItems: 'center', maxWidth: RING_RADIUS * 1.4 },
+  donutTotal: { ...textStyle('data-m'), color: colors['text-primary'] },
+  donutLegend: { flex: 1, minWidth: 160, gap: spacing['4'] },
+  legendRow: { flexDirection: 'row', alignItems: 'center', gap: spacing['8'] },
+  legendGrouped: { paddingLeft: spacing['16'] },
+  legendDot: { width: spacing['8'], height: spacing['8'], borderRadius: radius.full },
+  legendName: { ...textStyle('body-s-regular'), color: colors['text-primary'], flex: 1 },
+  legendValue: { ...textStyle('data-s'), color: colors['text-primary'] },
+  legendKwh: { ...textStyle('data-s-mono-regular-12'), color: colors['text-muted'] },
+
+  // Comparación
+  compareRow: { flexDirection: 'row', gap: spacing['16'] },
+  compareDivider: { width: 1, backgroundColor: colors['border-subtle'] },
+  compareLabel: { ...textStyle('body-xs-medium'), color: colors['text-muted'] },
+
+  // StateMessage e InlineNotice
+  stateMessage: { flexDirection: 'row', alignItems: 'flex-start' },
+  stateMessageTitle: { ...textStyle('body-s-medium'), color: colors['text-primary'] },
+  linkTouch: { minHeight: spacing['48'], justifyContent: 'center', alignSelf: 'flex-start' },
+  linkText: { ...textStyle('ui-s-semibold-12'), color: colors['text-accent'] },
+  notice: { borderWidth: 1, borderRadius: radius.md, padding: spacing['12'], gap: spacing['8'] },
+  noticeRow: { flexDirection: 'row', gap: spacing['8'] },
+  noticeAction: { alignSelf: 'flex-end', minHeight: spacing['48'], justifyContent: 'center' },
+
+  // Botón principal
+  primaryButton: {
+    height: sizes['button-height'],
+    borderRadius: radius.lg,
+    backgroundColor: colors['accent-primary'],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonText: { ...textStyle('ui-m-semibold'), color: colors['text-inverse'] },
+
+  // Skeleton
+  skeletonBlock: { backgroundColor: colors['background-elevated'], borderRadius: radius.xs },
+  skeletonIcon: { width: spacing['40'], height: spacing['40'] },
+  skeletonLine: { height: spacing['12'] },
+  skeletonValue: { height: spacing['32'], width: '50%' },
+  skeletonStateBlock: { height: spacing['48'] },
+  skeletonChart: { height: CHART_HEIGHT },
 });

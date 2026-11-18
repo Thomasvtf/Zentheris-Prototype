@@ -73,6 +73,13 @@ export default function Layout() {
             tabBarStyle: { display: 'none' },
           }}
         />
+        <Tabs.Screen
+          name="nueva-contrasena"
+          options={{
+            href: null,
+            tabBarStyle: { display: 'none' },
+          }}
+        />
 
         {/* Pestañas de la Aplicación Principal (Con barra de navegación) */}
         <Tabs.Screen

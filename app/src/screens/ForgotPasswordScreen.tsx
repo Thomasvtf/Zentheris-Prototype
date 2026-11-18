@@ -52,7 +52,7 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
       } else {
         router.push({
           pathname: '/revisa-tu-correo',
-          params: { email: email.trim() },
+          params: { email: email.trim(), mode: 'recovery' },
         });
       }
     }, 600);

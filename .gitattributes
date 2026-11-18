@@ -1,0 +1,15 @@
+# Saltos de línea fijos en LF para que el SHA-256 de las copias coincida en Windows (PENDIENTES #27)
+# y para que cambiar de rama no reescriba archivos con CRLF (PENDIENTES #41).
+*.json text eol=lf
+*.sql  text eol=lf
+*.md   text eol=lf
+*.py   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.txt  text eol=lf
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.css  text eol=lf
+*.zip  binary
+*.png  binary

@@ -1,0 +1,227 @@
+{
+  "_meta": {
+    "nota": "Valores propuestos de mensaje_codigo para el contrato API. La app resuelve estado.<codigo>.titulo/.cuerpo/.leyenda. Pico, participación de zona y costo no traen mensaje_codigo en 0.2.2: la app arma la clave con el estado.",
+    "estado": "APROBADO por Nicolás el 02/11/2026 (aprobación total), con salvedades",
+    "version": "1.0"
+  },
+  "codigos": [
+    {
+      "mensaje_codigo": "consumo_actual.normal",
+      "partes": [
+        "cuerpo",
+        "leyenda",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.consumo_actual.normal"
+    },
+    {
+      "mensaje_codigo": "consumo_actual.elevado",
+      "partes": [
+        "cuerpo",
+        "leyenda",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.consumo_actual.elevado"
+    },
+    {
+      "mensaje_codigo": "consumo_actual.critico",
+      "partes": [
+        "cuerpo",
+        "leyenda",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.consumo_actual.critico"
+    },
+    {
+      "mensaje_codigo": "consumo_actual.sin_datos",
+      "partes": [
+        "cuerpo",
+        "leyenda",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.consumo_actual.sin_datos"
+    },
+    {
+      "mensaje_codigo": "consumo_actual.sin_referencia",
+      "partes": [
+        "cuerpo",
+        "leyenda",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.consumo_actual.sin_referencia"
+    },
+    {
+      "mensaje_codigo": "acumulado.meta.normal",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.acumulado.meta.normal"
+    },
+    {
+      "mensaje_codigo": "acumulado.meta.elevado",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.acumulado.meta.elevado"
+    },
+    {
+      "mensaje_codigo": "acumulado.meta.critico",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.acumulado.meta.critico"
+    },
+    {
+      "mensaje_codigo": "acumulado.promedio.normal",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.acumulado.promedio.normal"
+    },
+    {
+      "mensaje_codigo": "acumulado.promedio.elevado",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.acumulado.promedio.elevado"
+    },
+    {
+      "mensaje_codigo": "acumulado.promedio.critico",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.acumulado.promedio.critico"
+    },
+    {
+      "mensaje_codigo": "acumulado.meta.sin_referencia",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.acumulado.meta.sin_referencia"
+    },
+    {
+      "mensaje_codigo": "acumulado.meta.sin_datos",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.acumulado.meta.sin_datos"
+    },
+    {
+      "mensaje_codigo": "acumulado.promedio.sin_referencia",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.acumulado.promedio.sin_referencia"
+    },
+    {
+      "mensaje_codigo": "acumulado.promedio.sin_datos",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.acumulado.promedio.sin_datos"
+    },
+    {
+      "mensaje_codigo": "zona_estado.normal",
+      "partes": [
+        "cuerpo",
+        "leyenda",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.zona_estado.normal"
+    },
+    {
+      "mensaje_codigo": "zona_estado.elevado",
+      "partes": [
+        "cuerpo",
+        "leyenda",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.zona_estado.elevado"
+    },
+    {
+      "mensaje_codigo": "zona_estado.critico",
+      "partes": [
+        "cuerpo",
+        "leyenda",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.zona_estado.critico"
+    },
+    {
+      "mensaje_codigo": "zona_estado.sin_datos",
+      "partes": [
+        "cuerpo",
+        "leyenda",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.zona_estado.sin_datos"
+    },
+    {
+      "mensaje_codigo": "zona_estado.sin_referencia",
+      "partes": [
+        "cuerpo",
+        "leyenda",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.zona_estado.sin_referencia"
+    },
+    {
+      "mensaje_codigo": "historial_comparacion.menor",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.historial_comparacion.menor"
+    },
+    {
+      "mensaje_codigo": "historial_comparacion.similar",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.historial_comparacion.similar"
+    },
+    {
+      "mensaje_codigo": "historial_comparacion.mayor",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.historial_comparacion.mayor"
+    },
+    {
+      "mensaje_codigo": "historial_comparacion.muy_mayor",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.historial_comparacion.muy_mayor"
+    },
+    {
+      "mensaje_codigo": "historial_comparacion.sin_anterior",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.historial_comparacion.sin_anterior"
+    },
+    {
+      "mensaje_codigo": "historial_comparacion.sin_referencia",
+      "partes": [
+        "cuerpo",
+        "titulo"
+      ],
+      "resuelve_clave_base": "estado.historial_comparacion.sin_referencia"
+    }
+  ]
+}

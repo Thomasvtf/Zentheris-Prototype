@@ -487,12 +487,11 @@ export function ConfiguracionScreen() {
             </Section>
 
             <Section title={t('config.sec_familia')}>
-              {/* TODO(pendiente: ruta /miembros): la pantalla Miembros del hogar aún no existe. */}
               <NavRow
                 icon={<Ionicons name="people-outline" size={20} color={ICON_COLOR} />}
                 title={isAdmin ? t('config.miembros_t') : t('config.miembros_t_lectura')}
                 subtitle={isAdmin ? t('config.miembros_d') : t('config.miembros_d_lectura')}
-                onPress={() => undefined}
+                onPress={() => router.push('/miembros')}
               />
             </Section>
 
@@ -581,7 +580,6 @@ export function ConfiguracionScreen() {
         }}
       />
 
-      {/* TODO(pendiente: ruta /miembros): «Ir a Miembros del hogar» solo cierra por ahora. */}
       <ConfirmDialog
         visible={mustTransfer}
         title={t('dialogo.debes_transferir.titulo')}
@@ -591,7 +589,10 @@ export function ConfiguracionScreen() {
         confirmLabel={t('dialogo.debes_transferir.confirmar')}
         cancelLabel={t('dialogo.debes_transferir.cancelar')}
         onCancel={clearMustTransfer}
-        onConfirm={clearMustTransfer}
+        onConfirm={() => {
+          clearMustTransfer();
+          router.push('/miembros');
+        }}
       />
     </SafeAreaView>
   );

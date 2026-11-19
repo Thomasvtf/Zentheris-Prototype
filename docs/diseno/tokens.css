@@ -1,0 +1,337 @@
+/* Zentheris — generated from tokens.json */
+:root, [data-theme="oscuro"] {
+  --z-color-neutral-50: #f3f7f5; /* Fondo muy claro, superficies suaves en modo claro Sin tema claro en el alcance del MVP: no usar como fondo de pantalla. */
+  --z-color-neutral-100: #e1e9e5; /* Fondos secundarios claros Sin tema claro en el alcance del MVP: no usar como fondo de pantalla. */
+  --z-color-neutral-200: #c5d2cd; /* Bordes suaves, dividers claros Sin tema claro en el alcance del MVP: no usar como fondo de pantalla. */
+  --z-color-neutral-300: #9fb3ad; /* Texto deshabilitado / íconos suaves */
+  --z-color-neutral-400: #718c84; /* Texto secundario */
+  --z-color-neutral-500: #4e6e66; /* Texto medio / elementos neutros */
+  --z-color-neutral-600: #35544d; /* Bordes firmes / texto fuerte */
+  --z-color-neutral-700: #244039; /* Superficie oscura secundaria */
+  --z-color-neutral-800: #162b25; /* Cards, inputs y contenedores */
+  --z-color-neutral-900: #0d1f1a; /* Fondo principal de la app */
+  --z-color-green-50: #ecfdf5; /* Fondo éxito muy suave */
+  --z-color-green-100: #d1fae5; /* Chips y fondos suaves */
+  --z-color-green-200: #a7f3d0; /* Bordes y resaltes suaves */
+  --z-color-green-300: #86efac; /* Acento secundario / texto sobre fondo oscuro */
+  --z-color-green-400: #5dd39e; /* Acción principal CTA */
+  --z-color-green-500: #4caf8e; /* Interacción activa / estado sólido */
+  --z-color-green-600: #2f8a68; /* Hover / pressed */
+  --z-color-green-700: #1f6a50; /* Elementos más densos */
+  --z-color-green-800: #164d3c; /* Fondo oscuro verde */
+  --z-color-green-900: #0d3228; /* Fondo profundo / badges oscuros */
+  --z-color-red-50: #fef2f2; /* Fondo suave de alerta Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-red-100: #fee2e2; /* Alertas leves Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-red-200: #fecaca; /* Bordes o chips suaves Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-red-300: #fca5a5; /* Texto/acento de error claro Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-red-400: #f59099; /* Texto de error en oscuro Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-red-500: #ef4444; /* Error principal / alertas / gráficos Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-red-600: #dc2626; /* Hover o énfasis fuerte Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-red-700: #b91c1c; /* Estado activo intenso Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-red-800: #7f1d1d; /* Fondo oscuro para error Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-red-900: #2e1014; /* Fondo muy oscuro para chips/alertas Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-yellow-50: #fefce8; /* Fondo suave de warning Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-yellow-100: #fef9c3; /* Avisos leves Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-yellow-200: #fef08a; /* Bordes suaves Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-yellow-300: #f59099; /* Texto, gráficas, alerta visible Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-yellow-400: #facc15; /* Acento warning Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-yellow-500: #eab308; /* Bordes y estados sólidos Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-yellow-600: #ca8a04; /* Hover o detalle fuerte Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-yellow-700: #a16207; /* Intensidad media-alta Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-yellow-800: #6b4b06; /* Fondo warning oscuro Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-yellow-900: #2b2305; /* Fondo profundo warning Rojo y amarillo solo comunican severidad; nunca categoría, zona ni prioridad. */
+  --z-color-background-default: var(--z-color-neutral-900); /* Fondo principal de la app */
+  --z-color-background-surface: var(--z-color-neutral-800); /* Superficie de cards, inputs y nav */
+  --z-color-background-surfaceAlt: #1a312a; /* Superficie alternativa / hover de card */
+  --z-color-background-elevated: #1f3b32; /* Superficie elevada (modal, tooltip, dropdown) */
+  --z-color-background-overlay: #00000080; /* Overlay para modales y drawers */
+  --z-color-border-subtle: #ffffff14; /* Divisores y separadores. Decorativo (1,27:1): una card o un campo no puede depender solo de este borde. (Borde suave (dividers, separadores)) */
+  --z-color-border-medium: #ffffff40; /* Borde de inputs, chips inactivos y cards. Decorativo (2,25:1). (Borde medio (inputs, cards)) */
+  --z-color-border-strong: #ffffff80; /* Borde fuerte, seleccionado. Cumple 3:1 (4,84:1 sobre surface). No usar como color de texto. (Borde fuerte (focus, seleccionado)) */
+  --z-color-border-accent: var(--z-color-green-400); /* Borde de acento verde (focus CTA, inputs activos) */
+  --z-color-border-error: var(--z-color-red-500); /* Borde de error */
+  --z-color-border-warning: var(--z-color-yellow-500); /* Borde de advertencia */
+  --z-color-text-primary: #ffffff; /* Texto principal. Legible sobre todos los fondos oscuros: default 17,10:1, surface 14,93:1, surfaceAlt 13,85:1, elevated 12,14:1, accent-soft 12,34:1. */
+  --z-color-text-muted: #c4d4cf; /* Texto secundario, unidades junto a cifras, placeholders, ícono en estado Default. Sobre default 11,13:1, surface 9,72:1, elevated 7,90:1. (Texto secundario / apagado) */
+  --z-color-text-disabled: #5a7870; /* SOLO texto de controles deshabilitados (exento de 1.4.3). No llega a 4,5:1 (3,10:1 sobre surface, 3,55:1 sobre default): nunca para texto informativo ni placeholders. (Texto deshabilitado) */
+  --z-color-text-inverse: var(--z-color-neutral-900); /* Texto sobre accent-primary (botón primario, 9,18:1). (Texto sobre superficies claras o acento) */
+  --z-color-text-accent: var(--z-color-green-400); /* Enlaces, acción en texto, pestaña o chip activo. Sobre surface 8,02:1, default 9,18:1, accent-soft 6,62:1. (Texto con acento / links / CTAs) */
+  --z-color-text-accentSoft: var(--z-color-green-300); /* Texto acento suave (badges, chips) */
+  --z-color-text-error: var(--z-color-red-400); /* Texto de error y palabra «Crítico». Sobre surface 6,64:1, default 7,60:1. Usar este y no status-error-default para texto pequeño. */
+  --z-color-text-warning: var(--z-color-yellow-300); /* Palabra «Elevado» y texto de advertencia. Sobre surface 11,33:1. (Texto de advertencia) */
+  --z-color-text-success: var(--z-color-green-300); /* Palabra «Normal» y texto de éxito. Sobre surface 10,63:1. (Texto de éxito) */
+  --z-color-accent-primary: var(--z-color-green-400); /* Acento principal (CTA, botones principales, datos) */
+  --z-color-accent-primaryHover: var(--z-color-green-500); /* Hover del acento principal */
+  --z-color-accent-primaryActive: var(--z-color-green-600); /* Pressed del acento principal */
+  --z-color-accent-soft: #163b30; /* Fondo suave de acento (chips, badges, fondos de info) */
+  --z-color-accent-secondary: var(--z-color-green-300); /* Acento secundario suave */
+  --z-color-status-success-default: var(--z-color-green-400); /* Estado de éxito por defecto */
+  --z-color-status-success-bg: #5dd39e14; /* Fondo de estado éxito */
+  --z-color-status-success-border: #2f8a6866; /* Borde de estado éxito */
+  --z-color-status-success-text: var(--z-color-green-300); /* Texto de estado éxito */
+  --z-color-status-warning-default: var(--z-color-yellow-500); /* Estado de advertencia por defecto */
+  --z-color-status-warning-bg: #f5909914; /* Fondo de estado advertencia */
+  --z-color-status-warning-border: #f590994d; /* Borde de estado advertencia */
+  --z-color-status-warning-text: var(--z-color-yellow-300); /* Texto de estado advertencia */
+  --z-color-status-error-default: var(--z-color-red-500); /* Ícono, borde, arco o barra de severidad crítica. Como texto pequeño no cumple sobre surface (3,97:1): para texto usar z-color-text-error. (Estado de error por defecto) */
+  --z-color-status-error-bg: #f8717114; /* Fondo de estado error */
+  --z-color-status-error-border: #f871714d; /* Borde de estado error */
+  --z-color-status-error-text: var(--z-color-red-400); /* Texto de estado error */
+  --z-color-status-info-default: var(--z-color-green-400); /* Estado informativo por defecto */
+  --z-color-status-info-bg: var(--z-color-accent-soft); /* Fondo de estado informativo */
+  --z-color-status-info-border: var(--z-color-green-400); /* Borde de estado informativo */
+  --z-color-status-info-text: var(--z-color-green-300); /* Texto de estado informativo */
+  --z-color-state-hover-bg: #5dd39e14; /* Fondo hover genérico sobre oscuro */
+  --z-color-state-active-bg: #5dd39e24; /* Fondo active/pressed genérico */
+  --z-color-state-focus-ring: var(--z-color-green-400); /* Anillo de foco de 2 px. 8,02:1 sobre surface, 9,18:1 sobre default. (Anillo de foco (outline / ring)) */
+  --z-color-state-selected-bg: #5dd39e1f; /* Fondo de elemento seleccionado */
+  --z-color-state-disabled-bg: var(--z-color-neutral-700); /* Fondo de elemento deshabilitado */
+  --z-color-state-disabled-text: var(--z-color-text-disabled); /* Texto de elemento deshabilitado */
+  --z-color-state-disabled-border: #ffffff0f; /* Borde de elemento deshabilitado */
+  --z-color-chart-series1: var(--z-color-green-400); /* Serie 1 – Verde menta (consumo general) */
+  --z-color-chart-series2: var(--z-color-green-300); /* Serie 2 – Verde claro (ahorro) */
+  --z-color-chart-series3: var(--z-color-yellow-300); /* Serie 3 – Amarillo: solo estado elevado/advertencia. Nunca para el pico (RN-XIII-03, v4.5) ni como categoría ni zona. */
+  --z-color-chart-series4: var(--z-color-red-500); /* Serie 4 – Rojo: solo estado crítico (arco del gauge o del anillo de consumo en crítico). Nunca para el pico: el pico más alto se marca con color propio (rojo claro) y la etiqueta «Pico» (RN-XIII-03, v4.5). Nunca como categoría ni zona. */
+  --z-color-chart-series5: var(--z-color-green-500); /* Serie 5 – Verde medio (comparativo periodo) */
+  --z-color-chart-peak: #f59099; /* Pico más alto del periodo en barras y línea (D12, revisado 2026-11-02): barra o punto en rojo claro #F59099; la etiqueta «Pico» (texto y borde) usa el mismo color. Pendiente de ratificar frente a RN-XIII-03 (D5). Contraste 6,97:1 sobre surface; frente a las barras menta solo cambia el tono (1,15:1 de luminosidad), por eso siempre lleva la etiqueta. Sin certificación. */
+  --z-color-chart-grid: #ffffff0f; /* Línea de grid en gráficas */
+  --z-color-chart-label: var(--z-color-text-muted); /* Etiquetas de ejes y datos en gráficas */
+}
+:root {
+  --z-space-4: 4px; /* Separación ícono–texto; padding vertical de insignias. */
+  --z-space-8: 8px; /* Separación mínima entre objetivos táctiles; dentro de controles. */
+  --z-space-12: 12px; /* Entre filas relacionadas dentro de una card. */
+  --z-space-16: 16px; /* Padding de card (z-size-card-padding), padding horizontal de botón y campo, medianil. */
+  --z-space-20: 20px; /* Margen lateral de pantalla (z-size-grid-margin). */
+  --z-space-24: 24px; /* Entre secciones dentro de una pantalla. */
+  --z-space-32: 32px; /* Entre bloques grandes. */
+  --z-space-40: 40px; /* Separación amplia. */
+  --z-space-48: 48px; /* Separación amplia; igual al alto de botón. */
+  --z-space-64: 64px; /* Separación máxima; igual al alto de la barra inferior. */
+  --z-radius-xs: 4px; /* Elementos muy pequeños / badges */
+  --z-radius-sm: 8px; /* Botones pequeños / chips */
+  --z-radius-md: 10px; /* Cards y botones principales Excepción documentada fuera de la escala de 4: botón (48) y campo de texto. */
+  --z-radius-lg: 16px; /* Cards grandes */
+  --z-radius-xl: 20px; /* Contenedor principal de pantalla */
+  --z-radius-full: 9999px; /* Píldoras y elementos circulares Píldoras: cápsula de estado, insignias, interruptor. */
+  --z-size-bottomNav-height: 64px; /* Altura barra de navegación inferior Más el área segura inferior del sistema. */
+  --z-size-topBar-height: 56px; /* Altura barra superior Más el área segura superior. */
+  --z-size-button-height: 48px; /* Altura estándar de botón También alto de campo de texto. Cumple 48 dp. */
+  --z-size-iconButton-size: 36px; /* Botón de ícono cuadrado Medida visual: el área táctil debe ser ≥ 44 pt (iOS) / 48 dp (Android) con padding o hitSlop. */
+  --z-size-iconButtonLg-size: 48px; /* Botón de ícono grande */
+  --z-size-card-padding: 16px; /* Padding interno de card */
+  --z-size-screen-width: 402px; /* Ancho del frame móvil EN DESUSO: no hay ancho de referencia; el mínimo es 375 y el diseño es adaptable. */
+  --z-size-screen-minWidth: 375px; /* Ancho mínimo de diseño (decisión de Nicolás, 29/10/2026). Variable creada en Figma el 2026-11-01 (VariableID:4037:11, decisión D8). */
+  --z-size-grid-columns: 4; /* Número de columnas de la grilla */
+  --z-size-grid-gutter: 16px; /* Gutter de la grilla */
+  --z-size-grid-margin: 20px; /* Margen lateral del grid */
+  --z-font-size-display-xl: 32; /* Typography/Display/XL – Título principal de pantalla Número sin unidad (dp en React Native). */
+  --z-font-size-display-l: 28; /* Typography/Display/L – Título de sección Número sin unidad (dp en React Native). */
+  --z-font-size-display-m: 20; /* Typography/Display/M – Subtítulo / título de card Número sin unidad (dp en React Native). */
+  --z-font-size-body-m: 16; /* Typography/Body/M – Texto principal Número sin unidad (dp en React Native). */
+  --z-font-size-body-s: 14; /* Typography/Body/S – Texto secundario Número sin unidad (dp en React Native). */
+  --z-font-size-body-xs: 12; /* Typography/Body/XS – Captions, ayudas, notas Número sin unidad (dp en React Native). */
+  --z-font-size-ui-m: 16; /* Typography/UI/M – Botones, tabs, labels importantes Número sin unidad (dp en React Native). */
+  --z-font-size-ui-s: 14; /* Typography/UI/S – Labels pequeños y estados Número sin unidad (dp en React Native). */
+  --z-font-size-data-xl: 36; /* Typography/Data/XL – KPI principal / consumo actual ATENCIÓN: el KPI canónico ratificado es 32 (estilo data-xl-32); este 36 queda sin uso en estilos. No se cambia el token sin aprobación. Número sin unidad (dp en React Native). */
+  --z-font-size-data-l: 24; /* Typography/Data/L – Métrica secundaria Número sin unidad (dp en React Native). */
+  --z-font-size-data-m: 20; /* Typography/Data/M – Valores en cards / tablas Número sin unidad (dp en React Native). */
+  --z-font-size-data-s: 12; /* Typography/Data/S – Ejes, timestamps, unidades Número sin unidad (dp en React Native). */
+  --z-font-size-display-s: 16; /* Typography/Display/S – título de sección o encabezado de card (16 px). Ratificado por Nicolás el 2026-11-01. Figma: VariableID:4042:11. Número sin unidad (dp en React Native). */
+  --z-font-weight-regular: 400; /* Body Regular. */
+  --z-font-weight-medium: 500; /* Body Medium (énfasis, etiquetas de campo). */
+  --z-font-weight-semibold: 600; /* UI: botones, chips, pestañas. */
+  --z-font-weight-bold: 700; /* Display (Satoshi) y Data (JetBrains Mono). */
+  --z-font-lineHeight-tight: 1.1; /* Display – títulos grandes · Referencia (Display XL). Los estilos compuestos llevan el interlineado ratificado en uso. */
+  --z-font-lineHeight-snug: 1.15; /* Display L y M · Referencia (Display L). Ídem. */
+  --z-font-lineHeight-normal: 1.2; /* UI / Data · Referencia (UI/Data). Ídem. */
+  --z-font-lineHeight-relaxed: 1.4; /* Body/S y Body/XS · Referencia (Body S/XS). Ídem. */
+  --z-font-lineHeight-loose: 1.45; /* Body/M – lectura cómoda · Referencia (Body M). Ídem. */
+  --font-display: "Satoshi", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, monospace;
+  --text-display-xl: 700 32px/1.1 var(--font-display); /* Título principal de pantalla. Corrige «Saatoshi». */
+  --text-display-l: 700 28px/1.15 var(--font-display); /* Título de sección (28 px, token font/size/display-l). */
+  --text-display-l-24: 700 24px/1.15 var(--font-display); /* Ratificado por Nicolás (2026-11-02) como rol Display 24. */
+  --text-display-m: 700 20px/1.2 var(--font-display); /* Subtítulo o título de card. Corrige «Sathosi». */
+  --text-display-s-16: 700 16px/1.25 var(--font-display); /* Título de sección o encabezado de card (16 px, token font/size/display-s). Creado el 2026-11-01 (bloque 1) y ratificado por Nicolás el mismo día. */
+  --text-body-m-regular: 400 16px/1.45 var(--font-body); /* Texto principal. */
+  --text-body-m-medium: 500 16px/1.45 var(--font-body); /* Texto principal con énfasis. */
+  --text-body-s-regular: 400 14px/1.4 var(--font-body); /* Texto secundario. */
+  --text-body-s-medium: 500 14px/1.4 var(--font-body); /* Texto secundario con énfasis. */
+  --text-body-xs-regular: 400 12px/1.35 var(--font-body); /* Captions, ayudas y microtextos (12 px). */
+  --text-body-xs-medium: 500 12px/1.35 var(--font-body); /* Captions con énfasis (12 px). */
+  --text-body-xs-regular-10: 400 10px/1.3 var(--font-body); /* Ratificado por Nicolás (2026-11-02) como rol Body 10. Riesgo de legibilidad: validar en dispositivo y evitar en textos nuevos. */
+  --text-body-xs-medium-10: 500 10px/1.3 var(--font-body); /* Ratificado por Nicolás (2026-11-02) como rol Body 10. Riesgo de legibilidad: validar en dispositivo y evitar en textos nuevos. */
+  --text-ui-m-semibold: 600 16px/1.25 var(--font-body); /* Botones, labels importantes, tabs. */
+  --text-ui-s-semibold: 600 14px/1.2 var(--font-body); /* Labels pequeños y estados (14 px). */
+  --text-ui-s-semibold-12: 600 12px/1.2 var(--font-body); /* Ratificado por Nicolás (2026-11-02) como rol UI 12 (chips y cápsulas). */
+  --text-ui-s-etiqueta-12: 600 12px/1.2 var(--font-body); /* Etiqueta de sección en MAYÚSCULAS (textCase UPPER, espaciado 6 %): secciones de Configuración. Creado el 2026-11-01 (bloque 2); sustituye textos de 11 px. En código: textTransform uppercase. El token guarda letterSpacing 0 aunque la descripción dice 6 %: se respeta el token. */
+  --text-data-xl-32: 700 32px/1 var(--font-data); /* Ratificado por Nicolás (2026-11-02): el KPI canónico es 32 px (el token font/size/data-xl = 36 queda sin uso en estilos). */
+  --text-data-l: 700 24px/1.1 var(--font-data); /* Métrica secundaria. */
+  --text-data-m: 700 20px/1.15 var(--font-data); /* Valores en cards y tablas. */
+  --text-data-s-16: 700 16px/1.4 var(--font-data); /* Ratificado por Nicolás (2026-11-02) como rol Data 16. Interlineado «auto» en el token. */
+  --text-data-s: 700 12px/1.4 var(--font-data); /* Ejes, horas, unidades (12 px, token font/size/data-s). Sin consumidores actuales. */
+  --text-data-s-mono-regular-12: 400 12px/1.4 var(--font-data); /* Ejes, horas y etiquetas de gráficos (JetBrains Mono Regular 12, color chart/label). Formaliza 548 etiquetas observadas en los componentes de gráficos (11–12 px). Creado el 2026-11-01 (bloque 3). */
+}
+.display-xl {
+  font-family: var(--font-display);
+  font-size: 32px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.display-l {
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.display-l-24 {
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.display-m {
+  font-family: var(--font-display);
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.display-s-16 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.body-m-regular {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.45;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.body-m-medium {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.body-s-regular {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.body-s-medium {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.body-xs-regular {
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.body-xs-medium {
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.body-xs-regular-10 {
+  font-family: var(--font-body);
+  font-size: 10px;
+  line-height: 1.3;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.body-xs-medium-10 {
+  font-family: var(--font-body);
+  font-size: 10px;
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.ui-m-semibold {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.ui-s-semibold {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.ui-s-semibold-12 {
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.ui-s-etiqueta-12 {
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.data-xl-32 {
+  font-family: var(--font-data);
+  font-size: 32px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.data-l {
+  font-family: var(--font-data);
+  font-size: 24px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.data-m {
+  font-family: var(--font-data);
+  font-size: 20px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.data-s-16 {
+  font-family: var(--font-data);
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.data-s {
+  font-family: var(--font-data);
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.data-s-mono-regular-12 {
+  font-family: var(--font-data);
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0;
+}

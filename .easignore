@@ -1,0 +1,54 @@
+# EAS usa este archivo en lugar de los .gitignore (eas-cli lo lee en la raíz del repo).
+# Es la unión de .gitignore y app/.gitignore, SIN las líneas de Satoshi:
+# así la fuente se sube a las builds de EAS sin estar en GitHub (DC-06).
+
+# Claves y entornos
+.env
+.env.*
+!.env.example
+
+# Copias de herramientas y Supabase CLI
+.kilo/
+supabase/.temp/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Node y Expo
+node_modules/
+.expo/
+dist/
+web-build/
+app/expo-env.d.ts
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.metro-health-check*
+*.tsbuildinfo
+app/example
+
+# Nativo
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+/app/ios
+/app/android
+
+# Editores y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

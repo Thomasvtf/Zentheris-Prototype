@@ -1,373 +1,345 @@
-// @ts-nocheck
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-} from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+/**
+ * Consejos (reglas v4.9 §6.8 y §7.3; RN-XV-01 a RN-XV-07; RN-VI-05).
+ * Datos: useConsejosData (filas 39 y 40 de docs/MAPA-DE-INTEGRACION.md:
+ * listarConsejos y actualizarEstadoConsejo).
+ *
+ * - Cabecera «Consejos», sin ícono de chatbot (RN-XV, §6.8: el chatbot no entra en el MVP).
+ * - Lista (TipList): pendientes de alta a baja prioridad y, al final, los completados
+ *   atenuados. Con pendientes no se muestra «¡Todo bajo control!»; sin pendientes, la card y
+ *   debajo los completados aún visibles (RN-XV-02).
+ * - Casilla: marcar pasa el consejo a completado solo para esta persona; desmarcar lo vuelve
+ *   a pendiente (RN-XV-03, RN-VI-05). Es optimista y se revierte con aviso si falla.
+ * - Prioridad solo con acento y neutros, nunca rojo ni amarillo (PriorityTag.md).
+ * - Estados: cargando (Skeleton), error (InlineNotice + Reintentar) y vacío («¡Todo bajo
+ *   control!»). El contrato no devuelve 403 en consejos; no hay estado de sin permiso.
+ * - El contrato no trae ahorro en kWh/COP, categorías de filtro ni «descartar»; no se muestran.
+ * - Colores, espacios y tipografía desde @/theme; textos con t().
+ *
+ * TODO(pendiente: componentes del sistema de diseño): src/components/ aún no tiene TipCard,
+ * TipList, PriorityTag, StateMessage, InlineNotice, Skeleton ni ScreenHeader con las props de
+ * index.d.ts. Aquí son piezas locales de presentación para moverlas a src/components/ cuando
+ * se apruebe.
+ * TODO(pendiente: casilla): TipCard.md dice que la casilla aún no está diseñada; esta usa
+ * `border-medium` sin marcar y `accent-primary` marcada, con área táctil de 44 pt.
+ */
+import React, { useEffect, useState } from 'react';
+import { AccessibilityInfo, Animated, Pressable, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextStyle, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Check, CircleCheck, CircleX } from 'lucide-react-native';
 
-export interface Consejo {
-  id: string;
-  titulo: string;
-  descripcion: string;
-  prioridad: 'alta' | 'media' | 'baja';
-  completado: boolean;
+import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { t } from '@/texts';
+
+import { hasPendingTips, useConsejosData } from './useConsejosData';
+import type { ConsejosMockScenario, Tip, TipPriority } from './useConsejosData';
+
+/* ───────────────────────────── Utilidades ───────────────────────────────── */
+
+function textStyle(name: keyof typeof typography): TextStyle {
+  const style = typography[name];
+  return {
+    fontFamily: fontFamilyFor(style.family, style.fontWeight),
+    fontSize: style.fontSize,
+    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
+  };
 }
 
-const CONSEJOS_INICIALES: Consejo[] = [
-  {
-    id: '1',
-    titulo: 'Apaga el aire acondicionado al salir',
-    descripcion: 'Antes de salir, comprueba que el equipo quede apagado.',
-    prioridad: 'alta',
-    completado: false,
-  },
-  {
-    id: '2',
-    titulo: 'Programa el termostato para horario nocturno',
-    descripcion: 'Configura un horario acorde con tu rutina de descanso.',
-    prioridad: 'media',
-    completado: false,
-  },
-  {
-    id: '3',
-    titulo: 'Revisa el consumo del refrigerador',
-    descripcion: 'Consulta su consumo y revisa los ajustes del equipo.',
-    prioridad: 'media',
-    completado: true,
-  },
-  {
-    id: '4',
-    titulo: 'Cambia bombillas a LED en la cocina',
-    descripcion: 'Revisa las bombillas de la cocina y sustitúyelas por LED.',
-    prioridad: 'media',
-    completado: false,
-  },
-];
+/** Área táctil mínima de la casilla (app/CLAUDE.md: 44 pt o más). */
+const CHECKBOX_TOUCH = 44;
+const CHECKBOX_SIZE = 24;
+const SKELETON_CARDS = 3;
 
-export function ConsejosScreen() {
-  const [consejos, setConsejos] = useState<Consejo[]>(CONSEJOS_INICIALES);
+/* ─────────────────────── Piezas de presentación ─────────────────────────── */
 
-  const toggleCompletado = (id: string) => {
-    setConsejos((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, completado: !c.completado } : c))
-    );
-  };
+/** Etiqueta de prioridad (PriorityTag.md): solo acento y neutros. */
+function PriorityTag({ prioridad }: { prioridad: TipPriority }) {
+  const tone = TAG_TONES[prioridad];
+  return (
+    <View style={[styles.tag, { backgroundColor: tone.bg, borderColor: tone.border }]}>
+      <Text style={[styles.tagText, { color: tone.text }]}>{t(`consejos.prioridad_${prioridad}`)}</Text>
+    </View>
+  );
+}
 
-  const pendientesCount = consejos.filter((c) => !c.completado).length;
+const TAG_TONES: Record<TipPriority, { bg: string; border: string; text: string }> = {
+  alta: { bg: colors['accent-soft'], border: colors['border-accent'], text: colors['text-accent'] },
+  media: { bg: 'transparent', border: colors['border-medium'], text: colors['text-muted'] },
+  baja: { bg: 'transparent', border: colors['border-subtle'], text: colors['text-muted'] },
+};
+
+function Checkbox({ checked, disabled, label, onPress }: { checked: boolean; disabled: boolean; label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked, disabled }}
+      accessibilityLabel={label}
+      style={styles.checkboxTouch}
+    >
+      <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+        {checked ? <Check size={16} color={colors['text-inverse']} strokeWidth={3} /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
+/** Consejo (TipCard.md): pendiente con su prioridad o completado atenuado, al final de la lista. */
+function TipCard({ tip, saving, onToggle }: { tip: Tip; saving: boolean; onToggle: () => void }) {
+  const done = tip.estado === 'completada';
+  return (
+    <View style={[styles.tipCard, done && styles.tipCardDone]}>
+      <Checkbox
+        checked={done}
+        disabled={saving}
+        label={`${t(done ? 'a11y.consejo_desmarcar' : 'a11y.consejo_marcar')}: ${tip.titulo}`}
+        onPress={onToggle}
+      />
+      <View style={styles.flex}>
+        <Text style={[styles.tipTitle, done && styles.tipTitleDone]}>{tip.titulo}</Text>
+        <Text style={styles.tipDescription}>{tip.descripcion}</Text>
+        <View style={styles.tipFooter}>
+          {done ? (
+            <View style={styles.doneRow}>
+              <CircleCheck size={16} color={colors['text-success']} />
+              <Text style={styles.doneText}>{t('consejos.completado')}</Text>
+            </View>
+          ) : (
+            <PriorityTag prioridad={tip.prioridad} />
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/** Card «¡Todo bajo control!» (StateMessage tipo `todo_bajo_control`, solo sin pendientes). */
+function AllClearCard() {
+  return (
+    <View style={styles.stateCard}>
+      <CircleCheck size={32} color={colors['text-muted']} />
+      <View style={styles.flex}>
+        <Text style={styles.stateTitle}>{t('consejos.vacio_titulo')}</Text>
+        <Text style={styles.stateBody}>{t('consejos.vacio_cuerpo')}</Text>
+      </View>
+    </View>
+  );
+}
+
+function InlineNotice({ titulo, descripcion, onReintentar }: { titulo: string; descripcion?: string; onReintentar?: () => void }) {
+  return (
+    <View style={styles.notice} accessibilityRole="alert">
+      <View style={styles.noticeRow}>
+        <CircleX size={16} color={colors['status-error-default']} />
+        <View style={styles.flex}>
+          <Text style={styles.noticeTitle}>{titulo}</Text>
+          {descripcion ? <Text style={styles.stateBody}>{descripcion}</Text> : null}
+        </View>
+      </View>
+      {onReintentar ? (
+        <Pressable onPress={onReintentar} accessibilityRole="button" hitSlop={spacing['12']} style={styles.noticeAction}>
+          <Text style={styles.linkText}>{t('comun.reintentar')}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/** Pulso suave; se detiene con «reducir movimiento» (ficha Skeleton). */
+function useSkeletonPulse() {
+  const [opacity] = useState(() => new Animated.Value(1));
+  useEffect(() => {
+    let loop: Animated.CompositeAnimation | null = null;
+    let cancelled = false;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((reduce) => {
+        if (cancelled || reduce) return;
+        loop = Animated.loop(
+          Animated.sequence([
+            Animated.timing(opacity, { toValue: 0.5, duration: 700, useNativeDriver: true }),
+            Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+          ]),
+        );
+        loop.start();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      loop?.stop();
+    };
+  }, [opacity]);
+  return opacity;
+}
+
+/** Esqueleto con la forma de un consejo: casilla, título, descripción y etiqueta. */
+function TipSkeleton() {
+  const opacity = useSkeletonPulse();
+  return (
+    <Animated.View style={[styles.tipCard, { opacity }]} accessible accessibilityLabel={t('comun.cargando')}>
+      <View style={[styles.skeletonBlock, styles.skeletonCheckbox]} />
+      <View style={[styles.flex, styles.skeletonBody]}>
+        <View style={[styles.skeletonBlock, styles.skeletonTitle]} />
+        <View style={[styles.skeletonBlock, styles.skeletonLine]} />
+        <View style={[styles.skeletonBlock, styles.skeletonTag]} />
+      </View>
+    </Animated.View>
+  );
+}
+
+/* ─────────────────────────────── Pantalla ───────────────────────────────── */
+
+export interface ConsejosScreenProps {
+  /** TODO(pendiente: hogarId): vendrá del estado de sesión/hogar (fila 12 del mapa). */
+  hogarId?: string | null;
+  /** Solo desarrollo: fuerza un escenario del modo de ejemplo. */
+  mockScenario?: ConsejosMockScenario;
+}
+
+export function ConsejosScreen({ hogarId = null, mockScenario }: ConsejosScreenProps) {
+  const { state, retry, refresh, refreshing, toggle, savingIds, actionErrorKey } = useConsejosData(hogarId, { mockScenario });
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="#07130F" />
-
-      {/* ─── Header ─────────────────────────────────────────── */}
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
       <View style={styles.header}>
-        <View style={styles.headerSpacer} />
-        <Text style={styles.headerTitle}>Consejos</Text>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          style={styles.sparkleBtn}
-          onPress={() => console.log('Sugerencias IA')}
-        >
-          <MaterialCommunityIcons
-            name="creation-outline"
-            size={24}
-            color="#3B6758"
-          />
-        </TouchableOpacity>
+        <Text style={styles.headerTitle} accessibilityRole="header">
+          {t('consejos.encabezado')}
+        </Text>
       </View>
 
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        style={styles.flex}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            tintColor={colors['accent-primary']}
+            colors={[colors['accent-primary']]}
+            progressBackgroundColor={colors['background-surface']}
+          />
+        }
       >
-        {/* ─── Tarjeta Superior de Estado (¡Todo bajo control!) ── */}
-        <View style={styles.bannerCard}>
-          <View style={styles.bannerIconWrapper}>
-            <MaterialCommunityIcons
-              name="thumb-up-outline"
-              size={28}
-              color="#34D399"
-            />
-          </View>
-          <Text style={styles.bannerTitle}>¡Todo bajo control!</Text>
-          <Text style={styles.bannerSubtitle}>
-            {pendientesCount === 0
-              ? 'No tienes consejos pendientes por ahora. Revisa más tarde para nuevas recomendaciones de ahorro.'
-              : 'No tienes consejos pendientes por ahora. Revisa más tarde para nuevas recomendaciones de ahorro.'}
-          </Text>
-        </View>
+        {state.status === 'loading' &&
+          Array.from({ length: SKELETON_CARDS }, (_, i) => <TipSkeleton key={i} />)}
 
-        {/* ─── Lista de Consejos ──────────────────────────────── */}
-        <View style={styles.listContainer}>
-          {consejos.map((item) => {
-            const isCompleted = item.completado;
+        {state.status === 'error' && (
+          <InlineNotice titulo={t(`${state.errorKey}.titulo`)} descripcion={t(`${state.errorKey}.cuerpo`)} onReintentar={retry} />
+        )}
 
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={[
-                  styles.consejoCard,
-                  isCompleted && styles.consejoCardCompleted,
-                ]}
-                activeOpacity={0.85}
-                onPress={() => toggleCompletado(item.id)}
-              >
-                {/* Checkbox táctil */}
-                <TouchableOpacity
-                  style={[
-                    styles.checkbox,
-                    isCompleted && styles.checkboxChecked,
-                  ]}
-                  activeOpacity={0.7}
-                  onPress={() => toggleCompletado(item.id)}
-                >
-                  {isCompleted && (
-                    <Ionicons name="checkmark-sharp" size={17} color="#34D399" />
-                  )}
-                </TouchableOpacity>
-
-                {/* Contenido del Consejo */}
-                <View style={styles.cardContent}>
-                  <Text
-                    style={[
-                      styles.cardTitle,
-                      isCompleted && styles.cardTitleCompleted,
-                    ]}
-                  >
-                    {item.titulo}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.cardDesc,
-                      isCompleted && styles.cardDescCompleted,
-                    ]}
-                  >
-                    {item.descripcion}
-                  </Text>
-
-                  {/* Badge de Prioridad / Completado */}
-                  <View style={styles.badgeRow}>
-                    {isCompleted ? (
-                      <View style={[styles.badge, styles.badgeCompleted]}>
-                        <Text style={[styles.badgeText, styles.badgeTextCompleted]}>
-                          Completado
-                        </Text>
-                      </View>
-                    ) : item.prioridad === 'alta' ? (
-                      <View style={[styles.badge, styles.badgeAlta]}>
-                        <Text style={[styles.badgeText, styles.badgeTextAlta]}>
-                          Alta prioridad
-                        </Text>
-                      </View>
-                    ) : item.prioridad === 'media' ? (
-                      <View style={[styles.badge, styles.badgeMedia]}>
-                        <Text style={[styles.badgeText, styles.badgeTextMedia]}>
-                          Media prioridad
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={[styles.badge, styles.badgeBaja]}>
-                        <Text style={[styles.badgeText, styles.badgeTextBaja]}>
-                          Baja prioridad
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Espaciado inferior para no solapar la barra de navegación */}
-        <View style={{ height: 28 }} />
+        {state.status === 'ready' && (
+          <>
+            {actionErrorKey ? <InlineNotice titulo={t(`${actionErrorKey}.titulo`)} descripcion={t(`${actionErrorKey}.cuerpo`)} /> : null}
+            {!hasPendingTips(state.tips) && <AllClearCard />}
+            {state.tips.map((tip) => (
+              <TipCard key={tip.id} tip={tip} saving={savingIds.includes(tip.id)} onToggle={() => toggle(tip.id)} />
+            ))}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+/* ─────────────────────────────── Estilos ────────────────────────────────── */
+
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#071510',
+  safeArea: { flex: 1, backgroundColor: colors['background-default'] },
+  flex: { flex: 1 },
+  content: {
+    paddingHorizontal: sizes['grid-margin'],
+    paddingTop: spacing['16'],
+    paddingBottom: spacing['40'],
+    gap: spacing['12'],
   },
+
+  // Cabecera (ScreenHeader.md)
   header: {
-    flexDirection: 'row',
+    height: sizes['topBar-height'],
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 10,
-  },
-  headerSpacer: {
-    width: 28,
-  },
-  headerTitle: {
-    color: '#E6FAF0',
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  sparkleBtn: {
-    width: 28,
-    alignItems: 'flex-end',
     justifyContent: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: colors['border-subtle'],
   },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
+  headerTitle: { ...textStyle('display-l-24'), color: colors['text-primary'] },
 
-  // ─── Tarjeta Superior ──────────────────────────────────────────
-  bannerCard: {
-    backgroundColor: '#0E241E',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#193C31',
-    alignItems: 'center',
-    paddingVertical: 28,
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  bannerIconWrapper: {
-    width: 60,
-    height: 60,
-    borderRadius: 18,
-    backgroundColor: '#153A2E',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-  bannerTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 10,
-    letterSpacing: -0.2,
-  },
-  bannerSubtitle: {
-    color: '#8EA299',
-    fontSize: 13.5,
-    lineHeight: 20,
-    textAlign: 'center',
-    maxWidth: 290,
-  },
-
-  // ─── Lista de Tarjetas ─────────────────────────────────────────
-  listContainer: {
-    gap: 12,
-  },
-  consejoCard: {
-    backgroundColor: '#0E241E',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#17392E',
-    padding: 16,
+  // TipCard
+  tipCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    gap: spacing['8'],
+    backgroundColor: colors['background-surface'],
+    borderColor: colors['border-subtle'],
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing['16'],
   },
-  consejoCardCompleted: {
-    opacity: 0.85,
+  // Completado: atenuado, sin fondo y con el título en `text-muted`.
+  tipCardDone: { backgroundColor: 'transparent' },
+  tipTitle: { ...textStyle('body-m-medium'), color: colors['text-primary'] },
+  tipTitleDone: { color: colors['text-muted'] },
+  tipDescription: { ...textStyle('body-s-regular'), color: colors['text-muted'], marginTop: spacing['4'] },
+  tipFooter: { flexDirection: 'row', marginTop: spacing['12'] },
+  doneRow: { flexDirection: 'row', alignItems: 'center', gap: spacing['4'] },
+  doneText: { ...textStyle('body-xs-medium'), color: colors['text-success'] },
+
+  // Casilla
+  checkboxTouch: {
+    width: CHECKBOX_TOUCH,
+    height: CHECKBOX_TOUCH,
+    marginTop: -(CHECKBOX_TOUCH - CHECKBOX_SIZE) / 2,
+    marginLeft: -(CHECKBOX_TOUCH - CHECKBOX_SIZE) / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   checkbox: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#2D4B40',
-    backgroundColor: '#0A1A14',
-    justifyContent: 'center',
+    width: CHECKBOX_SIZE,
+    height: CHECKBOX_SIZE,
+    borderRadius: radius.xs,
+    borderWidth: 2,
+    borderColor: colors['border-medium'],
     alignItems: 'center',
-    marginRight: 14,
-    marginTop: 2,
+    justifyContent: 'center',
   },
-  checkboxChecked: {
-    backgroundColor: '#153D30',
-    borderColor: '#34D399',
-  },
-  cardContent: {
-    flex: 1,
-  },
-  cardTitle: {
-    color: '#FFFFFF',
-    fontSize: 15.5,
-    fontWeight: '600',
-    lineHeight: 21,
-    marginBottom: 5,
-  },
-  cardTitleCompleted: {
-    color: '#7B8E85',
-  },
-  cardDesc: {
-    color: '#8EA299',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  cardDescCompleted: {
-    color: '#556C62',
-  },
+  checkboxChecked: { backgroundColor: colors['accent-primary'], borderColor: colors['accent-primary'] },
 
-  // ─── Badges de Prioridad ───────────────────────────────────────
-  badgeRow: {
+  // PriorityTag
+  tag: { paddingVertical: spacing['4'], paddingHorizontal: spacing['8'], borderRadius: radius.full, borderWidth: 1 },
+  tagText: { ...textStyle('body-xs-medium') },
+
+  // StateMessage «Todo bajo control»
+  stateCard: {
     flexDirection: 'row',
-  },
-  badge: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
+    alignItems: 'flex-start',
+    gap: spacing['12'],
+    backgroundColor: colors['background-surface'],
+    borderColor: colors['border-subtle'],
     borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: sizes['card-padding'],
   },
-  badgeText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    letterSpacing: 0.1,
-  },
+  stateTitle: { ...textStyle('body-s-medium'), color: colors['text-primary'] },
+  stateBody: { ...textStyle('body-xs-regular'), color: colors['text-muted'] },
 
-  // Alta prioridad
-  badgeAlta: {
-    backgroundColor: '#261616',
-    borderColor: '#5C2828',
+  // InlineNotice
+  notice: {
+    backgroundColor: colors['status-error-bg'],
+    borderColor: colors['status-error-border'],
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing['12'],
+    gap: spacing['8'],
   },
-  badgeTextAlta: {
-    color: '#F87171',
-  },
+  noticeRow: { flexDirection: 'row', gap: spacing['8'] },
+  noticeTitle: { ...textStyle('ui-s-semibold'), color: colors['status-error-text'] },
+  noticeAction: { alignSelf: 'flex-end', minHeight: spacing['48'], justifyContent: 'center' },
+  linkText: { ...textStyle('ui-s-semibold-12'), color: colors['text-accent'] },
 
-  // Media prioridad
-  badgeMedia: {
-    backgroundColor: '#241F10',
-    borderColor: '#54441B',
-  },
-  badgeTextMedia: {
-    color: '#FBBF24',
-  },
-
-  // Baja prioridad
-  badgeBaja: {
-    backgroundColor: '#12242B',
-    borderColor: '#1C4A57',
-  },
-  badgeTextBaja: {
-    color: '#38BDF8',
-  },
-
-  // Completado
-  badgeCompleted: {
-    backgroundColor: '#112C23',
-    borderColor: '#1D5946',
-  },
-  badgeTextCompleted: {
-    color: '#34D399',
-  },
+  // Skeleton
+  skeletonBlock: { backgroundColor: colors['background-elevated'], borderRadius: radius.xs },
+  skeletonCheckbox: { width: CHECKBOX_SIZE, height: CHECKBOX_SIZE },
+  skeletonBody: { gap: spacing['8'] },
+  skeletonTitle: { height: spacing['16'], width: '70%' },
+  skeletonLine: { height: spacing['12'], width: '95%' },
+  skeletonTag: { height: spacing['24'], width: '35%', borderRadius: radius.full },
 });
-

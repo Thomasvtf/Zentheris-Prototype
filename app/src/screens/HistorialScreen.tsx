@@ -16,10 +16,13 @@
  *   anterior («—» y estado neutro).
  * - Colores, espacios y tipografía desde @/theme; textos con t(); cifras con @/format.
  *
+ * - Barras, línea y anillo: src/components/charts/ (SVG a mano, DC-63: gifted-charts no deja
+ *   fijar las etiquetas del eje X ni contener la píldora del pico). Aquí solo se arman sus datos.
+ *
  * TODO(pendiente: componentes del sistema de diseño): src/components/ aún no tiene
- * BarChart, LineChart, ZoneDonutChart, PeakMarker, StatusBadge, Chip, Skeleton,
- * StateMessage, InlineNotice ni ScreenHeader con las props de index.d.ts. Aquí son piezas
- * locales de presentación para moverlas a src/components/ cuando se apruebe.
+ * PeakMarker, StatusBadge, Chip, Skeleton, StateMessage, InlineNotice ni ScreenHeader con
+ * las props de index.d.ts. Aquí son piezas locales de presentación para moverlas a
+ * src/components/ cuando se apruebe.
  * TODO(pendiente: formato de fechas): @/format solo trae relativeTime; las etiquetas de hora,
  * día y fecha se arman aquí con las plantillas del catálogo (formato.dia_corto.*,
  * formato.dia.*, formato.tiempo.fecha) hasta tener un helper en @/format.
@@ -40,7 +43,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { BarChart, LineChart, PieChart } from 'react-native-gifted-charts';
 import {
   Bath,
   Bed,
@@ -69,6 +71,11 @@ import {
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 
+import { BarChart, LineChart } from '@/components/charts/SeriesChart';
+import type { SeriesDatum, XLabel } from '@/components/charts/SeriesChart';
+import { CHART_HEIGHT, xLabelIndexes } from '@/components/charts/chartGeometry';
+import { groupZones, ZoneDonutChart } from '@/components/charts/ZoneDonutChart';
+import type { DonutZone, ZoneDonutChartProps } from '@/components/charts/ZoneDonutChart';
 import { DECIMALES, formatCOP, formatNumber, formatPercent } from '@/format';
 import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
 import { t } from '@/texts';
@@ -372,273 +379,128 @@ function Skeleton({ tamano = 'estandar' }: { tamano?: 'estandar' | 'grafico' }) 
   );
 }
 
-/* ───────────────────────────── Gráficos ─────────────────────────────────── */
+/* ──────────────────── Gráficos: modelos para los componentes ──────────────────── */
 
-const SECTIONS = 3;
-const Y_LABEL_WIDTH = 44;
-const CHART_HEIGHT = 160;
-const AXIS_TEXT: TextStyle = {
-  fontFamily: fontFamilyFor('data', typography['data-s-mono-regular-12'].fontWeight),
-  fontSize: typography['data-s-mono-regular-12'].fontSize,
-  color: colors['chart-label'],
-};
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Slots del eje X: 24 horas en Día y 7 días en Semana, aunque aún no haya datos; en Mes, los días con dato. */
+const FIXED_SLOTS: Partial<Record<Period, number>> = { dia: 24, semana: 7 };
 
-interface ChartPoint {
-  valor: number | null;
-  /** Momento del punto («11:00», «Sáb», «15/07»). */
-  cuando: string;
-  /** Texto del eje (solo en algunos puntos para que no se encimen). */
-  eje: string;
-  pico: boolean;
+/** «11h» (eje X de Día y píldora del pico). */
+// TODO(pendiente: texto): el catálogo no trae la marca de hora corta «{hh}h» (ficha BarChart, Figma).
+function hourMark(hour: number): string {
+  return `${pad2(hour)}h`;
 }
 
-/** Paso «redondo» (1, 2, 2,5 o 5 × 10ⁿ) para que el máximo del eje quede hacia arriba. */
-function niceStep(rawStep: number): number {
-  const power = 10 ** Math.floor(Math.log10(rawStep));
-  const factor = [1, 2, 2.5, 5, 10].find((f) => f * power >= rawStep) ?? 10;
-  return factor * power;
+/** Momento de un punto en el gráfico: «11h» en Día, «Mar» en Semana, «06/11» en Mes. */
+function chartWhen(periodo: Period, point: { inicio: string }): string {
+  return periodo === 'dia' ? hourMark(local(point.inicio).getUTCHours()) : pointWhen(periodo, point);
 }
 
-function chartValueText(v: number | null, unit: ChartUnit, periodo: Period, abreviar = false): string {
-  if (unit === 'COP') return formatCOP(v, { abreviar });
-  return v === null ? formatNumber(null) : formatNumber(v, periodo === 'dia' ? DECIMALES.kW : DECIMALES.kWh);
+function unitText(unit: ChartUnit, periodo: Period): string {
+  return unit === 'COP' ? t('comun.cop') : t(energyUnitKey(periodo));
 }
 
-function axisFor(points: ChartPoint[], unit: ChartUnit, periodo: Period) {
-  const max = Math.max(...points.map((p) => p.valor ?? 0), 0);
-  const step = niceStep(max > 0 ? max / SECTIONS : 1);
-  const labels = Array.from({ length: SECTIONS + 1 }, (_, i) => chartValueText(step * i, unit, periodo, true));
-  return { maxValue: step * SECTIONS, stepValue: step, labels };
+/** Valor con su unidad para la píldora y el resumen: «0,48 kW», «7,0 kWh», «$14.400». */
+function seriesValueText(v: number | null, unit: ChartUnit, periodo: Period): string {
+  if (unit === 'COP') return formatCOP(v);
+  if (v === null) return formatNumber(null);
+  return `${formatNumber(v, periodo === 'dia' ? DECIMALES.kW : DECIMALES.kWh)} ${t(energyUnitKey(periodo))}`;
 }
 
-/** Eje X: cada 6 h en Día, cada día en Semana y cada 7 días en Mes. */
-function toChartPoints(data: History, unit: ChartUnit): ChartPoint[] {
-  const every = data.periodo === 'dia' ? 6 : data.periodo === 'semana' ? 1 : 7;
-  return data.serie.map((p: SeriesPoint, i) => ({
-    valor: unit === 'COP' ? p.costo_cop : p.energia_kwh,
-    cuando: pointWhen(data.periodo, p),
-    eje: i % every === 0 ? (data.periodo === 'dia' ? pad2(local(p.inicio).getUTCHours()) : pointWhen(data.periodo, p)) : '',
-    pico: p.es_pico_maximo,
-  }));
+/** Etiqueta de un valor del eje Y: decimales mínimos que no repiten etiquetas («0,2»); COP abreviado. */
+function tickFormatter(unit: ChartUnit) {
+  return (v: number, decimals: number) => (unit === 'COP' ? formatCOP(v, { abreviar: true }) : formatNumber(v, decimals));
 }
 
-function chartSummary(kind: 'barras' | 'linea', points: ChartPoint[], unit: ChartUnit, periodo: Period): string {
-  const periodoText = t(`formato.periodo.${periodo}`);
-  const peak = points.find((p) => p.pico);
-  if (!peak) return t('a11y.grafico_sin_pico', { periodo: periodoText });
-  const unitText = unit === 'COP' ? '' : ` ${t(energyUnitKey(periodo))}`;
-  return t(kind === 'barras' ? 'a11y.grafico_barras' : 'a11y.grafico_linea', {
-    periodo: periodoText,
-    valor: `${chartValueText(peak.valor, unit, periodo)}${unitText}`,
-    cuando: peak.cuando,
+interface SeriesModel {
+  datos: SeriesDatum[];
+  xLabels: XLabel[];
+  etiquetaPico: string | null;
+  resumen: string;
+}
+
+function toSeriesModel(data: History, unit: ChartUnit, kind: 'barras' | 'linea'): SeriesModel {
+  const { periodo, serie } = data;
+  const slots = FIXED_SLOTS[periodo] ?? Math.max(serie.length, 1);
+  const valueOf = (p: SeriesPoint) => (unit === 'COP' ? p.costo_cop : p.energia_kwh);
+  const datos: SeriesDatum[] = Array.from({ length: slots }, (_, i) => {
+    const p = serie[i];
+    return p ? { valor: valueOf(p), pico: p.es_pico_maximo } : { valor: null, pico: false };
   });
+
+  // Semana y Mes: el nombre o la fecha del slot sale del primer punto (también donde aún no hay dato).
+  const base = serie[0]?.inicio ?? data.inicio;
+  const xLabels: XLabel[] = xLabelIndexes(periodo, slots).map((index) => ({
+    index,
+    texto:
+      periodo === 'dia'
+        ? hourMark(index)
+        : periodo === 'semana'
+          ? shortDay(base, index * DAY_MS)
+          : dateLabel(base, index * DAY_MS),
+    posicion: periodo === 'dia' ? 'borde' : 'centro',
+  }));
+
+  const peakPoint = serie.find((p) => p.es_pico_maximo && valueOf(p) !== null);
+  const periodoText = t(`formato.periodo.${periodo}`);
+  let etiquetaPico: string | null = null;
+  let resumen = t('a11y.grafico_sin_pico', { periodo: periodoText });
+  if (peakPoint) {
+    const cuando = chartWhen(periodo, peakPoint);
+    const valor = seriesValueText(valueOf(peakPoint), unit, periodo);
+    etiquetaPico = t('estado.historial_pico.etiqueta_grafico', { cuando, valor });
+    resumen = t(kind === 'barras' ? 'a11y.grafico_barras' : 'a11y.grafico_linea', { periodo: periodoText, valor, cuando });
+  }
+  return { datos, xLabels, etiquetaPico, resumen };
 }
 
-/** Píldora «Pico», opción A de PeakMarker: fondo accent-soft, borde y texto chart-peak. */
-function PeakPill({ texto, alinear = 'izquierda' }: { texto: string; alinear?: 'izquierda' | 'derecha' }) {
-  return (
-    <View style={[styles.peakRow, { justifyContent: alinear === 'derecha' ? 'flex-end' : 'flex-start' }]}>
-      <View style={styles.peakPill}>
-        <Text numberOfLines={1} style={styles.peakText}>
-          {texto}
-        </Text>
-      </View>
-    </View>
-  );
+/** Promedio histórico del pico (contrato) como línea de referencia; solo en energía, no hay equivalente en COP. */
+function referenceFor(data: History, unit: ChartUnit): number | null {
+  return unit === 'COP' || !data.ultimo_pico ? null : data.ultimo_pico.promedio_historico_kwh;
 }
 
-interface SeriesChartProps {
-  points: ChartPoint[];
-  unit: ChartUnit;
-  periodo: Period;
-  width: number;
-}
+function toDonutProps(data: History, zonas: ZoneShare[], unit: ChartUnit, ancho: number): ZoneDonutChartProps {
+  // Totales de periodo en kWh (RN-XIII-06). En COP, el contrato no trae costo por zona:
+  // TODO(pendiente: costo por zona) se reparte el costo del periodo según la participación en kWh.
+  const costs = data.serie.map((p) => p.costo_cop);
+  const totalCost = costs.every((c) => c === null) ? null : costs.reduce<number>((sum, c) => sum + (c ?? 0), 0);
+  const money = (kwhPct: number) => formatCOP(totalCost === null ? null : (totalCost * kwhPct) / 100, { abreviar: true });
+  const valueOf = (z: ZoneShare) => (unit === 'COP' ? money(z.participacion_pct) : kwhText(z.energia_kwh));
 
-/** Ficha BarChart (gifted-charts, DC-12): pico con `chart-peak` y «Pico»; `null` sin barra. */
-function HistoryBarChart({ points, unit, periodo, width }: SeriesChartProps) {
-  const axis = axisFor(points, unit, periodo);
-  const plot = Math.max(width - Y_LABEL_WIDTH - spacing['8'], 120);
-  const slot = plot / Math.max(points.length, 1);
-  const barWidth = Math.min(24, Math.max(4, slot * 0.65));
-  const gap = Math.max(2, slot - barWidth);
-  return (
-    <View accessible accessibilityLabel={chartSummary('barras', points, unit, periodo)}>
-      <BarChart
-        data={points.map((p) => ({
-          value: p.valor ?? 0,
-          label: p.eje,
-          labelWidth: 44,
-          frontColor: p.pico ? colors['chart-peak'] : colors['chart-series1'],
-          topLabelComponent: p.pico
-            ? () => <PeakPill texto={t('estado.historial_pico.etiqueta')} />
-            : p.valor === null
-              ? () => <Text style={AXIS_TEXT}>{t('comun.sin_dato')}</Text>
-              : undefined,
-        }))}
-        width={plot}
-        height={CHART_HEIGHT}
-        maxValue={axis.maxValue}
-        stepValue={axis.stepValue}
-        noOfSections={SECTIONS}
-        yAxisLabelTexts={axis.labels}
-        yAxisLabelWidth={Y_LABEL_WIDTH}
-        yAxisTextStyle={AXIS_TEXT}
-        xAxisLabelTextStyle={AXIS_TEXT}
-        rulesColor={colors['chart-grid']}
-        rulesType="dashed"
-        yAxisColor="transparent"
-        xAxisColor={colors['chart-grid']}
-        barWidth={barWidth}
-        spacing={gap}
-        initialSpacing={gap / 2}
-        endSpacing={0}
-        barBorderRadius={radius.xs}
-        disableScroll
-        isAnimated={false}
-      />
-    </View>
-  );
-}
+  const toZone = (z: ZoneShare): DonutZone => ({
+    id: z.zona_id,
+    nombre: z.nombre,
+    participacion: z.participacion_pct,
+    valorTexto: valueOf(z),
+    pctTexto: formatPercent(z.participacion_pct),
+  });
+  const donutZones = zonas.map(toZone);
+  const { top, rest } = groupZones(donutZones);
+  const restPct = rest.reduce((sum, z) => sum + z.participacion, 0);
+  const restKwh = zonas.filter((z) => rest.some((r) => r.id === z.zona_id)).reduce((sum, z) => sum + z.energia_kwh, 0);
+  const main = top[0];
 
-const PILL_WIDTH = 170;
-/** Espacio sobre la rejilla para que la píldora no se recorte cuando el pico está arriba. */
-const OVERFLOW_TOP = 32;
-
-/** Ficha LineChart: línea suave que se interrumpe con `null`; la píldora se voltea si no cabe. */
-function HistoryLineChart({ points, unit, periodo, width }: SeriesChartProps) {
-  const axis = axisFor(points, unit, periodo);
-  const plot = Math.max(width - Y_LABEL_WIDTH - spacing['8'], 120);
-  const initial = spacing['12'];
-  const stepX = (plot - initial * 2) / Math.max(points.length - 1, 1);
-  const peakIdx = points.findIndex((p) => p.pico);
-  const peak = peakIdx >= 0 ? points[peakIdx] : null;
-  const flip = peakIdx >= 0 && initial + stepX * peakIdx + PILL_WIDTH > plot;
-  const unitText = unit === 'COP' ? '' : ` ${t(energyUnitKey(periodo))}`;
-  const label = peak
-    ? t('estado.historial_pico.etiqueta_grafico', { cuando: peak.cuando, valor: `${chartValueText(peak.valor, unit, periodo)}${unitText}` })
-    : '';
-  return (
-    <View accessible accessibilityLabel={chartSummary('linea', points, unit, periodo)} style={{ marginTop: OVERFLOW_TOP }}>
-      <LineChart
-        data={points.map((p, i) => ({
-          ...(p.valor === null ? {} : { value: p.valor }),
-          label: p.eje,
-          labelWidth: 44,
-          hideDataPoint: i !== peakIdx,
-          ...(i === peakIdx
-            ? {
-                dataPointColor: colors['chart-peak'],
-                dataPointRadius: 5,
-                dataPointLabelComponent: () => <PeakPill texto={label} alinear={flip ? 'derecha' : 'izquierda'} />,
-                dataPointLabelWidth: PILL_WIDTH,
-                // gifted-charts centra la etiqueta en el punto: borde izquierdo = x − ancho/2 + desplazamiento.
-                dataPointLabelShiftX: flip ? -PILL_WIDTH / 2 - spacing['8'] : PILL_WIDTH / 2 + spacing['8'],
-                dataPointLabelShiftY: -22 + OVERFLOW_TOP,
-              }
-            : {}),
-        }))}
-        interpolateMissingValues={false}
-        overflowTop={OVERFLOW_TOP}
-        curved
-        thickness={2}
-        color={colors['chart-series1']}
-        width={plot}
-        height={CHART_HEIGHT}
-        maxValue={axis.maxValue}
-        stepValue={axis.stepValue}
-        noOfSections={SECTIONS}
-        yAxisLabelTexts={axis.labels}
-        yAxisLabelWidth={Y_LABEL_WIDTH}
-        yAxisTextStyle={AXIS_TEXT}
-        xAxisLabelTextStyle={AXIS_TEXT}
-        rulesColor={colors['chart-grid']}
-        rulesType="dashed"
-        yAxisColor="transparent"
-        xAxisColor={colors['chart-grid']}
-        initialSpacing={initial}
-        spacing={stepX}
-        endSpacing={initial}
-        disableScroll
-        isAnimated={false}
-      />
-    </View>
-  );
-}
-
-/** Ficha ZoneDonutChart, opción A: por orden de participación; «Otras zonas» en neutral-500. */
-const ZONE_COLORS = [colors['green-400'], colors['green-200'], colors['neutral-300'], colors['green-600']] as const;
-const OTHER_COLOR = colors['neutral-500'];
-const RING_RADIUS = 72;
-
-function ZoneDonutChart({ zonas, total, periodo }: { zonas: ZoneShare[]; total: number; periodo: Period }) {
-  const sorted = [...zonas].sort((a, b) => b.participacion_pct - a.participacion_pct);
-  const top = sorted.length > 4 ? sorted.slice(0, 4) : sorted;
-  const rest = sorted.length > 4 ? sorted.slice(4) : [];
-  const restPct = rest.reduce((sum, z) => sum + z.participacion_pct, 0);
-  const restKwh = rest.reduce((sum, z) => sum + z.energia_kwh, 0);
-
-  const slices = [
-    ...top.map((z, i) => ({ value: z.participacion_pct, color: ZONE_COLORS[i] })),
-    ...(rest.length > 0 ? [{ value: restPct, color: OTHER_COLOR }] : []),
-  ];
   const summaryZones = [
-    ...top.map((z) => `${z.nombre} ${formatPercent(z.participacion_pct)}`),
+    ...top.map((z) => `${z.nombre} ${z.pctTexto}`),
     ...(rest.length > 0
-      ? [`${t('historial.anillo_otras')} ${formatPercent(restPct)} (${rest.map((z) => `${z.nombre} ${formatPercent(z.participacion_pct)}`).join(', ')})`]
+      ? [`${t('historial.anillo_otras')} ${formatPercent(restPct)} (${rest.map((z) => `${z.nombre} ${z.pctTexto}`).join(', ')})`]
       : []),
   ].join(', ');
 
-  return (
-    <View
-      style={styles.donutRow}
-      accessible
-      accessibilityLabel={t('a11y.grafico_anillo', { periodo: t(`formato.periodo.${periodo}`), zonas: summaryZones })}
-    >
-      <PieChart
-        data={slices}
-        donut
-        radius={RING_RADIUS}
-        innerRadius={RING_RADIUS * 0.74}
-        innerCircleColor={colors['background-surface']}
-        strokeWidth={2}
-        strokeColor={colors['background-surface']}
-        centerLabelComponent={() => (
-          <View style={styles.donutCenter}>
-            <Text style={styles.donutTotal} adjustsFontSizeToFit numberOfLines={1}>
-              {kwhText(total)}
-            </Text>
-            <Text style={styles.mutedXs}>{t(`historial.anillo_total_${periodo}`)}</Text>
-          </View>
-        )}
-      />
-      <View style={styles.donutLegend}>
-        {top.map((z, i) => (
-          <LegendRow key={z.zona_id} color={ZONE_COLORS[i]} nombre={z.nombre} pct={z.participacion_pct} kwh={z.energia_kwh} />
-        ))}
-        {rest.length > 0 && (
-          <>
-            <LegendRow color={OTHER_COLOR} nombre={t('historial.anillo_otras')} pct={restPct} kwh={restKwh} />
-            {rest.map((z) => (
-              <LegendRow key={z.zona_id} nombre={z.nombre} pct={z.participacion_pct} kwh={z.energia_kwh} grouped />
-            ))}
-          </>
-        )}
-      </View>
-    </View>
-  );
-}
-
-function LegendRow({ color, nombre, pct, kwh, grouped = false }: { color?: string; nombre: string; pct: number; kwh: number; grouped?: boolean }) {
-  return (
-    <View style={[styles.legendRow, grouped && styles.legendGrouped]}>
-      {color ? <View style={[styles.legendDot, { backgroundColor: color }]} /> : null}
-      <Text style={[styles.legendName, grouped && { color: colors['text-muted'] }]} numberOfLines={1}>
-        {nombre}
-      </Text>
-      <Text style={styles.legendValue}>{formatPercent(pct)}</Text>
-      <Text style={styles.legendKwh}>{kwhText(kwh)}</Text>
-    </View>
-  );
+  return {
+    zonas: donutZones,
+    totalValor: unit === 'COP' ? formatCOP(totalCost, { abreviar: true }) : formatNumber(data.total_kwh, DECIMALES.kWh),
+    totalUnidad: unit === 'COP' ? '' : t('comun.kwh'),
+    totalEtiqueta: t(`historial.anillo_total_${data.periodo}`),
+    otras: {
+      nombre: t('historial.anillo_otras'),
+      valorTexto: unit === 'COP' ? money(restPct) : kwhText(restKwh),
+      pctTexto: formatPercent(restPct),
+    },
+    destacado: main ? [main.nombre, main.valorTexto, main.pctTexto].join(' · ') : '',
+    ancho,
+    resumen: t('a11y.grafico_anillo', { periodo: t(`formato.periodo.${data.periodo}`), zonas: summaryZones }),
+  };
 }
 
 /* ─────────────────────────────── Cards ──────────────────────────────────── */
@@ -688,10 +550,10 @@ function ConsumptionChartCard({ data, zones, zonaId, onZona }: ConsumptionCardPr
 
   const general = zonaId === null;
   const effectiveView: ChartView = view === 'anillo' && (!general || !data.participacion_zonas) ? 'barras' : view;
-  // COP solo con tarifa vigente; el anillo se expresa en kWh (el contrato no trae COP por zona).
-  const unit: ChartUnit = data.tarifa_vigente && effectiveView !== 'anillo' ? unitChoice : 'energia';
+  // COP solo con tarifa vigente (RN-XIII-05); el selector se ve también con el anillo.
+  const unit: ChartUnit = data.tarifa_vigente ? unitChoice : 'energia';
   const empty = isEmptyHistory(data);
-  const points = useMemo(() => toChartPoints(data, unit), [data, unit]);
+  const model = useMemo(() => toSeriesModel(data, unit, effectiveView === 'linea' ? 'linea' : 'barras'), [data, unit, effectiveView]);
   const sortedZones = useMemo(() => [...zones].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')), [zones]);
 
   const tramo = tramoLabel(data);
@@ -717,7 +579,7 @@ function ConsumptionChartCard({ data, zones, zonaId, onZona }: ConsumptionCardPr
         )}
       </View>
 
-      <View onLayout={onLayout}>
+      <View testID="historial-grafico" onLayout={onLayout}>
         {empty ? (
           <View style={styles.emptyChart}>
             <Clock size={32} color={colors['text-muted']} />
@@ -726,16 +588,33 @@ function ConsumptionChartCard({ data, zones, zonaId, onZona }: ConsumptionCardPr
           </View>
         ) : width > 0 ? (
           effectiveView === 'anillo' && data.participacion_zonas ? (
-            <ZoneDonutChart zonas={data.participacion_zonas} total={data.total_kwh} periodo={data.periodo} />
+            <ZoneDonutChart {...toDonutProps(data, data.participacion_zonas, unit, width)} />
           ) : effectiveView === 'linea' ? (
-            <HistoryLineChart points={points} unit={unit} periodo={data.periodo} width={width} />
+            <LineChart
+              ancho={width}
+              datos={model.datos}
+              unidad={unitText(unit, data.periodo)}
+              formatTick={tickFormatter(unit)}
+              etiquetaPico={model.etiquetaPico}
+              xLabels={model.xLabels}
+              resumen={model.resumen}
+              referencia={referenceFor(data, unit)}
+            />
           ) : (
-            <HistoryBarChart points={points} unit={unit} periodo={data.periodo} width={width} />
+            <BarChart
+              ancho={width}
+              datos={model.datos}
+              unidad={unitText(unit, data.periodo)}
+              formatTick={tickFormatter(unit)}
+              etiquetaPico={model.etiquetaPico}
+              xLabels={model.xLabels}
+              resumen={model.resumen}
+            />
           )
         ) : null}
       </View>
 
-      {!empty && effectiveView !== 'anillo' && (
+      {!empty && (
         <View style={styles.chipRow} accessibilityRole="radiogroup">
           <Chip activo={unit === 'energia'} icono={Zap} onPress={() => setUnitChoice('energia')}>
             {t(energyUnitKey(data.periodo))}
@@ -1019,26 +898,6 @@ const styles = StyleSheet.create({
 
   // Gráficos
   emptyChart: { alignItems: 'center', gap: spacing['8'], paddingVertical: spacing['32'] },
-  peakRow: { flexDirection: 'row' },
-  peakPill: {
-    paddingHorizontal: spacing['8'],
-    paddingVertical: 2,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors['chart-peak'],
-    backgroundColor: colors['accent-soft'],
-  },
-  peakText: { ...textStyle('ui-s-etiqueta-12'), color: colors['chart-peak'] },
-  donutRow: { flexDirection: 'row', alignItems: 'center', gap: spacing['16'], flexWrap: 'wrap', justifyContent: 'center' },
-  donutCenter: { alignItems: 'center', maxWidth: RING_RADIUS * 1.4 },
-  donutTotal: { ...textStyle('data-m'), color: colors['text-primary'] },
-  donutLegend: { flex: 1, minWidth: 160, gap: spacing['4'] },
-  legendRow: { flexDirection: 'row', alignItems: 'center', gap: spacing['8'] },
-  legendGrouped: { paddingLeft: spacing['16'] },
-  legendDot: { width: spacing['8'], height: spacing['8'], borderRadius: radius.full },
-  legendName: { ...textStyle('body-s-regular'), color: colors['text-primary'], flex: 1 },
-  legendValue: { ...textStyle('data-s'), color: colors['text-primary'] },
-  legendKwh: { ...textStyle('data-s-mono-regular-12'), color: colors['text-muted'] },
 
   // Comparación
   compareRow: { flexDirection: 'row', gap: spacing['16'] },

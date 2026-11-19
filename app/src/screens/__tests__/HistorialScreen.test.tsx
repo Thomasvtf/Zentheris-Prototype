@@ -99,4 +99,58 @@ describe('HistorialScreen', () => {
     expect(screen.getByText(t('error.app.sin_conexion.titulo'))).toBeTruthy();
     expect(screen.getByText(t('comun.reintentar'))).toBeTruthy();
   });
+
+  describe('gráficos del Historial', () => {
+    const PILL = /^Pico · /;
+    /** En Jest no hay layout: se le da a la card el ancho de un móvil estándar (390 − márgenes). */
+    const layoutChart = async () => fireEvent(await screen.findByTestId('historial-grafico', {}, WAIT), 'layout', { nativeEvent: { layout: { width: 326, height: 200 } } });
+
+    it('Día: marcas 00h–24h, unidad kW y píldora «Pico · 11h · … kW»', async () => {
+      await renderScenario('normal');
+      await layoutChart();
+      for (const h of ['00h', '06h', '12h', '18h', '24h']) expect(await screen.findByText(h, {}, WAIT)).toBeTruthy();
+      expect(await screen.findByText(/^Pico · \d{2}h · [\d,]+ kW$/, {}, WAIT)).toBeTruthy();
+    });
+
+    it('Semana: los 7 días completos y píldora con día y kWh', async () => {
+      await renderScenario('normal');
+      fireEvent.press(screen.getByText(t('formato.periodo.semana')));
+      await waitLoaded();
+      await layoutChart();
+      for (const d of ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']) expect(await screen.findByText(d, {}, WAIT)).toBeTruthy();
+      expect(screen.getByText(/^Pico · [^·]+ · [\d,]+ kWh$/)).toBeTruthy();
+    });
+
+    it('Mes: fechas dd/mm sin truncar y píldora con fecha', async () => {
+      await renderScenario('normal');
+      fireEvent.press(screen.getByText(t('formato.periodo.mes')));
+      await waitLoaded();
+      await layoutChart();
+      expect(await screen.findByText(/^Pico · \d{2}\/\d{2} · [\d,]+ kWh$/, {}, WAIT)).toBeTruthy();
+      expect(screen.getAllByText(/^\d{2}\/\d{2}$/).length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('COP: eje en pesos y la píldora con el valor en COP (Día, Semana y Mes)', async () => {
+      await renderScenario('normal');
+      for (const p of ['dia', 'semana', 'mes'] as const) {
+        fireEvent.press(screen.getByText(t(`formato.periodo.${p}`)));
+        await waitLoaded();
+        await layoutChart();
+        fireEvent.press(await screen.findByRole('radio', { name: t('comun.cop') }, WAIT));
+        expect(await screen.findByText(/^Pico · .+ · \$[\d.]+$/, {}, WAIT)).toBeTruthy();
+      }
+    });
+
+    it('Anillo: dona con total, píldora de la zona principal y selector de unidad visible', async () => {
+      await renderScenario('normal');
+      await layoutChart();
+      fireEvent.press(screen.getAllByRole('button')[2]);
+      expect(await screen.findByText(t('historial.anillo_total_dia'), {}, WAIT)).toBeTruthy();
+      expect(screen.getByText(/^[^·]+ · [\d,]+ kWh · \d+\s%$/)).toBeTruthy();
+      expect(screen.queryByText(PILL)).toBeNull();
+      // El selector de unidad sigue visible y COP cambia los valores a pesos.
+      fireEvent.press(screen.getByRole('radio', { name: t('comun.cop') }));
+      expect(await screen.findByText(/^[^·]+ · \$[\d.,]+k? · \d+\s%$/, {}, WAIT)).toBeTruthy();
+    });
+  });
 });

@@ -49,6 +49,7 @@ import { ArrowLeftRight, Check, ChevronLeft, CircleCheck, CircleX, EllipsisVerti
 import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
 import { plural, t } from '@/texts';
 
+import { INPUT_LIMITS, sanitizeEmail } from './inputFilters';
 import { daysLeft, freeSlots, isValidEmail, useMiembrosHogarData, visibleInvitations } from './useMiembrosHogarData';
 import type { InviteResult, Member, MiembrosMockScenario, PendingInvitation, PermissionKey } from './useMiembrosHogarData';
 
@@ -347,11 +348,12 @@ function InviteSheet({ visible, slots, busy, onInvite, onClose }: { visible: boo
               <TextInput
                 value={correo}
                 onChangeText={(v) => {
-                  setCorreo(v);
+                  setCorreo(sanitizeEmail(v));
                   setFieldError(null);
                 }}
                 placeholder={t('invitar.correo_ph')}
                 placeholderTextColor={colors['text-muted']}
+                maxLength={INPUT_LIMITS.emailLength}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}

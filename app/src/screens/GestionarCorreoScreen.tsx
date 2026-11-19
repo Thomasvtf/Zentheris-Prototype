@@ -28,6 +28,8 @@ import { getSupabase } from '@/state/supabase';
 import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
 import { t } from '@/texts';
 
+import { INPUT_LIMITS, sanitizeEmail } from './inputFilters';
+
 type EmailState =
   | { status: 'loading' }
   | { status: 'error'; errorKey: string }
@@ -137,7 +139,8 @@ function EmailField({ label, value, onChangeText, placeholder, readOnly = false,
         <TextInput
           style={[styles.textInput, readOnly && styles.textInputReadOnly]}
           value={value}
-          onChangeText={onChangeText}
+          onChangeText={(value) => onChangeText?.(sanitizeEmail(value))}
+          maxLength={INPUT_LIMITS.emailLength}
           placeholder={placeholder}
           placeholderTextColor={colors['text-muted']}
           keyboardType="email-address"

@@ -27,9 +27,11 @@ import { useRouter } from 'expo-router';
 import { createTariff, getTariff } from '@/api/goalsTariff';
 import { toErrorTextKey } from '@/api/errors';
 import type { SuccessBody } from '@/api/client';
-import { formatCOP } from '@/format';
+import { formatCOP, formatNumber } from '@/format';
 import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
 import { t } from '@/texts';
+
+import { INPUT_LIMITS, sanitizeCop, sanitizeDecimal } from './inputFilters';
 
 type TariffView = SuccessBody<'/hogares/{hogar_id}/tarifa', 'get'>;
 
@@ -39,6 +41,7 @@ type TariffState =
   | { status: 'ready'; data: TariffView };
 
 const OPERATOR_IDS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const;
+const MONTH_KEYS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'] as const;
 const BOGOTA_OFFSET_MS = -5 * 60 * 60 * 1000;
 const MAX_MONTHS = 12;
 
@@ -148,6 +151,48 @@ function Notice({
   );
 }
 
+/** Hoja inferior (BottomSheet.md): fondo `surfaceAlt`, tirador, título, descripción y cerrar de 48. */
+function SheetFrame({
+  visible,
+  title,
+  support,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  title: string;
+  support?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} accessible={false} />
+        <View style={styles.modalContent} accessibilityViewIsModal>
+          <View style={styles.sheetHandle} />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle} accessibilityRole="header">
+              {title}
+            </Text>
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.sheetClose}
+              accessibilityRole="button"
+              accessibilityLabel={t('comun.cerrar')}
+            >
+              <Ionicons name="close" size={24} color={colors['text-muted']} />
+            </TouchableOpacity>
+          </View>
+          {support ? <Text style={styles.modalSupport}>{support}</Text> : null}
+          {children}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/** Lista de opciones (OptionItem.md): la elegida con fondo, texto de acento y check. */
 function SelectSheet({
   visible,
   title,
@@ -166,44 +211,117 @@ function SelectSheet({
   onClose: () => void;
 }) {
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{title}</Text>
+    <SheetFrame visible={visible} title={title} support={support} onClose={onClose}>
+      <ScrollView>
+        {options.map((option) => {
+          const active = option.value === selected;
+          return (
             <TouchableOpacity
-              onPress={onClose}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              key={option.value}
+              style={[styles.modalItem, active && styles.modalItemActive]}
+              onPress={() => onSelect(option.value)}
               accessibilityRole="button"
-              accessibilityLabel={t('comun.cerrar')}
+              accessibilityState={{ selected: active }}
             >
-              <Ionicons name="close" size={22} color={colors['text-muted']} />
+              <Text style={[styles.modalItemText, active && styles.modalItemTextActive]}>{option.label}</Text>
+              {active && <Ionicons name="checkmark" size={18} color={colors['text-accent']} />}
             </TouchableOpacity>
-          </View>
-          {support ? <Text style={styles.modalSupport}>{support}</Text> : null}
-          <ScrollView>
-            {options.map((option) => {
-              const active = option.value === selected;
-              return (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[styles.modalItem, active && styles.modalItemActive]}
-                  onPress={() => onSelect(option.value)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                >
-                  <Text style={[styles.modalItemText, active && styles.modalItemTextActive]}>
-                    {option.label}
-                  </Text>
-                  {active && <Ionicons name="checkmark" size={18} color={colors['text-accent']} />}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
+          );
+        })}
+      </ScrollView>
+    </SheetFrame>
+  );
+}
+
+/** Chip de la cuadrícula de mes y año (Chip.md): activo con acento, deshabilitado con `state-disabled-*`. */
+function PickerChip({
+  label,
+  active,
+  disabled = false,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.pickerChipTouch}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="radio"
+      accessibilityState={{ checked: active, disabled }}
+    >
+      <View style={[styles.pickerChip, active && styles.pickerChipActive, disabled && styles.pickerChipDisabled]}>
+        <Text style={[styles.pickerChipText, active && styles.pickerChipTextActive, disabled && styles.pickerChipTextDisabled]}>
+          {label}
+        </Text>
       </View>
-    </Modal>
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * Hoja «Vigente desde» (BottomSheet.md + Select.md): año y cuadrícula de meses con Chip; solo se
+ * eligen meses posteriores a la tarifa vigente y no futuros; «Aplicar · mes de año» confirma.
+ */
+export function SinceSheet({
+  months,
+  selected,
+  support,
+  onApply,
+  onClose,
+}: {
+  /** Meses elegibles («2026-09») de más reciente a más antiguo. */
+  months: string[];
+  selected: string | null;
+  support?: string;
+  onApply: (value: string) => void;
+  onClose: () => void;
+}) {
+  const years = useMemo(() => Array.from(new Set(months.map((m) => m.slice(0, 4)))).sort(), [months]);
+  const initial = selected && months.includes(selected) ? selected : (months[0] ?? null);
+  const [year, setYear] = useState(initial ? initial.slice(0, 4) : (years[years.length - 1] ?? ''));
+  const [month, setMonth] = useState<string | null>(initial ? initial.slice(5, 7) : null);
+
+  const draft = month ? `${year}-${month}` : null;
+  const canApply = draft !== null && months.includes(draft);
+
+  return (
+    <SheetFrame visible title={t('tarifa.hoja_vigencia_titulo')} support={support} onClose={onClose}>
+      <Text style={styles.pickerLabel}>{t('tarifa.hoja_vigencia_anio')}</Text>
+      <View style={styles.pickerRow} accessibilityRole="radiogroup">
+        {years.map((y) => (
+          <PickerChip key={y} label={y} active={y === year} onPress={() => setYear(y)} />
+        ))}
+      </View>
+
+      <Text style={styles.pickerLabel}>{t('tarifa.hoja_vigencia_mes')}</Text>
+      <View style={styles.pickerRow} accessibilityRole="radiogroup">
+        {MONTH_KEYS.map((m) => (
+          <PickerChip
+            key={m}
+            label={t(`formato.mes_corto.${m}`)}
+            active={m === month}
+            disabled={!months.includes(`${year}-${m}`)}
+            onPress={() => setMonth(m)}
+          />
+        ))}
+      </View>
+
+      <TouchableOpacity
+        style={[styles.btnGuardar, !canApply && styles.btnDisabled]}
+        onPress={() => draft && canApply && onApply(draft)}
+        disabled={!canApply}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !canApply }}
+      >
+        <Text style={[styles.btnGuardarText, !canApply && styles.pickerChipTextDisabled]}>
+          {draft && canApply ? t('tarifa.hoja_vigencia_aplicar', { mes_anio: monthYearLabel(draft) }) : t('tarifa.vigencia_ph')}
+        </Text>
+      </TouchableOpacity>
+    </SheetFrame>
   );
 }
 
@@ -240,7 +358,7 @@ export function ConfigurarTarifaScreen({ hogarId = null }: ConfigurarTarifaScree
     setOperator(activeTariff.operador);
     setPrice(String(activeTariff.precio_kwh).replace('.', ','));
     setFixedCharge(
-      activeTariff.cargo_fijo_mensual === null ? '' : String(activeTariff.cargo_fijo_mensual),
+      activeTariff.cargo_fijo_mensual === null ? '' : formatNumber(activeTariff.cargo_fijo_mensual),
     );
     setSince(null);
     setFieldErrors({});
@@ -417,8 +535,9 @@ export function ConfigurarTarifaScreen({ hogarId = null }: ConfigurarTarifaScree
                   <TextInput
                     style={styles.textInput}
                     value={price}
-                    onChangeText={setPrice}
-                    keyboardType="numeric"
+                    onChangeText={(value) => setPrice(sanitizeDecimal(value))}
+                    maxLength={INPUT_LIMITS.priceIntDigits + INPUT_LIMITS.priceDecimals + 1}
+                    keyboardType="decimal-pad"
                     placeholder="892"
                     placeholderTextColor={colors['text-muted']}
                     accessibilityLabel={t('tarifa.precio')}
@@ -461,8 +580,9 @@ export function ConfigurarTarifaScreen({ hogarId = null }: ConfigurarTarifaScree
                   <TextInput
                     style={styles.textInput}
                     value={fixedCharge}
-                    onChangeText={setFixedCharge}
-                    keyboardType="numeric"
+                    onChangeText={(value) => setFixedCharge(sanitizeCop(value))}
+                    maxLength={INPUT_LIMITS.fixedChargeDigits + 2}
+                    keyboardType="number-pad"
                     placeholder={t('tarifa.cargo_fijo_ph')}
                     placeholderTextColor={colors['text-muted']}
                     accessibilityLabel={t('tarifa.cargo_fijo')}
@@ -527,22 +647,19 @@ export function ConfigurarTarifaScreen({ hogarId = null }: ConfigurarTarifaScree
         onClose={() => setSheet(null)}
       />
 
-      <SelectSheet
-        visible={sheet === 'since'}
-        title={t('tarifa.hoja_vigencia_titulo')}
-        support={
-          activeTariff
-            ? t('tarifa.hoja_vigencia_ayuda', { mes_anio: activeMonthYear })
-            : undefined
-        }
-        options={months.map((month) => ({ value: month, label: monthYearLabel(month) }))}
-        selected={since}
-        onSelect={(value) => {
-          setSince(value);
-          setSheet(null);
-        }}
-        onClose={() => setSheet(null)}
-      />
+      {sheet === 'since' && (
+        <SinceSheet
+          months={months}
+          selected={since}
+          support={activeTariff ? t('tarifa.hoja_vigencia_ayuda', { mes_anio: activeMonthYear }) : undefined}
+          onApply={(value) => {
+            setSince(value);
+            setFieldErrors((prev) => ({ ...prev, vigencia: undefined }));
+            setSheet(null);
+          }}
+          onClose={() => setSheet(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -823,23 +940,78 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   modalContent: {
-    backgroundColor: colors['background-elevated'],
+    backgroundColor: colors['background-surfaceAlt'],
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
-    padding: spacing[20],
-    borderWidth: 1,
-    borderColor: colors['border-subtle'],
-    maxHeight: '70%',
+    paddingTop: spacing[8],
+    paddingHorizontal: spacing[16],
+    paddingBottom: spacing[32],
+    maxHeight: '80%',
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: spacing[40],
+    height: spacing[4],
+    borderRadius: radius.full,
+    backgroundColor: colors['text-muted'],
+  },
+  sheetClose: {
+    width: spacing[48],
+    height: spacing[48],
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing[8],
   },
   modalTitle: {
-    ...textStyle('display-s-16'),
+    ...textStyle('display-m'),
     color: colors['text-primary'],
+    flex: 1,
+  },
+  pickerLabel: {
+    ...textStyle('body-s-medium'),
+    color: colors['text-primary'],
+    marginTop: spacing[8],
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -spacing[4],
+  },
+  pickerChipTouch: {
+    width: '25%',
+    minHeight: spacing[48],
+    justifyContent: 'center',
+    paddingHorizontal: spacing[4],
+  },
+  pickerChip: {
+    minHeight: spacing[32] + spacing[4],
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors['border-medium'],
+  },
+  pickerChipActive: {
+    backgroundColor: colors['accent-soft'],
+    borderColor: colors['border-accent'],
+  },
+  pickerChipDisabled: {
+    backgroundColor: colors['state-disabled-bg'],
+    borderColor: colors['state-disabled-border'],
+  },
+  pickerChipText: {
+    ...textStyle('ui-s-semibold'),
+    color: colors['text-muted'],
+  },
+  pickerChipTextActive: {
+    color: colors['text-accent'],
+  },
+  pickerChipTextDisabled: {
+    color: colors['state-disabled-text'],
   },
   modalSupport: {
     ...textStyle('body-s-regular'),

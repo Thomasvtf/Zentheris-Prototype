@@ -346,7 +346,9 @@ export function ConfiguracionScreen() {
       <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
 
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>{t('config.encabezado')}</Text>
+        <Text style={styles.headerTitle} accessibilityRole="header">
+          {t('config.encabezado')}
+        </Text>
       </View>
 
       <ScrollView
@@ -606,13 +608,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors['background-default'],
   },
   header: {
+    height: sizes['topBar-height'],
     paddingHorizontal: spacing[16],
-    paddingTop: spacing[12],
-    paddingBottom: spacing[8],
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
-    ...textStyle('display-m'),
+    ...textStyle('display-l-24'),
     color: colors['text-primary'],
+    textAlign: 'center',
   },
   scrollView: {
     flex: 1,

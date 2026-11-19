@@ -32,6 +32,8 @@ import { getSupabase } from '@/state/supabase';
 import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
 import { t } from '@/texts';
 
+import { INPUT_LIMITS, sanitizeName, sanitizePhone } from './inputFilters';
+
 type CurrentUser = SuccessBody<'/usuarios/me', 'get'>;
 
 type UserState =
@@ -314,7 +316,8 @@ export function EditarPerfilScreen() {
                     <TextInput
                       style={[styles.textInput, errors.name ? styles.inputError : null]}
                       value={name}
-                      onChangeText={setName}
+                      onChangeText={(value) => setName(sanitizeName(value))}
+                      maxLength={INPUT_LIMITS.nameLength}
                       autoCapitalize="words"
                       accessibilityLabel={t('perfil.nombre')}
                     />
@@ -333,7 +336,8 @@ export function EditarPerfilScreen() {
                     <TextInput
                       style={[styles.textInput, errors.phone ? styles.inputError : null]}
                       value={phone}
-                      onChangeText={setPhone}
+                      onChangeText={(value) => setPhone(sanitizePhone(value))}
+                      maxLength={INPUT_LIMITS.phoneDigits + 1}
                       keyboardType="phone-pad"
                       accessibilityLabel={t('perfil.telefono_edicion')}
                     />

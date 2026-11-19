@@ -18,6 +18,7 @@ export default function Layout() {
     <>
       <StatusBar style="light" />
       <Tabs
+        backBehavior="history"
         screenOptions={{
           headerShown: false,
           tabBarLabelPosition: 'below-icon',

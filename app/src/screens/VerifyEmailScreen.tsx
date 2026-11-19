@@ -140,6 +140,14 @@ export const VerifyEmailScreen: React.FC<VerifyEmailScreenProps> = ({
         >
           <Text style={styles.prototypeLinkText}>⚡ Probar pantalla: Nueva contraseña</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.prototypeLink, { marginTop: 2 }]}
+          onPress={() => router.push('/onboarding')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.prototypeLinkText}>⚡ Probar pantalla: Onboarding (Crea tu hogar)</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );

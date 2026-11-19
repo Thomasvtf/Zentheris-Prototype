@@ -80,6 +80,27 @@ export default function Layout() {
             tabBarStyle: { display: 'none' },
           }}
         />
+        <Tabs.Screen
+          name="onboarding"
+          options={{
+            href: null,
+            tabBarStyle: { display: 'none' },
+          }}
+        />
+        <Tabs.Screen
+          name="preparando-hogar"
+          options={{
+            href: null,
+            tabBarStyle: { display: 'none' },
+          }}
+        />
+        <Tabs.Screen
+          name="error-crear-hogar"
+          options={{
+            href: null,
+            tabBarStyle: { display: 'none' },
+          }}
+        />
 
         {/* Pestañas de la Aplicación Principal (Con barra de navegación) */}
         <Tabs.Screen

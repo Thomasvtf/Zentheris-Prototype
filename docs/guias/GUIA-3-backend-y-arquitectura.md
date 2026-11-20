@@ -1,6 +1,6 @@
 # Guía 3 · Construir el backend y la arquitectura general
 
-Versión 2 · 03/11/2026 (actualizada el 10/11/2026: carpetas en inglés y nombres de ramas). Para quien programa la API (FastAPI) y configura Supabase, **y para Claude Code**, que escribirá la mayor parte del código. Personas: lean los puntos 0, 1, 3 y 10. Claude Code: siga `CLAUDE.md`, `api/CLAUDE.md` y `supabase/CLAUDE.md` (en la carpeta: `11_guias-de-desarrollo/claude-code/`), y use esta guía como especificación. Las rutas `docs/…` son las del repositorio; en la carpeta `Archivos_Zentheris` los mismos documentos están en las carpetas 01 a 09 (la tabla de correspondencia está en `MANIFIESTO.md`, solo en la carpeta). Fuentes: reglas v4.9, contrato 0.2.5, `02_base-de-datos/especificacion-supabase-v1.md`, `04_datos-simulados/` (Avance 03 y calibración de umbrales v1), catálogo de textos v1 y el prototipo (lectura estática; **no se ejecutó**).
+Versión 2 · 03/11/2026 (actualizada el 10/11/2026: carpetas en inglés y nombres de ramas). Para quien programa la API (FastAPI) y configura Supabase, **y para Claude Code**, que escribirá la mayor parte del código. Personas: lean los puntos 0, 1, 3 y 10. Claude Code: siga `CLAUDE.md`, `api/CLAUDE.md` y `supabase/CLAUDE.md` (en la carpeta: `11_guias-de-desarrollo/claude-code/`), y use esta guía como especificación. Las rutas `docs/…` son las del repositorio; en la carpeta `Archivos_Zentheris` los mismos documentos están en las carpetas 01 a 09 (la tabla de correspondencia está en `MANIFIESTO.md`, solo en la carpeta). Fuentes: reglas v4.9, contrato 0.2.6, `02_base-de-datos/especificacion-supabase-v1.md`, `04_datos-simulados/` (Avance 03 y calibración de umbrales v1), catálogo de textos v1 y el prototipo (lectura estática; **no se ejecutó**).
 
 **Antes de empezar:** la base de datos ya está creada (08/11/2026) en el proyecto `zentheris`, con las 6 migraciones aplicadas (ver `supabase/migrations/` y `docs/supabase/especificacion-supabase-v1.md`, v1.1). Nada de esto se vuelve a crear.
 
@@ -13,7 +13,7 @@ Versión 2 · 03/11/2026 (actualizada el 10/11/2026: carpetas en inglés y nombr
 | Estilo general | Cliente móvil → API REST propia → Supabase | Reglas de negocio y permisos en un solo lugar (RN-I-03); el simulador necesita servidor | App directa a Supabase con RLS como única defensa (lógica repartida, difícil de probar) |
 | Backend | **Monolito modular** (un servicio FastAPI) | Equipo pequeño, MVP y plan gratuito de Render | Microservicios (costo y complejidad sin beneficio) |
 | Capas | routers → servicios → dominio puro y datos | El dominio (simulador, estados, alertas) se prueba sin base ni HTTP | Lógica y SQL en los routers |
-| Contrato | **OpenAPI 0.2.5 primero**; tipos de la app generados desde él | App y API avanzan en paralelo sin romperse | Contrato implícito en el código |
+| Contrato | **OpenAPI 0.2.6 primero**; tipos de la app generados desde él | App y API avanzan en paralelo sin romperse | Contrato implícito en el código |
 | Datos | PostgreSQL de Supabase con migraciones; RLS como segunda defensa | Integridad (restricciones de v4.9) y trazabilidad (RN-XIX-02) | Esquema editado a mano en el panel |
 | Procesos de fondo | Dentro del mismo servicio: recuperación de horas antes de consultar + tarea programada | Render gratuito se suspende (DC-34) | Colas o workers aparte |
 | Textos y umbrales | Archivos de configuración versionados | Cambian sin migraciones (RN-XI-07, RN-XI-09) | Tablas de configuración |
@@ -150,7 +150,7 @@ Lectura estática del zip de `main` del 03/11/2026. **No se ejecutó.** Se refac
 | `requirements.txt` guardado en UTF-16 | Regenerarlo en UTF-8 desde `uv` (o quitarlo y usar solo `pyproject.toml` + `uv.lock`) | `pip` no lo lee bien |
 | `requires-python >= 3.14` | Confirmar que Render tenga esa versión; si no, bajar a la que use Render y probar | Despliegue |
 | `/salud/bd` consulta `zonas` y devuelve el texto del error | Quitar el detalle del error (no exponer excepciones); usar `SELECT 1` | Seguridad; la tabla aún no existe |
-| `/salud` y `/` | Mantener solo `/api/v1/salud` según el contrato | Contrato 0.2.5 |
+| `/salud` y `/` | Mantener solo `/api/v1/salud` según el contrato | Contrato 0.2.6 |
 | CORS `allow_origins=["*"]` con `allow_credentials=True` | Lista de orígenes por variable de entorno | Seguridad |
 | `config.py` con `SUPABASE_ANON_KEY` y `SIM_SEED` | Cambiar a las variables de la especificación §8. Quitar `SIM_SEED`: la semilla es SHA-256 por hogar y fecha | RN-IV-04 y la sección 5 de las reglas |
 | `routers/` y `simulador/` vacíos | Crear según los puntos 2 y 6 | — |

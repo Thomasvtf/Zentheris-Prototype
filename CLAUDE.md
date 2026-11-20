@@ -10,10 +10,10 @@ Zentheris es una app móvil (Android e iOS) que muestra y ayuda a reducir el con
 
 1. `docs/reglas/reglas-de-negocio-v4.9.md`: reglas `RN-*`, las 18 tablas (§3) y las pantallas (§6).
 2. `docs/api/zentheris-api-v0.2.6.yaml`: contrato OpenAPI (contract-first). **No inventes endpoints ni campos.**
-3. `docs/decisiones/registro-decisiones-cierre-2026-11-03.md`: decisiones DC-01 a DC-67.
+3. `docs/decisiones/registro-decisiones-cierre-2026-11-03.md`: decisiones DC-01 a DC-70.
 4. `docs/datos/umbrales-estado.v1.json` y `docs/datos/motor_estados_ref.py`: cálculo de estados. Las pruebas de referencia están en `test_escenarios_umbrales.py`.
 5. `docs/textos/`: catálogo de textos (app, backend y Supabase). **Ningún texto de interfaz se escribe a mano.**
-6. `docs/diseno/`: tokens y fichas de los 31 componentes más 3 gráficos de consumo (`ConsumptionGauge`, `ConsumptionRing`, `LineChart`). Primero lee `CORRECCIONES-LEER-PRIMERO.md`.
+6. `docs/diseno/`: tokens y fichas de los 31 componentes más 3 gráficos de consumo (`ConsumptionGauge`, `ConsumptionRing`, `LineChart`).
 7. `docs/supabase/especificacion-supabase-v1.md`: tablas, restricciones, RLS, Storage y variables de entorno.
 8. `docs/historias/` (27 historias) y `docs/pruebas/` (matriz de pruebas).
 

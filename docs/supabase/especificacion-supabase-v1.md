@@ -96,7 +96,7 @@ Se recomiendan funciones auxiliares de solo lectura: «es miembro activo del hog
 
 ## 7. Semilla y comprobación
 
-1. Cargar las 5 personalidades desde `consolidado_perfiles_simulacion.json`, después de comprobar que su SHA-256 es `6cfa9715…0a90922` (acta 04).
+1. Cargar las 5 personalidades desde `consolidado_perfiles_simulacion.json`, después de comprobar que su SHA-256 es `6cfa9715…9a90922` (acta 04).
 2. Comprobaciones posteriores: 17 tablas propias; 5 personalidades con nombres exactos; curvas de 24 valores que suman 1; RLS activa en las 17; bucket `avatares` privado.
 3. Prueba de humo: crear un hogar de prueba con el endpoint de onboarding y verificar 720 × número de zonas lecturas, sin duplicados (consultas equivalentes a `02_verificacion.sql` del Avance 03).
 

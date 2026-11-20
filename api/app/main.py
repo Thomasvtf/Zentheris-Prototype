@@ -1,5 +1,6 @@
 """Punto de entrada de la API de Zentheris."""
 
+import logging
 from typing import Any
 
 from fastapi import FastAPI
@@ -40,8 +41,9 @@ def _contract_openapi(app: FastAPI) -> dict[str, Any]:
     """
     if app.openapi_schema:
         return app.openapi_schema
-    schema = get_openapi(title=app.title, version=app.version, description=app.description,
-                         routes=app.routes)
+    schema = get_openapi(
+        title=app.title, version=app.version, description=app.description, routes=app.routes
+    )
     error_ref = {"$ref": "#/components/schemas/ErrorResponse"}
     for path_item in schema.get("paths", {}).values():
         for operation in path_item.values():
@@ -59,6 +61,8 @@ def _contract_openapi(app: FastAPI) -> dict[str, Any]:
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Crea la aplicación con CORS, manejadores de error y routers bajo /api/v1."""
     settings = settings or get_settings()
+    # httpx escribe en INFO la URL de cada llamada a Supabase (lleva el id del usuario).
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     app = FastAPI(
         title="Zentheris API",
         description="API de monitoreo y optimización del consumo energético",

@@ -3,11 +3,27 @@
 Los nombres de clases y campos son los del contrato (no se traducen, DC-62).
 Generado una vez desde docs/api/zentheris-api.yaml y revisado a mano."""
 
+from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, model_validator
 
 from app.schemas.common import ReferenciaTipo, Rol
+
+
+class _PartialUpdate(BaseModel):
+    """Base de los cuerpos PATCH con `minProperties: 1` y `additionalProperties: false`.
+
+    `{}` da 422 `VALIDACION` y el JSON Schema publicado lleva `minProperties: 1`.
+    """
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"minProperties": 1})
+
+    @model_validator(mode="after")
+    def _require_at_least_one_field(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("Envía al menos un campo.")
+        return self
 
 
 class Preferencias(BaseModel):
@@ -18,10 +34,8 @@ class Preferencias(BaseModel):
     base_comparacion: ReferenciaTipo
 
 
-class PreferenciasActualizar(BaseModel):
-    """Esquema `PreferenciasActualizar` del contrato."""
-
-    model_config = ConfigDict(extra="forbid")
+class PreferenciasActualizar(_PartialUpdate):
+    """Esquema `PreferenciasActualizar` del contrato (`minProperties: 1`)."""
 
     notif_consumo: bool = Field(default=None)
     notif_consejos: bool = Field(default=None)
@@ -57,10 +71,8 @@ class UsuarioCrear(BaseModel):
     telefono: str | None = Field(default=None)
 
 
-class UsuarioActualizar(BaseModel):
-    """Esquema `UsuarioActualizar` del contrato."""
-
-    model_config = ConfigDict(extra="forbid")
+class UsuarioActualizar(_PartialUpdate):
+    """Esquema `UsuarioActualizar` del contrato (`minProperties: 1`)."""
 
     nombre_completo: str = Field(default=None, min_length=1)
     telefono: str | None = Field(default=None)

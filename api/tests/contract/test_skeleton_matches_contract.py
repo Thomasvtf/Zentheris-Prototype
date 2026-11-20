@@ -33,8 +33,20 @@ API_DIR = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = API_DIR.parent / "docs/api/zentheris-api.yaml"
 # Componentes con otro nombre en el código.
 NAME_MAP = {"ErrorResponse": "Error"}
-KEEP = ("type", "format", "enum", "minimum", "maximum", "exclusiveMinimum", "minLength",
-        "maxLength", "minItems", "maxItems", "pattern", "additionalProperties")
+KEEP = (
+    "type",
+    "format",
+    "enum",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "minLength",
+    "maxLength",
+    "minItems",
+    "maxItems",
+    "pattern",
+    "additionalProperties",
+)
 
 
 @cache
@@ -52,8 +64,11 @@ def contract_components() -> dict[str, Any]:
 
 
 def nullable_components() -> set[str]:
-    return {name for name, s in contract_components().items()
-            if isinstance(s.get("type"), list) and "null" in s["type"]}
+    return {
+        name
+        for name, s in contract_components().items()
+        if isinstance(s.get("type"), list) and "null" in s["type"]
+    }
 
 
 def canon(schema: dict[str, Any], side: str) -> dict[str, Any]:
@@ -202,9 +217,36 @@ def test_schema_matches_contract(name: str) -> None:
     assert actual == expected
 
 
+# `minProperties` no entra en `canon` (KEEP): se compara aparte, esquema por esquema.
+MIN_PROPERTIES_PENDING = {
+    # TODO(actualizarPermisos): falta `minProperties: 1` en el esquema al implementar la operación.
+    "PermisosActualizar",
+}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param(
+            name,
+            marks=pytest.mark.skip(reason="TODO(actualizarPermisos)")
+            if name in MIN_PROPERTIES_PENDING
+            else (),
+        )
+        for name, schema in sorted(contract_components().items())
+        if "minProperties" in schema
+    ],
+)
+def test_min_properties_matches_contract(name: str) -> None:
+    gen_schema = generated()["components"]["schemas"][name]
+    assert gen_schema.get("minProperties") == contract_components()[name]["minProperties"]
+
+
 def test_openapi_has_no_501_and_no_fastapi_validation_schemas() -> None:
     spec = generated()
-    codes = {code for item in spec["paths"].values() for op in item.values() for code in op["responses"]}
+    codes = {
+        code for item in spec["paths"].values() for op in item.values() for code in op["responses"]
+    }
     assert "501" not in codes
     assert not {"HTTPValidationError", "ValidationError"} & set(spec["components"]["schemas"])
 
@@ -213,8 +255,27 @@ SAMPLE_ID = "00000000-0000-0000-0000-000000000001"
 SAMPLE_USER_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 
 
+# Operaciones ya implementadas (fase 3 · Usuario): no responden 501.
+IMPLEMENTED_OPERATIONS = frozenset(
+    {
+        "obtenerUsuarioActual",
+        "crearFichaUsuario",
+        "actualizarPerfil",
+        "eliminarCuenta",
+        "guardarAvatar",
+        "eliminarAvatar",
+        "obtenerPreferencias",
+        "actualizarPreferencias",
+    }
+)
+
+
 def sample_url(path: str) -> str:
     return API_PREFIX + re.sub(r"\{[^}]+\}", SAMPLE_ID, path)
+
+
+def test_implemented_operations_exist_in_contract() -> None:
+    assert IMPLEMENTED_OPERATIONS <= set(contract_operations())
 
 
 def test_unimplemented_operations_return_501_with_operation_id(
@@ -234,6 +295,8 @@ def test_unimplemented_operations_return_501_with_operation_id(
     checked = 0
     for operation_id, (method, path, op, _params) in contract_operations().items():
         if operation_id == "obtenerSalud" or op.get("requestBody") or method != "get":
+            continue
+        if operation_id in IMPLEMENTED_OPERATIONS:
             continue
         url = sample_url(path)
         if operation_id == "obtenerHistorial":
@@ -284,8 +347,16 @@ def test_malformed_body_without_token_returns_422() -> None:
     assert "WWW-Authenticate" not in response.headers
 
 
-FORBIDDEN_IN_DOMAIN = ("fastapi", "sqlmodel", "sqlalchemy", "psycopg2", "app.data",
-                       "app.routers", "app.services", "app.security")
+FORBIDDEN_IN_DOMAIN = (
+    "fastapi",
+    "sqlmodel",
+    "sqlalchemy",
+    "psycopg2",
+    "app.data",
+    "app.routers",
+    "app.services",
+    "app.security",
+)
 
 
 def test_domain_is_pure() -> None:

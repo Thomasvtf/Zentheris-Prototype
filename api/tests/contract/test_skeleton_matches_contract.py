@@ -11,13 +11,23 @@ import re
 from functools import cache
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.main import API_PREFIX, create_app
+from tests.helpers.auth import (
+    auth_header,
+    install_fake_memberships,
+    install_test_jwks,
+    make_membership_row,
+    make_test_settings,
+    make_token,
+    override_db_session,
+)
 
 API_DIR = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = API_DIR.parent / "docs/api/zentheris-api-v0.2.5.yaml"
@@ -199,18 +209,79 @@ def test_openapi_has_no_501_and_no_fastapi_validation_schemas() -> None:
     assert not {"HTTPValidationError", "ValidationError"} & set(spec["components"]["schemas"])
 
 
-def test_unimplemented_operations_return_501_with_operation_id() -> None:
-    client = TestClient(create_app(Settings(_env_file=None)))
-    sample = "00000000-0000-0000-0000-000000000001"
+SAMPLE_ID = "00000000-0000-0000-0000-000000000001"
+SAMPLE_USER_ID = UUID("00000000-0000-0000-0000-0000000000aa")
+
+
+def sample_url(path: str) -> str:
+    return API_PREFIX + re.sub(r"\{[^}]+\}", SAMPLE_ID, path)
+
+
+def test_unimplemented_operations_return_501_with_operation_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Con token válido y membresía de administrador, los guardias pasan y responde el servicio."""
+    app = create_app(Settings(_env_file=None))
+    app.dependency_overrides[get_settings] = make_test_settings
+    install_test_jwks(monkeypatch)
+    override_db_session(app)
+    install_fake_memberships(
+        monkeypatch,
+        [make_membership_row(SAMPLE_USER_ID, UUID(SAMPLE_ID), rol="administrador")],
+    )
+    client = TestClient(app)
+    headers = auth_header(make_token(SAMPLE_USER_ID))
+    checked = 0
     for operation_id, (method, path, op, _params) in contract_operations().items():
         if operation_id == "obtenerSalud" or op.get("requestBody") or method != "get":
             continue
-        url = API_PREFIX + re.sub(r"\{[^}]+\}", sample, path)
+        url = sample_url(path)
         if operation_id == "obtenerHistorial":
             url += "?periodo=dia"
-        response = client.get(url)
+        response = client.get(url, headers=headers)
         assert response.status_code == 501, operation_id
         assert response.json() == {"detail": f"TODO({operation_id})"}
+        checked += 1
+    assert checked > 0
+
+
+def test_operations_without_token_return_401() -> None:
+    """Sin token, toda operación salvo `obtenerSalud` responde 401 antes de validar la entrada.
+
+    Salvo un cuerpo que no es JSON válido: FastAPI lo lee antes de las dependencias y
+    responde 422 `VALIDACION` (ver `test_malformed_body_without_token_returns_422`).
+    """
+    app = create_app(Settings(_env_file=None))
+    app.dependency_overrides[get_settings] = make_test_settings
+    client = TestClient(app)
+    checked = 0
+    for operation_id, (method, path, op, _params) in contract_operations().items():
+        if operation_id == "obtenerSalud":
+            continue
+        body = {} if op.get("requestBody") else None
+        response = client.request(method.upper(), sample_url(path), json=body)
+        assert response.status_code == 401, operation_id
+        assert response.headers.get("WWW-Authenticate") == "Bearer", operation_id
+        checked += 1
+    assert checked == len(contract_operations()) - 1
+
+
+def test_malformed_body_without_token_returns_422() -> None:
+    """Documenta la excepción al 401: un cuerpo que no es JSON se rechaza antes de autenticar."""
+    app = create_app(Settings(_env_file=None))
+    app.dependency_overrides[get_settings] = make_test_settings
+    client = TestClient(app)
+    method, path, op, _params = contract_operations()["crearFichaUsuario"]
+    assert method == "post" and op.get("requestBody")
+    response = client.request(
+        method.upper(),
+        sample_url(path),
+        content=b'{"nombre_completo": ',
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert response.json()["codigo"] == "VALIDACION"
+    assert "WWW-Authenticate" not in response.headers
 
 
 FORBIDDEN_IN_DOMAIN = ("fastapi", "sqlmodel", "sqlalchemy", "psycopg2", "app.data",

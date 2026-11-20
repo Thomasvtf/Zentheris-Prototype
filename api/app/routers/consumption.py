@@ -6,7 +6,7 @@ Solo valida la entrada y llama al servicio (api/CLAUDE.md).
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.errors import error_responses
 from app.schemas.consumption import (
@@ -16,7 +16,12 @@ from app.schemas.consumption import (
     FuentesDatos,
     Historial,
 )
-from app.security.dependencies import CurrentUser
+from app.security.dependencies import (
+    CurrentMembership,
+    CurrentUser,
+    Membership,
+    require_permission,
+)
 from app.services import consumption as service
 
 router = APIRouter(tags=["Consumo"])
@@ -29,7 +34,11 @@ router = APIRouter(tags=["Consumo"])
     response_model=ConsumoActualHogar,
     responses=error_responses(401, 403, 404),
 )
-def get_current_consumption(hogar_id: UUID, user: CurrentUser) -> ConsumoActualHogar:
+def get_current_consumption(
+    hogar_id: UUID,
+    user: CurrentUser,
+    member: Annotated[Membership, Depends(require_permission("ver_consumo_actual"))],
+) -> ConsumoActualHogar:
     """Cards del Panel principal (RN-XI-01, RN-XI-03, RN-XI-04, RN-XI-08)."""
     return service.get_current_consumption(user.id, hogar_id)
 
@@ -41,7 +50,11 @@ def get_current_consumption(hogar_id: UUID, user: CurrentUser) -> ConsumoActualH
     response_model=ConsumoZonas,
     responses=error_responses(401, 403, 404),
 )
-def get_zones_consumption(hogar_id: UUID, user: CurrentUser) -> ConsumoZonas:
+def get_zones_consumption(
+    hogar_id: UUID,
+    user: CurrentUser,
+    member: Annotated[Membership, Depends(require_permission("ver_consumo_actual"))],
+) -> ConsumoZonas:
     """Participación y estado de cada zona en la última hora completa (RN-XI-05, RN-XII-05, RN-XII-06)."""
     return service.get_zones_consumption(user.id, hogar_id)
 
@@ -53,7 +66,12 @@ def get_zones_consumption(hogar_id: UUID, user: CurrentUser) -> ConsumoZonas:
     response_model=ConsumoZonaDetalle,
     responses=error_responses(401, 403, 404),
 )
-def get_zone_consumption(hogar_id: UUID, zona_id: UUID, user: CurrentUser) -> ConsumoZonaDetalle:
+def get_zone_consumption(
+    hogar_id: UUID,
+    zona_id: UUID,
+    user: CurrentUser,
+    member: Annotated[Membership, Depends(require_permission("ver_consumo_actual"))],
+) -> ConsumoZonaDetalle:
     """Zona individual (RN-XI-05, RN-XI-06, RN-XII-07)."""
     return service.get_zone_consumption(user.id, hogar_id, zona_id)
 
@@ -68,6 +86,7 @@ def get_zone_consumption(hogar_id: UUID, zona_id: UUID, user: CurrentUser) -> Co
 def get_history(
     hogar_id: UUID,
     user: CurrentUser,
+    member: Annotated[Membership, Depends(require_permission("ver_historial"))],
     periodo: Annotated[Literal["dia", "semana", "mes"], Query()],
     zona_id: Annotated[UUID | None, Query()] = None,
 ) -> Historial:
@@ -82,6 +101,6 @@ def get_history(
     response_model=FuentesDatos,
     responses=error_responses(401, 404),
 )
-def get_data_sources(hogar_id: UUID, user: CurrentUser) -> FuentesDatos:
+def get_data_sources(hogar_id: UUID, user: CurrentUser, member: CurrentMembership) -> FuentesDatos:
     """Fuente principal y sensores, solo lectura (RN-III-03, RN-XVI-06)."""
     return service.get_data_sources(user.id, hogar_id)

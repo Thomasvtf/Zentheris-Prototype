@@ -1,5 +1,5 @@
 /**
- * Cliente HTTP de la API de Zentheris (contrato docs/api/zentheris-api-v0.2.5.yaml).
+ * Cliente HTTP de la API de Zentheris (contrato docs/api/zentheris-api-v0.2.6.yaml).
  *
  * - Base: EXPO_PUBLIC_API_URL + /api/v1 (servers del contrato).
  * - Token: el JWT de Supabase Auth, que entrega state/session.ts con setAccessTokenProvider.

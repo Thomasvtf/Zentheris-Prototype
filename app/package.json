@@ -53,7 +53,7 @@
     "lint": "expo lint",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "generate:api-types": "openapi-typescript ../docs/api/zentheris-api-v0.2.5.yaml -o src/api/schema.d.ts",
+    "generate:api-types": "openapi-typescript ../docs/api/zentheris-api-v0.2.6.yaml -o src/api/schema.d.ts",
     "generate:tokens": "node scripts/generate-tokens.mjs"
   },
   "private": true,

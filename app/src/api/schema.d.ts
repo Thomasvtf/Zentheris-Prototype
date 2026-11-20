@@ -787,7 +787,8 @@ export interface paths {
         /**
          * Marcar como leídas las alertas visibles al entrar (RN-XIV-03, RN-VI-05)
          * @description Registra `leida_en` solo para esta persona. Los ids que ya estaban leídos o que no
-         *     pertenecen al usuario se ignoran.
+         *     pertenecen al usuario se ignoran. Exige `permiso_recibir_alertas`: sin él responde `403`
+         *     con `SIN_PERMISO_RECIBIR_ALERTAS`.
          */
         post: operations["marcarAlertasLeidas"];
         delete?: never;
@@ -858,7 +859,8 @@ export interface components {
              *     `CORREO_NO_COINCIDE`, `ZONAS_NO_PERMITIDAS`, `ZONAS_BASICAS_FALTANTES`,
              *     `CANTIDAD_ZONAS_INVALIDA`, `ZONAS_DUPLICADAS`, `VIGENCIA_NO_POSTERIOR`,
              *     `CONTRASENA_ACTUAL_INCORRECTA`, `CONTRASENA_NO_CUMPLE_REGLAS`,
-             *     `CONTRASENA_IGUAL_A_ACTUAL`, `ADMIN_UNICO_MIEMBRO`, `BACKFILL_FALLIDO`, `VALIDACION`.
+             *     `CONTRASENA_IGUAL_A_ACTUAL`, `ADMIN_UNICO_MIEMBRO`, `BACKFILL_FALLIDO`, `VALIDACION`,
+             *     `NO_AUTENTICADO`, `NO_ENCONTRADO`, `ERROR_INTERNO`.
              */
             codigo: components["schemas"]["CodigoError"];
             /** @description Descripción técnica; el texto para el usuario lo resuelve la app con `codigo`. */
@@ -872,7 +874,7 @@ export interface components {
          * @description Códigos de error del contrato. Cada uno tiene texto en el catálogo v1 (`error.<codigo en minúsculas>`), salvo FICHA_NO_CREADA y FICHA_EXISTENTE, que son internos. LIMITE_MIEMBROS tiene dos textos (invitar y aceptar).
          * @enum {string}
          */
-        CodigoError: "FICHA_NO_CREADA" | "FICHA_EXISTENTE" | "NO_ES_ADMINISTRADOR" | "SIN_PERMISO_VER_CONSUMO" | "SIN_PERMISO_VER_HISTORIAL" | "SIN_PERMISO_RECIBIR_ALERTAS" | "SIN_PERMISO_MODIFICAR_METAS" | "ADMIN_DEBE_TRANSFERIR" | "MEMBRESIA_ACTIVA_EXISTENTE" | "LIMITE_MIEMBROS" | "INVITACION_EXPIRADA" | "INVITACION_NO_PENDIENTE" | "INVITACION_PENDIENTE_EXISTENTE" | "YA_ES_MIEMBRO" | "CORREO_NO_COINCIDE" | "ZONAS_NO_PERMITIDAS" | "ZONAS_BASICAS_FALTANTES" | "CANTIDAD_ZONAS_INVALIDA" | "ZONAS_DUPLICADAS" | "VIGENCIA_NO_POSTERIOR" | "CONTRASENA_ACTUAL_INCORRECTA" | "CONTRASENA_NO_CUMPLE_REGLAS" | "CONTRASENA_IGUAL_A_ACTUAL" | "ADMIN_UNICO_MIEMBRO" | "BACKFILL_FALLIDO" | "VALIDACION";
+        CodigoError: "FICHA_NO_CREADA" | "FICHA_EXISTENTE" | "NO_ES_ADMINISTRADOR" | "SIN_PERMISO_VER_CONSUMO" | "SIN_PERMISO_VER_HISTORIAL" | "SIN_PERMISO_RECIBIR_ALERTAS" | "SIN_PERMISO_MODIFICAR_METAS" | "ADMIN_DEBE_TRANSFERIR" | "MEMBRESIA_ACTIVA_EXISTENTE" | "LIMITE_MIEMBROS" | "INVITACION_EXPIRADA" | "INVITACION_NO_PENDIENTE" | "INVITACION_PENDIENTE_EXISTENTE" | "YA_ES_MIEMBRO" | "CORREO_NO_COINCIDE" | "ZONAS_NO_PERMITIDAS" | "ZONAS_BASICAS_FALTANTES" | "CANTIDAD_ZONAS_INVALIDA" | "ZONAS_DUPLICADAS" | "VIGENCIA_NO_POSTERIOR" | "CONTRASENA_ACTUAL_INCORRECTA" | "CONTRASENA_NO_CUMPLE_REGLAS" | "CONTRASENA_IGUAL_A_ACTUAL" | "ADMIN_UNICO_MIEMBRO" | "BACKFILL_FALLIDO" | "VALIDACION" | "NO_AUTENTICADO" | "NO_ENCONTRADO" | "ERROR_INTERNO";
         /**
          * @description Calculado al consultar (RN-XI-02). `sin_referencia` es solo respaldo (RN-XI-03);
          *     `sin_datos` indica que falta la lectura de la última hora completa.
@@ -1309,7 +1311,7 @@ export interface components {
         };
     };
     responses: {
-        /** @description Token ausente, inválido o vencido. */
+        /** @description Token ausente, inválido o vencido (`codigo` = `NO_AUTENTICADO`). */
         NoAutenticado: {
             headers: {
                 [name: string]: unknown;
@@ -1327,7 +1329,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description El recurso no existe o el usuario no tiene membresía activa en ese hogar. */
+        /** @description El recurso no existe o el usuario no tiene membresía activa en ese hogar (`codigo` = `NO_ENCONTRADO`). */
         NoEncontrado: {
             headers: {
                 [name: string]: unknown;
@@ -1354,7 +1356,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Error interno. En el onboarding, `BACKFILL_FALLIDO`; no queda ningún dato creado. */
+        /** @description Error interno (`codigo` = `ERROR_INTERNO`). En `POST /onboarding` el código es `BACKFILL_FALLIDO` y no queda ningún dato creado. */
         ErrorServidor: {
             headers: {
                 [name: string]: unknown;
@@ -1397,6 +1399,15 @@ export interface operations {
                         /** @enum {string} */
                         estado: "ok";
                     };
+                };
+            };
+            /** @description Solicitud no válida. */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -1680,6 +1691,7 @@ export interface operations {
             };
             401: components["responses"]["NoAutenticado"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     listarZonas: {
@@ -1706,6 +1718,7 @@ export interface operations {
             };
             401: components["responses"]["NoAutenticado"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     crearHogarOnboarding: {
@@ -1758,6 +1771,7 @@ export interface operations {
             };
             401: components["responses"]["NoAutenticado"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     actualizarPermisos: {
@@ -1814,6 +1828,7 @@ export interface operations {
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
             409: components["responses"]["Conflicto"];
+            422: components["responses"]["Validacion"];
         };
     };
     transferirAdministracion: {
@@ -1842,6 +1857,7 @@ export interface operations {
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
             409: components["responses"]["Conflicto"];
+            422: components["responses"]["Validacion"];
         };
     };
     salirDelHogar: {
@@ -1865,6 +1881,7 @@ export interface operations {
             401: components["responses"]["NoAutenticado"];
             404: components["responses"]["NoEncontrado"];
             409: components["responses"]["Conflicto"];
+            422: components["responses"]["Validacion"];
         };
     };
     crearInvitacion: {
@@ -1921,6 +1938,7 @@ export interface operations {
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
             409: components["responses"]["Conflicto"];
+            422: components["responses"]["Validacion"];
         };
     };
     listarInvitacionesRecibidas: {
@@ -1972,6 +1990,7 @@ export interface operations {
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
             409: components["responses"]["Conflicto"];
+            422: components["responses"]["Validacion"];
         };
     };
     aceptarInvitacion: {
@@ -1998,6 +2017,7 @@ export interface operations {
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
             409: components["responses"]["Conflicto"];
+            422: components["responses"]["Validacion"];
         };
     };
     rechazarInvitacion: {
@@ -2022,6 +2042,7 @@ export interface operations {
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
             409: components["responses"]["Conflicto"];
+            422: components["responses"]["Validacion"];
         };
     };
     obtenerConsumoActual: {
@@ -2047,6 +2068,7 @@ export interface operations {
             401: components["responses"]["NoAutenticado"];
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     obtenerConsumoZonas: {
@@ -2072,6 +2094,7 @@ export interface operations {
             401: components["responses"]["NoAutenticado"];
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     obtenerConsumoZona: {
@@ -2098,6 +2121,7 @@ export interface operations {
             401: components["responses"]["NoAutenticado"];
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     obtenerHistorial: {
@@ -2152,6 +2176,7 @@ export interface operations {
             };
             401: components["responses"]["NoAutenticado"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     obtenerMeta: {
@@ -2176,6 +2201,7 @@ export interface operations {
             };
             401: components["responses"]["NoAutenticado"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     crearMeta: {
@@ -2230,6 +2256,7 @@ export interface operations {
             };
             401: components["responses"]["NoAutenticado"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     crearTarifa: {
@@ -2292,6 +2319,7 @@ export interface operations {
             401: components["responses"]["NoAutenticado"];
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     contarAlertasNoLeidas: {
@@ -2319,6 +2347,7 @@ export interface operations {
             401: components["responses"]["NoAutenticado"];
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     marcarAlertasLeidas: {
@@ -2377,6 +2406,7 @@ export interface operations {
             };
             401: components["responses"]["NoAutenticado"];
             404: components["responses"]["NoEncontrado"];
+            422: components["responses"]["Validacion"];
         };
     };
     actualizarEstadoConsejo: {

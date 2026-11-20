@@ -24,7 +24,7 @@ Dependencias permitidas entre capas: routers → services → domain y data. El 
 
 ## Reglas
 
-- Esquemas Pydantic **iguales** al contrato 0.2.5: mismos nombres, tipos y nulos. Una prueba de contrato compara cada respuesta con el YAML.
+- Esquemas Pydantic **iguales** al contrato 0.2.6: mismos nombres, tipos y nulos. Una prueba de contrato compara cada respuesta con el YAML.
 - Errores: `{codigo, mensaje, detalles}` con `codigo` del enum `CodigoError`. 404 si no hay membresía; 403 con el código exacto si falta el permiso.
 - Simulador: porta `docs/datos/referencia/…zip › codigo/zentheris_sim/` con sus 59 pruebas. Cambia solo lo necesario para leer los perfiles desde la tabla.
 - Motor de estados: debe reproducir `docs/datos/motor_estados_ref.py` y pasar los 13 escenarios de `test_escenarios_umbrales.py`.

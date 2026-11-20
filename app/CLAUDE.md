@@ -12,7 +12,7 @@ src/screens/      <ScreenName>/<ScreenName>.tsx + use<ScreenName>Data.ts
 src/components/   los 34 del sistema de diseño (31 + `ConsumptionGauge`, `ConsumptionRing` y `LineChart`), con el mismo nombre y props que docs/diseno/componentes/index.d.ts
 src/theme/        tokens.ts GENERADO desde docs/diseno/tokens.json (script, no a mano) + fonts.ts
 src/texts/        catalogo.es-CO.json (copia de docs/textos, conserva su nombre) + t(clave, vars) + plurales zero/one/other
-src/api/          cliente HTTP con el JWT de Supabase + tipos GENERADOS desde docs/api/zentheris-api-v0.2.5.yaml
+src/api/          cliente HTTP con el JWT de Supabase + tipos GENERADOS desde docs/api/zentheris-api-v0.2.6.yaml
 src/format/       formatNumber, formatCOP, formatPercent, relativeTime (es-CO, RN-XII-08)
 src/state/        React Query (datos del servidor) y sesión de Supabase
 ```

@@ -20,7 +20,7 @@ Este sistema es la base reutilizable (tokens, tipografía, componentes, íconos,
 - «Costo estimado» y «Proyección al cierre» son estimaciones; avisar que pueden no incluir subsidios ni otros cobros.
 - «Crítico», nunca «sobreconsumo».
 - Zonas (orden alfabético): Baño, Cocina, Cuarto de servicio, Dormitorio, Garaje, Lavandería, Oficina, Sala, Terraza.
-- Los textos por estado están **fijados por variante** del componente; no se escriben a mano en cada pantalla. Todo el microcopy de este sistema es **propuesto** (microcopy de trabajo): el catálogo definitivo de textos está pendiente.
+- Los textos por estado están **fijados por variante** del componente; no se escriben a mano en cada pantalla. Los textos definitivos salen de `docs/textos/catalogo.es-CO.json` (catálogo v1 aprobado el 02/11/2026); los de las fichas son referencia de diseño.
 
 ## Color
 
@@ -62,7 +62,7 @@ Los contrastes citados son indicadores calculados con la fórmula WCAG; no certi
 - Ejes y horas en `data-s-mono-regular-12` con `z-color-chart-label`; leyendas en Body XS.
 - Body 10 (`body-xs-*-10`): solo etiquetas secundarias ya existentes (barra inferior). Evitarlo en textos nuevos; validar legibilidad en dispositivo. Nunca 8 px.
 - El token primitivo `z-font-size-data-xl` vale 36 pero el KPI ratificado es 32 (`data-xl-32`). Usar el estilo, no la primitiva.
-- **Satoshi no se incluye en este sistema** (licencia ITF FFL: no se sube a servidores públicos). Cada persona la descarga de fontshare.com. En estas vistas previas los títulos caen a Inter si Satoshi no está instalada en el equipo. Inter y JetBrains Mono se cargan de Google Fonts (SIL OFL 1.1).
+- **Satoshi no se incluye en este sistema** (licencia ITF FFL: no se sube a servidores públicos). Cada persona la descarga de fontshare.com. En estas vistas previas los títulos caen a Inter si Satoshi no está instalada en el equipo. Inter y JetBrains Mono se cargan de Google Fonts (SIL OFL 1.1). Para el código: cargar Satoshi desde `app/assets/fonts/satoshi/` (fuera de git), con respaldo en Inter (DC-06).
 - En React Native, `lineHeight` va en px (tamaño × interlineado) y las fuentes se cargan con `expo-font`; límite de escalado ≈ 1,3 en cifras grandes *(propuesto)*.
 
 ## Espacio, radios y medidas
@@ -87,22 +87,28 @@ Los contrastes citados son indicadores calculados con la fórmula WCAG; no certi
 - Biblioteca: **Lucide** (ISC), trazo 2 px, extremos y uniones redondeados. Escala 16 · 20 · 24 · 32 ligada al contenedor (ver el componente `Icon`). En código, `lucide-react-native`.
 - Los nombres Lucide del proyecto son **«probables»**: en Figma los glifos están aplanados. Verificar cada nombre en lucide.dev antes de codificarlo. Los trazos de las vistas previas de este sistema son una reconstrucción aproximada.
 - Estados Default · Active · Disabled solo en íconos que se tocan: `z-color-text-muted` · `z-color-accent-primary` · `z-color-text-disabled`.
-- Navegación inferior canónica: Principal = casa (opción 1), Historial = opción 3, Zonas = cuadrícula (opción 2), Consejos = bombilla (opción 1), Configuración = engranaje. **Por confirmar:** en la hoja de Figma la opción 3 de Historial es un reloj (`clock`); el glifo `history` (reloj con flecha) es la opción 1. Se usa la opción 3 tal como dice la regla.
-- Zonas sin ícono aprobado: Lavandería, Terraza, Garaje, Cuarto de servicio (candidatos sin aprobar: washing-machine, fence o sun, car, door-closed o house).
-- v4.5 (02/11/2026): las pantallas para revisión usan los candidatos washing-machine, fence, car y door-closed (Figma `Icono/Zona-boton/*` 4086:470–524 e `Icono/Zona/*` 4045:303–323). Siguen **sin aprobar**.
-- Íconos nuevos propuestos (Figma `Icono/Sistema/*` 4109:372–407): chevron-down (Desplegar), lock (Candado), mail (Correo), image (Imagen), log-out (Salir), arrow-right-left (Transferir), circle-pause (Pausa), user-plus (Usuario-agregar). La campana suma la variante «Con no leídas» (punto acento, no rojo).
+- Navegación inferior canónica: Principal = casa (opción 1), Historial = opción 3, Zonas = cuadrícula (opción 2), Consejos = bombilla (opción 1), Configuración = engranaje. Historial usa `clock` (DC-13): en la hoja de Figma la opción 3 es un reloj; el glifo `history` (reloj con flecha) es la opción 1 y no se usa.
+- Zonas: íconos aprobados para Lavandería (`washing-machine`), Terraza (`fence`), Garaje (`car`) y Cuarto de servicio (`door-closed`) (D15, DC-14).
+- v4.5 (02/11/2026): las pantallas para revisión usan los candidatos washing-machine, fence, car y door-closed (Figma `Icono/Zona-boton/*` 4086:470–524 e `Icono/Zona/*` 4045:303–323). Aprobados (D15, DC-14).
+- Íconos nuevos, aprobados el 07/11/2026 (D-SD-04) (Figma `Icono/Sistema/*` 4109:372–407): chevron-down (Desplegar), lock (Candado), mail (Correo), image (Imagen), log-out (Salir), arrow-right-left (Transferir), circle-pause (Pausa), user-plus (Usuario-agregar). La campana suma la variante «Con no leídas» (punto acento, no rojo).
 
 ## Logo
 
 `zentheris-logo-hoja.png` (grupo Logos): hoja verde con rayo amarillo. Usar el archivo original; no redibujarlo, recolorearlo ni usarlo como ícono. El amarillo del rayo es de la marca y no habilita el amarillo en la interfaz fuera de severidad.
 
-## Componentes v4.5 (propuestos, 02/11/2026)
+## Componentes v4.5 (aprobados, D-SD-04, 07/11/2026)
 
-Doce componentes nuevos para las pantallas de la v4.5 §7.1, en Figma (página Components, en su sección) y aquí: `Select`, `OptionItem`, `Requirement`, `ZoneTile`, `StepIndicator`, `ActionItem`, `BottomSheet`, `ConfirmDialog`, `DataSourceRow`, `PendingInvite`, `InvitationCard` y `PeakMarker`. Todos usan solo tokens existentes y son **propuestos**: no están aprobados ni implementados en la app.
+Doce componentes nuevos para las pantallas de la v4.5 §7.1, en Figma (página Components, en su sección) y aquí: `Select`, `OptionItem`, `Requirement`, `ZoneTile`, `StepIndicator`, `ActionItem`, `BottomSheet`, `ConfirmDialog`, `DataSourceRow`, `PendingInvite`, `InvitationCard` y `PeakMarker`. Todos usan solo tokens existentes y están **aprobados** (D-SD-04, 07/11/2026); aún no están implementados en la app.
 
 - Las hojas inferiores y los selectores son propios y comunes a Android e iOS (no se usan menús ni ruedas nativas).
 - Las pantallas nuevas, las actualizadas y los estados están en la copia de trabajo de Figma, página Pantallas, secciones «v4.5 · 7.1 / 7.2 / 7.3 … (para revisión)». Son propuesta de diseño: no demuestran funcionamiento.
-- Todo el microcopy de esas pantallas es de trabajo; el catálogo definitivo de textos sigue pendiente (v4.5 §10).
+- Los textos definitivos de esas pantallas salen del catálogo v1 (`docs/textos/`).
+
+## Notas vigentes
+
+- **Tokens:** usa `tokens.json` y `tokens.css` de esta carpeta. Los del kit v3.2 (`tokens.ts` del 30/10) no traen `chart-peak` y están desactualizados (DC-58).
+- **Formato y helpers:** `formatNumber`, `formatCOP`, `formatPercent` y `DECIMALES` de `index.d.ts` son la firma que debe reproducir `app/src/format/`.
+- **Ícono `triangle-alert`:** el nombre canónico actual es `triangle-exclamation-point` (DC-14); usar el export que traiga la versión instalada de `lucide-react-native`.
 
 
 ---

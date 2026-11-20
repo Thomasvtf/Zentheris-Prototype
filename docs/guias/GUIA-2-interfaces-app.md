@@ -1,6 +1,6 @@
 # Guía 2 · Construir las interfaces de la app (Expo + React Native)
 
-Versión 2 · 03/11/2026 (actualizada el 10/11/2026: carpetas en inglés, nombres de ramas y orden de las librerías). Para el equipo que programa las pantallas **y para Claude Code**, que escribirá la mayor parte del código. Fuentes: reglas v4.9, contrato 0.2.5, catálogo de textos v1, sistema de diseño (kit v3.2 y artifact «Zentheris»), Figma (copia `RD1IQ5L1OmUeMxteRimvMe`, flujos Administrador y Miembro) y el prototipo `Thomasvtf/Zentheris-Prototype` (lectura estática del zip de `main`, 03/11/2026; **no se ejecutó**).
+Versión 2 · 03/11/2026 (actualizada el 10/11/2026: carpetas en inglés, nombres de ramas y orden de las librerías). Para el equipo que programa las pantallas **y para Claude Code**, que escribirá la mayor parte del código. Fuentes: reglas v4.9, contrato 0.2.6, catálogo de textos v1, sistema de diseño (kit v3.2 y artifact «Zentheris»), Figma (copia `RD1IQ5L1OmUeMxteRimvMe`, flujos Administrador y Miembro) y el prototipo `Thomasvtf/Zentheris-Prototype` (lectura estática del zip de `main`, 03/11/2026; **no se ejecutó**).
 
 ## 0. Cómo usar esta guía
 
@@ -9,11 +9,11 @@ Versión 2 · 03/11/2026 (actualizada el 10/11/2026: carpetas en inglés, nombre
 | Persona del equipo | Lee los puntos 1 a 3 para entender qué se construye y por qué. Usa los puntos 8 y 9 para revisar lo que entregue Claude Code. |
 | Claude Code | Sigue `app/CLAUDE.md` (en la carpeta: `11_guias-de-desarrollo/claude-code/app/CLAUDE.md`; reglas permanentes) y esta guía como especificación. Las rutas `docs/…` son las del repositorio; en la carpeta `Archivos_Zentheris` los mismos documentos están en las carpetas 01 a 09 (la tabla de correspondencia está en `MANIFIESTO.md`, solo en la carpeta). |
 
-Equivalencia de rutas: `Archivos_Zentheris/01_reglas-y-modelo/reglas-de-negocio-v4.9.md` = `docs/reglas/…`; contrato = `docs/api/…`; catálogo = `docs/textos/…`; tokens y fichas = `docs/diseno/…` (leer primero `docs/diseno/CORRECCIONES-LEER-PRIMERO.md`).
+Equivalencia de rutas: `Archivos_Zentheris/01_reglas-y-modelo/reglas-de-negocio-v4.9.md` = `docs/reglas/…`; contrato = `docs/api/…`; catálogo = `docs/textos/…`; tokens y fichas = `docs/diseno/…`.
 
 ## Arquitectura de la app (DC-56)
 
-- **Organización por funcionalidad** (una carpeta por pantalla) con cuatro capas: **rutas** (expo-router, solo navegan) → **pantallas** (vista) → **hooks de datos** (React Query: caché, reintentos y estados) → **cliente API tipado**, generado desde el contrato 0.2.5.
+- **Organización por funcionalidad** (una carpeta por pantalla) con cuatro capas: **rutas** (expo-router, solo navegan) → **pantallas** (vista) → **hooks de datos** (React Query: caché, reintentos y estados) → **cliente API tipado**, generado desde el contrato 0.2.6.
 - **Componentes del sistema de diseño** solo de presentación: reciben datos ya calculados (estado, valor y textos) y no llaman a la API.
 - **Estado:** datos del servidor en React Query; sesión en Supabase Auth (`expo-secure-store`). Sin Redux.
 - **Textos y formato:** capas transversales (`texts/`, `format/`). El backend nunca envía textos de estado formateados.
@@ -24,7 +24,7 @@ Equivalencia de rutas: `Archivos_Zentheris/01_reglas-y-modelo/reglas-de-negocio-
 Lee solo esto:
 
 1. `01_reglas-y-modelo/reglas-de-negocio-v4.9.md`, sección 6 (pantallas) y las reglas de la pantalla que vas a hacer.
-2. `03_api/zentheris-api-v0.2.5.yaml`: el endpoint de tu pantalla (ver la tabla del punto 3).
+2. `03_api/zentheris-api-v0.2.6.yaml`: el endpoint de tu pantalla (ver la tabla del punto 3).
 3. `06_catalogo-de-textos/catalogo-textos-v1/app/catalogo.es-CO.json`: **todos** los textos salen de aquí.
 4. El sistema de diseño: tokens (`docs/diseno/tokens.json` y `tokens.css`; en la carpeta: `05_sistema-de-diseno/tokens-vigentes-2026-11-03/`) y la ficha del componente que vas a usar.
 5. La pantalla en Figma, en el flujo Administrador o Miembro, solo como referencia visual.
@@ -46,7 +46,7 @@ Lee solo esto:
 
 ## 3. Mapa pantalla → endpoint → componentes
 
-| Pantalla (reglas §6) | Endpoint (contrato 0.2.5) | Componentes del sistema de diseño | Reglas clave |
+| Pantalla (reglas §6) | Endpoint (contrato 0.2.6) | Componentes del sistema de diseño | Reglas clave |
 |---|---|---|---|
 | Inicio neutral, Inicio de sesión, Registro | Supabase Auth (sin API) + `POST /usuarios/me` en el primer acceso | Button, TextField, Requirement | RN-IX-01 a IX-04 |
 | Recuperar y Restablecer contraseña; Revisa tu correo | Supabase Auth | TextField, Requirement, InlineNotice | RN-IX-03, IX-04 |
@@ -78,7 +78,7 @@ app/
     components/          # los 31 del sistema de diseño, con los mismos nombres (Metric, StatusBadge…)
     theme/               # tokens.ts generado desde tokens.json (no a mano), fonts.ts
     texts/               # catalogo.es-CO.json + t() + plurales
-    api/                 # cliente HTTP con el JWT, tipos generados desde el contrato 0.2.5
+    api/                 # cliente HTTP con el JWT, tipos generados desde el contrato 0.2.6
     format/              # formatNumber, formatCOP, formatPercent, relativeTime (es-CO)
     state/               # React Query (servidor) y sesión (Supabase)
   assets/fonts/          # Inter y JetBrains Mono; satoshi/ va en .gitignore (DC-06)

@@ -1,6 +1,6 @@
 # PendingInvite
 
-Invitación pendiente en Miembros del hogar; **solo la ve el administrador** (RN-X-08, N6). Figma: `Configuracion/Invitacion-pendiente` (4113:520). **Propuesto v4.5**.
+Invitación pendiente en Miembros del hogar; **solo la ve el administrador** (RN-X-08, N6). Figma: `Configuracion/Invitacion-pendiente` (4113:520). **Aprobado v4.5** (D-SD-04, 07/11/2026).
 
 | Prop | Tipo | Notas |
 |---|---|---|

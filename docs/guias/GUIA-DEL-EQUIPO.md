@@ -24,7 +24,7 @@ Esta guía explica, paso a paso, cómo trabajar en Zentheris con la estructura n
 **Tres palabras que se repiten:**
 - **API** o **back:** el servidor en Python que guarda y calcula los datos. Vive en `api/`.
 - **App** o **front:** la aplicación del celular. Vive en `app/`.
-- **Contrato:** el archivo `docs/api/zentheris-api-v0.2.5.yaml`. Dice qué direcciones (endpoints) tiene la API, qué recibe y qué devuelve cada una. La API y la app lo siguen al pie de la letra.
+- **Contrato:** el archivo `docs/api/zentheris-api-v0.2.6.yaml`. Dice qué direcciones (endpoints) tiene la API, qué recibe y qué devuelve cada una. La API y la app lo siguen al pie de la letra.
 
 ---
 
@@ -588,7 +588,7 @@ Debe decir `Ran 13 tests … OK`. Al terminar, borra `_referencia` (paso 3 de la
 
 **Dónde va cada archivo** (ejemplo: `listarConsejos`):
 ```
-docs/api/zentheris-api-v0.2.5.yaml        el contrato
+docs/api/zentheris-api-v0.2.6.yaml        el contrato
 api/app/schemas/alerts_tips.py            forma de la respuesta (ConsejosLista, Consejo)
 api/app/routers/alerts_tips.py            la dirección GET /hogares/{hogar_id}/consejos
 api/app/services/alerts_tips.py           list_tips: la lógica
@@ -599,9 +599,9 @@ docs/MAPA-DE-INTEGRACION.md               su fila
 ```
 
 **Paso a paso.**
-1. **Contrato** (solo si cambia): edita `docs/api/zentheris-api-v0.2.5.yaml` y valídalo. Desde `api/`:
+1. **Contrato** (solo si cambia): edita `docs/api/zentheris-api-v0.2.6.yaml` y valídalo. Desde `api/`:
    ```bash
-   uv run python -I ../docs/api/validar_contrato.py ../docs/api/zentheris-api-v0.2.5.yaml ../docs/textos/mensaje_codigos.es-CO.json ../docs/textos/catalogo.es-CO.json
+   uv run python -I ../docs/api/validar_contrato.py ../docs/api/zentheris-api-v0.2.6.yaml ../docs/textos/mensaje_codigos.es-CO.json ../docs/textos/catalogo.es-CO.json
    ```
    Debe terminar con `"errores": []`.
 2. **Schemas:** ajusta `api/app/schemas/<grupo>.py` con los mismos nombres, tipos y valores nulos que el contrato.
@@ -738,10 +738,10 @@ git push -u origin <tu-rama>
 |---|---|
 | [`CLAUDE.md`](../../CLAUDE.md), [`app/CLAUDE.md`](../../app/CLAUDE.md), [`api/CLAUDE.md`](../../api/CLAUDE.md) | Reglas completas del proyecto y de cada carpeta |
 | [`docs/reglas/reglas-de-negocio-v4.9.md`](../reglas/reglas-de-negocio-v4.9.md) | Qué hace la app: reglas (RN-*), tablas y pantallas |
-| [`docs/api/zentheris-api-v0.2.5.yaml`](../api/zentheris-api-v0.2.5.yaml) | El contrato de la API |
+| [`docs/api/zentheris-api-v0.2.6.yaml`](../api/zentheris-api-v0.2.6.yaml) | El contrato de la API |
 | [`docs/MAPA-DE-INTEGRACION.md`](../MAPA-DE-INTEGRACION.md) | Qué archivo atiende cada endpoint en la API y en la app |
 | [`docs/decisiones/registro-decisiones-cierre-2026-11-03.md`](../decisiones/registro-decisiones-cierre-2026-11-03.md) | Por qué se decidió cada cosa (DC-*) |
-| [`docs/diseno/CORRECCIONES-LEER-PRIMERO.md`](../diseno/CORRECCIONES-LEER-PRIMERO.md) y [`docs/diseno/componentes/`](../diseno/componentes/) | Correcciones del sistema de diseño y fichas de los componentes |
+| [`docs/diseno/componentes/`](../diseno/componentes/) | Fichas de los componentes del sistema de diseño |
 | [`docs/pruebas/matriz-pruebas-backend-v1.md`](../pruebas/matriz-pruebas-backend-v1.md) | Lista de pruebas que debe pasar la API |
 | [`docs/historias/historias-usuario-v5-mvp.md`](../historias/historias-usuario-v5-mvp.md) | Las historias de usuario del MVP |
 | [`docs/guias/GUIA-2-interfaces-app.md`](GUIA-2-interfaces-app.md) y [`docs/guias/GUIA-3-backend-y-arquitectura.md`](GUIA-3-backend-y-arquitectura.md) | Explicación más larga de la app y del back |

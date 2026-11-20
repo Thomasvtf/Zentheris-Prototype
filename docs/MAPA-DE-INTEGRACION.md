@@ -1,6 +1,6 @@
 # Mapa de integración · contrato ↔ API ↔ app
 
-Puerta de entrada de la integración (PENDIENTES #23). Una fila por operación del contrato `docs/api/zentheris-api-v0.2.5.yaml`.
+Puerta de entrada de la integración (PENDIENTES #23). Una fila por operación del contrato `docs/api/zentheris-api-v0.2.6.yaml`.
 
 **Reglas**
 - Ninguna operación sin fila; ninguna fila sin archivo en el esqueleto; ninguna pantalla sin hook; todo texto visible sale del catálogo.

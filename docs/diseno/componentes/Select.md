@@ -1,6 +1,6 @@
 # Select
 
-Campo desplegable para el operador y la vigencia de la tarifa; abre una `BottomSheet` con `OptionItem` o con la cuadrícula de mes y año. Figma: `Control/Selector` (4110:394). **Propuesto v4.5 (02/11/2026)**.
+Campo desplegable para el operador y la vigencia de la tarifa; abre una `BottomSheet` con `OptionItem` o con la cuadrícula de mes y año. Figma: `Control/Selector` (4110:394). **Aprobado v4.5** (D-SD-04, 07/11/2026).
 
 ## Propiedades
 | Prop | Tipo | Notas |

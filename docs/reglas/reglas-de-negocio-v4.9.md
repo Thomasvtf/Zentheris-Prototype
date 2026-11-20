@@ -1,6 +1,6 @@
 # **Zentheris - Reglas de Negocio y Modelo de Datos (v4.9)**
 
-**Versión 4.9 · 03/11/2026.** Fuentes: v4.8 y el registro de decisiones de cierre de pendientes del 03/11/2026 (`00_estado-y-pendientes/registro-decisiones-cierre-2026-11-03.md`, DC-01 a DC-58, tomadas con la autonomía que delegó Nicolás) y la calibración de umbrales v1 (`04_datos-simulados/calibracion-umbrales-v1/`). Fuentes de la v4.8: v4.6, pedido de Nicolás del 02/11/2026 de pintar el pico en rojo y de evitar que se confunda con «Crítico»; v4.5, revisión de Nicolás del 02/11/2026 sobre las pantallas v4.5 en Figma, v4.4, decisiones de Nicolás del 02/11/2026 sobre la propuesta v4.5 y la revisión de la v4.4, contrato API `zentheris-api` 0.2.5 (sustituye a la 0.2.4 de la v4.8), acta 04 de `perfiles_simulacion` y paquete Avance 03 (conjuntos calibrados v1.0).
+**Versión 4.9 · 03/11/2026 (reducida el 18/11/2026).** Se retiraron, sin cambiar ninguna regla, §7.2, §9.1 a 9.4, «Parte 2: Explicación sencilla» y «Resumen de cambios frente al diccionario v3.1»; el texto completo está en `_historico/reglas-v4.9-completa-2026-11-05.md`. Fuentes: v4.8 y el registro de decisiones de cierre de pendientes del 03/11/2026 (`00_estado-y-pendientes/registro-decisiones-cierre-2026-11-03.md`, DC-01 a DC-58, tomadas con la autonomía que delegó Nicolás) y la calibración de umbrales v1 (`04_datos-simulados/calibracion-umbrales-v1/`). Fuentes de la v4.8: v4.6, pedido de Nicolás del 02/11/2026 de pintar el pico en rojo y de evitar que se confunda con «Crítico»; v4.5, revisión de Nicolás del 02/11/2026 sobre las pantallas v4.5 en Figma, v4.4, decisiones de Nicolás del 02/11/2026 sobre la propuesta v4.5 y la revisión de la v4.4, contrato API `zentheris-api` 0.2.5 (sustituye a la 0.2.4 de la v4.8), acta 04 de `perfiles_simulacion` y paquete Avance 03 (conjuntos calibrados v1.0).
 
 **Documento maestro del MVP.** Agrupa las reglas de negocio formales, el diccionario de datos actualizado (18 tablas), el modelo matemático del simulador, la descripción de todas las pantallas validadas y la lista de trabajo pendiente de diseño. Reemplaza a la v4.8 y anteriores, y complementa al diccionario de datos v3.1 (que queda como comparativa). Los endpoints se definen en el contrato API `zentheris-api` 0.2.5 (archivo OpenAPI aparte, `03_api/`; validación estructural propia sin errores, lint oficial con Redocly pendiente de correr por el equipo), derivado de este documento.
 
@@ -213,7 +213,7 @@
 
 # **3. Diccionario de Datos (18 Tablas)**
 
-A continuación, el detalle de las 18 tablas definidas (aún no creadas en Supabase), sus campos, tipos de datos, objetivos y relaciones. Convención: todas las tablas propias (todas menos `auth.users`) incluyen además `created_at` y `updated_at` (TIMESTAMPTZ); no se repiten en cada tabla. Las validaciones de los mockups no requirieron campos ni tablas adicionales a los indicados.
+A continuación, el detalle de las 18 tablas definidas (creadas en Supabase el 08/11/2026), sus campos, tipos de datos, objetivos y relaciones. Convención: todas las tablas propias (todas menos `auth.users`) incluyen además `created_at` y `updated_at` (TIMESTAMPTZ); no se repiten en cada tabla. Las validaciones de los mockups no requirieron campos ni tablas adicionales a los indicados.
 
 ## **Módulo A: La Gente (Identidad y Accesos)**
 
@@ -593,26 +593,6 @@ Restricción: única por (`consejo_id`, `usuario_id`). Al crearse un consejo se 
 * `zonas` **(0..1:N)** `consejos`  
 * `consejos` **(1:N)** `consejos_usuario` **(N:1)** `usuarios` (Relación M:N para completado individual)
 
-## **Resumen de cambios frente al diccionario v3.1**
-
-| Tabla | Cambio |
-| :---- | :---- |
-| `hogares` | Se agrega `trabajo_estudio_casa` (opcional); `tipo_vivienda` es obligatorio, se pide en el onboarding y tiene 5 opciones (`apartamento`, `casa`, `apartaestudio`, `duplex`, `casa_campestre`); estrato, ciudad y número de personas quedan opcionales (Fase 2). |
-| `preferencias_usuario` | `base_comparacion` es obligatorio con valor por defecto `promedio`. |
-| `hogar_miembros` | Estado `activo` / `inactivo`; se agregan `fecha_ingreso` y `fecha_salida`; un administrador activo por hogar y una membresía activa por usuario. |
-| `invitaciones_hogar` | Estados `pendiente`, `aceptada`, `rechazada`, `expirada`, `revocada`; se agrega `respondida_en`. |
-| `zonas` | Nombre automático según el tipo, único por hogar; el catálogo incluye lavandería y pasa a 9 tipos (se agregan `terraza`, `garaje` y `cuarto_servicio`). |
-| `lecturas` | Única por (`sensor_id`, `fecha_hora`); consumo mayor o igual a 0. |
-| `perfiles_simulacion` | Una columna de base por tipo de zona (9, incluidas terraza, garaje y cuarto de servicio); humor por hogar y día; `curva_horaria` con curva base y curvas propias por zona; ruido de memoria de primer orden por zona y día (`ruido_config` con φ y σ comunes a todas las zonas); picos por zona y hora (`picos_config`). |
-| `tarifas_hogar` | Una tarifa nueva cierra la anterior (`vigente_hasta` = nuevo desde, fin excluido); el cargo fijo es opcional. |
-| `metas_consumo` | Una sola meta activa; la anterior pasa a inactiva y se conserva; se agregan `fecha_inicio` y `fecha_fin`. |
-| `consejos_usuario` | Única por (`consejo_id`, `usuario_id`); se crea una fila por miembro activo; el estado se valida contra `completada_en`. |
-| `alertas` | `clave_evento` única. |
-| `fuentes_principales` | Una sola fuente principal por hogar. |
-| Todas las propias | Se agregan `created_at` y `updated_at`. |
-
-No se agregan tablas nuevas: el modelo sigue en 18 tablas (`auth.users` y 17 propias).
-
 ## **Integridad, seguridad y almacenamiento (v4.9)**
 
 Cierra D-SQL-1 a D-SQL-5 (registro DC-36 a DC-45). No agrega columnas.
@@ -806,49 +786,6 @@ Esta opción da más realismo por zona, pero aumenta el trabajo de calibración 
 * 4. Todo pico debe corresponder a un evento sorteado.  
 * 5. Con la misma semilla, el resultado debe ser idéntico.  
 * 6. El promedio mensual de un hogar que tiene todas las zonas que contempla su personalidad debe quedar cerca del objetivo de esa personalidad. Si el hogar tiene menos zonas, su promedio es menor por diseño (no se reparte el consumo faltante). Los objetivos deben respetar el orden compacto < eficiente < intermedio < familiar < amplio. Como referencia, el consumo mensual medio por usuario urbano en Bogotá fue de 132,14 kWh en estrato 3 y 135,69 kWh en estrato 4 durante 2024.
-
----
-
-## **Parte 2: Explicación sencilla**
-
-**La idea general**  
-Imagina que para cada zona y cada día el simulador responde tres preguntas en orden:
-
-* 1. ¿Cuánta energía gasta esta zona hoy?  
-* 2. ¿Cómo se reparte esa energía entre las 24 horas?  
-* 3. ¿Pasó algo especial, como encender un aparato potente?
-
-Con las respuestas arma un número para cada hora, y ese número es la lectura que ve el usuario.  
-**Qué hace cada pieza**
-
-* **Base de la zona:** Es el gasto normal de un día en esa zona. La cocina gasta más que un dormitorio. Aparece siempre y fija el tamaño del consumo.  
-* **Humor del día:** Es un número que se sortea una vez al día para todo el hogar. Si sale 1,10, ese día el hogar estuvo un 10% más activo; si sale 0,90, estuvo más tranquilo. Evita que todos los días sean iguales.  
-* **Factor de fin de semana:** Es un empujón extra que se aplica solo sábado y domingo, porque la gente suele pasar más tiempo en casa. Entre semana vale 1 y no cambia nada. Cada personalidad tiene el suyo, así que un hogar que sale los fines de semana puede tener un valor menor que 1.  
-* **Objetivo del día:** Es el resultado de multiplicar esas tres piezas. Responde la primera pregunta con un total en kWh. Por ejemplo, 1,8 x 1,10 x 1,15 = 2,277 kWh para la cocina un sábado.  
-* **Curva de horas y pesos:** La curva dice qué parte del día le toca a cada hora. A las 3:00 AM le toca muy poco, y a las 7:00 PM le toca bastante. Es como cortar el objetivo del día en 24 porciones de distinto tamaño. Cada zona tiene su propio horario: el dormitorio puede concentrar su consumo en la noche, la oficina en las horas de trabajo y la cocina en las comidas. Si una zona no tiene horario propio, usa el general de la personalidad.  
-* **Ruido con memoria:** Un día real nunca sigue la curva al pie de la letra. Cada hora se mueve un poco, pero no de manera brusca: si a las 6 PM la cocina estuvo algo más activa, a las 7 PM todavía queda algo de esa actividad. El ruido de cada hora tiene dos partes: una fracción del ruido de la hora anterior (la memoria) y un empujón nuevo y aleatorio (la intensidad). Cada zona tiene su propio ruido, pero todas usan la misma memoria e intensidad de la personalidad. Así las gráficas se ven naturales y no como dientes de sierra.  
-* **Zonas que el hogar no tiene:** Si la personalidad contempla una zona que el hogar no eligió (por ejemplo, una oficina), esa zona simplemente no consume y su parte no se reparte entre las demás. Por eso un hogar con menos zonas gasta menos en total.  
-* **Renormalización:** Después de mover las porciones con el ruido, estas pueden sumar un poco más o menos que el 100% del día. El simulador las vuelve a ajustar para que sumen exactamente 100%. La forma del día se conserva y el total del día vuelve a ser el objetivo.  
-* **Eventos:** Cada hora hay una pequeña probabilidad de que ocurra algo especial, como encender una freidora de aire. Si ocurre, el simulador calcula su energía con la potencia del equipo, cuánto tiempo estuvo encendido y qué fracción de ese tiempo trabajó a máxima potencia. Esa energía se suma al consumo normal, y si el evento cruza el cambio de hora, se reparte entre las dos horas.  
-* **Semilla:** Es la forma de que los números aleatorios no cambien cada vez que se ejecuta el simulador. Con la misma semilla, el mismo hogar produce los mismos datos, lo que permite comprobar que el código funciona.
-
-**Cómo se junta todo (Ejemplo)**  
-Un sábado a las 19:00 en la cocina del ejemplo:
-
-* 1. Objetivo del día: 2,277 kWh.  
-* 2. Peso de las 19:00 después del ruido y la renormalización: aproximadamente 0,093.  
-* 3. Consumo regular: 2,277 x 0,093 = 0,21 kWh.  
-* 4. Se enciende la freidora de 1.200 W durante 20 minutos con factor de uso 0,7, y aporta 0,28 kWh.  
-* 5. Lectura final de esa hora: 0,21 + 0,28 = 0,49 kWh.
-
-Sin la freidora, la lectura habría sido 0,21 kWh. El valor 0,49 es un pico con causa conocida, y sirve para probar alertas como "Consumo crítico en la cocina".  
-**Para qué sirve el resultado**
-
-* **Historial de 30 días:** el usuario ve gráficas con datos desde el primer momento.  
-* **Alertas y consejos:** se disparan con reglas y umbrales sobre estas lecturas, sin IA.  
-* **Comparaciones:** "hoy gastaste menos que ayer" tiene sentido porque los días varían, pero con coherencia.  
-* **Pruebas:** al ser reproducible, puedes verificar que el simulador sea correcto.  
-* **Hardware futuro:** cuando existan medidores reales, el campo calidad ya distingue las lecturas simuladas de las reales.
 
 # **6. Pantallas de la App (validadas con mockups)**
 
@@ -1066,7 +1003,7 @@ Datos del hogar para recomendaciones de energías renovables.
 
 Se separa en tres tipos según el esfuerzo.
 
-**Estado (v4.9):** las pantallas de 7.1, 7.2 y 7.3 existen en la copia de trabajo de Figma (flujos Administrador y Miembro, pantallas v4.5), aprobadas en general por Nicolás el 02/11/2026; el 03/11/2026 se alinearon con el catálogo de textos (DC-19 a DC-23). Las tablas siguientes se conservan como especificación de lo que cada pantalla debe cumplir. Falta la prueba en Android e iOS.
+**Estado (v4.9):** las pantallas de 7.1 y 7.3 (y las de 7.2, sección retirada el 18/11/2026) existen en la copia de trabajo de Figma (flujos Administrador y Miembro, pantallas v4.5), aprobadas en general por Nicolás el 02/11/2026; el 03/11/2026 se alinearon con el catálogo de textos (DC-19 a DC-23). Las tablas siguientes se conservan como especificación de lo que cada pantalla debe cumplir. Falta la prueba en Android e iOS.
 
 **Definiciones de diseño de la v4.4.** Son tres, marcadas con (v4.4) en las tablas. No agregan pantallas, no eliminan ninguna y no cambian la navegación ni los mockups validados; definen estados de pantallas que ya estaban pendientes de diseño:
 
@@ -1089,29 +1026,6 @@ Se separa en tres tipos según el esfuerzo.
 | 9 | Diálogos de confirmación | Eliminar cuenta, expulsar miembro, salir del hogar, transferir administración y cancelar invitación. | Acciones irreversibles (reglas IX y X) |
 | 10 | Menú de acciones del miembro | Opciones expulsar, transferir y cancelar invitación según el caso. | Gestión del administrador (regla X) |
 | 11 | Selectores de operador y de mes/año | Lista de operadores y selector de mes y año. | Configurar tarifa (regla XVI) |
-
-## **7.2 Pantallas existentes que necesitan actualización**
-
-Cambian botones, textos, títulos o elementos, sin rediseñar la disposición.
-
-| Pantalla | Cambios |
-| :---- | :---- |
-| Inicio neutral, Inicio de sesión y Registro | Unificar los nombres de la acción de registro (Registrarse, Registro y Crear cuenta); en Registro, mostrar el celular como opcional, mostrar los requisitos de la contraseña y cambiar "Nombre" por "Nombre completo". |
-| Panel principal | Saludo según la hora; campana con indicador de no leídas; nombres de zona en español y en orden alfabético; aclarar que "Consumo actual" es la última hora; usar "crítico" en lugar de "sobreconsumo" (incluida la alerta, que pasa a "Consumo crítico"); unidad coherente con el selector kW/COP; reemplazar textos de ejemplo ("States", "Zones"). |
-| Historial | Quitar el ícono de descarga; dejar solo la versión con minititulos; quitar la barra de progreso de la card de costo; textos de cada card acordes al periodo; totales en kWh; filtro de zonas con las del hogar (Dormitorio en lugar de "Cuartos"); porcentajes del anillo que sumen 100%. |
-| Zonas | Unidad escrita kW; nombres de zona del catálogo (Dormitorio); orden alfabético; íconos de las zonas nuevas (terraza, garaje y cuarto de servicio). |
-| Zona individual | Quitar el lápiz de edición; reemplazar el texto "States" por el texto del estado; corregir la etiqueta de la barra de participación (dice "Cocina" en Sala); unidades que cambian con el selector kW/COP. |
-| Consejos | Quitar el ícono de destellos (chatbot, Fase 2); agregar la etiqueta de prioridad Baja; mostrar la card "Todo bajo control" solo cuando no hay consejos pendientes, con los completados opacos debajo (RN-XV-02). |
-| Alertas | Reemplazar los ejemplos "Tarifa nocturna" y "Nuevo dispositivo en la familia" por el catálogo de alertas (regla XIV); botón de campana con indicador. |
-| Configuración | Mantener la sección Otros con Cerrar sesión (lugar principal; el segundo punto de acceso del Onboarding y de la Invitación recibida está en RN-IX-08); cambiar el texto de Consejos a "Recibe recomendaciones de ahorro"; renombrar "Conectar medidores" a "Fuentes de datos"; describir el interruptor Meta de consumo como comparación contra meta o promedio; mantener "Próximamente" en Información del hogar y Mi huella de carbono; mostrar el nombre real del usuario. |
-| Editar perfil | Quitar "Historial de consumo" y "Cerrar sesión" (queda solo en Configuración); el botón Editar información activa la edición en la misma pantalla; mostrar iniciales cuando no hay foto. |
-| Gestionar correo | El correo actual muestra el correo real en solo lectura; el bloque de verificación debe decir que se enviará un enlace (no un código). |
-| Establecer meta | Quitar el selector kWh/COP y el ícono "?"; calcular el promedio diario con los días del mes; redactar las descripciones de Eficiencia y Presupuesto. |
-| Configurar tarifa | Quitar "Residencial" y "Fuente: valor de mi factura"; agregar el campo opcional de cargo fijo mensual; el operador es una lista desplegable. |
-| Fuentes de datos (antes Medidores) | Renombrar el título; quitar los botones "+", "Agregar medidor" y el ícono "?"; estados Activo, Pausado y Sin datos; valor en kW de la última hora; nombres "Sensor [zona]" y "Fuente principal [nombre del hogar]". |
-| Miembros del hogar | Renombrar la sección a "Permisos de los miembros"; dejar un solo botón "Invitar miembro"; contar solo miembros activos y mostrar las invitaciones pendientes aparte, solo al administrador; texto neutro en lugar de "Cada miembro puede ver el consumo"; agregar el menú de acciones del administrador; botón "Salir del hogar" para los miembros. |
-| Datos y transición (Fase 2) | Cambiar "recomendaciones personalizadas" y "personalizar el análisis" por "recomendaciones sobre energías renovables". |
-| Barra de navegación | Unificar los íconos de Zonas y Consejos, que cambian entre pantallas (pin y cuadros; hoja y bombilla). |
 
 ## **7.3 Pantallas que solo necesitan un estado visual distinto**
 
@@ -1196,7 +1110,7 @@ El orden compacto < eficiente < intermedio < familiar < amplio se cumple en los 
 
 # **9. Decisiones Asumidas por Recomendación**
 
-Estas decisiones no fueron resueltas explícitamente por el equipo; se tomó la opción más simple y coherente con las reglas ya validadas. Se pueden cambiar sin afectar el resto del documento. Desde la v4.5, las decisiones 13, 17, 18 y 20 están ratificadas (sección 9.2).
+Estas decisiones no fueron resueltas explícitamente por el equipo; se tomó la opción más simple y coherente con las reglas ya validadas. Se pueden cambiar sin afectar el resto del documento. Desde la v4.5, las decisiones 13, 17, 18 y 20 están ratificadas (sección 9.2, retirada el 18/11/2026; ver `_historico/reglas-v4.9-completa-2026-11-05.md`).
 
 | # | Decisión | Dónde aplica |
 | :---- | :---- | :---- |
@@ -1226,64 +1140,6 @@ Estas decisiones no fueron resueltas explícitamente por el equipo; se tomó la 
 | 24 | Los sorteos de cada zona se derivan de la semilla del hogar y día combinada con el tipo de zona | Sección 5 |
 | 25 | La quinta personalidad se llama *Consumo intermedio* (reemplaza el concepto de personalidad diurna) y las 5 personalidades siguen una escala de menor a mayor consumo | Tabla 12 |
 
-## **9.1 Decisiones aceptadas por Nicolás (29-30/10/2026)**
-
-Estas decisiones surgieron al definir el contrato API y las aprobó Nicolás como responsable del proyecto. Van aparte porque no fueron ratificadas por el equipo completo.
-
-| # | Decisión | Dónde aplica |
-| :---- | :---- | :---- |
-| N1 | El backfill forma parte de la transacción de creación del hogar; si falla, no queda nada creado | RN-X-03 |
-| N2 | El backend envía el correo de invitación; se bloquea invitar dos veces al mismo correo o a un miembro activo, y la invitación a alguien con otro hogar falla al aceptar | RN-X-05 |
-| N3 | La salida del administrador es en dos pasos con las pantallas existentes | RN-II-04, RN-X-07 |
-| N4 | Fuentes de datos oculta los valores en kW sin el permiso de ver consumo actual | RN-XVI-06, RN-XVII-01 |
-| N5 | La ficha del usuario se crea en el primer acceso con sesión, con nombre y teléfono tomados de los metadatos del registro | RN-IX-01 |
-| N6 | Las invitaciones pendientes solo las ve el administrador | RN-X-08, RN-XVI-07 |
-| N7 | La app sube la foto directamente a Storage y el backend guarda solo su ruta | RN-I-02 |
-| N8 | Los mensajes por estado se entregan como códigos; los textos de alertas y consejos salen de la configuración del backend | RN-XI-09 |
-| N9 | La personalidad es interna y no se expone; el backend verifica membresía, rol y permiso en cada llamada | RN-X-04, RN-I-03 |
-| N10 | Nota en la tabla 12 sobre la cocina de *Consumo compacto*, sin cambiar su descripción | Tabla 12 |
-| N11 | Tres definiciones de diseño pendiente: error de la carga del backfill, Fuentes de datos sin permiso y Miembros sin invitaciones para no administradores | Sección 7 |
-
-## **9.2 Decisiones aceptadas en v4.5 (02/11/2026)**
-
-Nicolás aceptó como decisión las recomendaciones de la propuesta v4.5 y de la revisión de la v4.4. Quedan ratificadas las decisiones 13, 17, 18 y 20 de la sección 9; las demás siguen como asumidas.
-
-| # | Decisión | Dónde aplica |
-| :---- | :---- | :---- |
-| D1 | La card «Todo bajo control» solo aparece sin consejos pendientes | RN-XV-02, §7.2 |
-| D2 | Anillo de zonas con 4 zonas y «Otras zonas» desde la quinta; la lista muestra todas | RN-XIII-04 |
-| D3 | Formato es-CO con decimales por unidad: kW 2, kWh 1, COP 0 | RN-XII-08 |
-| D4 | «Espacios físicos de la casa» en lugar de «Habitaciones» | §3 (tabla 8) |
-| D5 | El pico no usa rojo; se marca con la etiqueta «Pico» y el rojo queda para el estado crítico | RN-XIII-03 (**reemplazada por D17 en v4.7**: el pico sí usa rojo claro, con reglas de separación) |
-| D6 | El acumulado de hoy respeta `base_comparacion` | RN-XI-04 |
-| D7 | El estado `expirada` de las invitaciones se calcula al consultar | RN-X-05 |
-| D8 | Las alertas no leídas nunca se ocultan | RN-XIV-05 |
-| D9 | Una alerta por regla y zona al día, dicho de forma explícita | RN-XIV-08 |
-| D10 | Vigencia de los consejos pendientes: 7 días | RN-XV-05, sección 8 |
-| D11 | Correcciones editoriales del ejemplo de Andrés y de la tabla de Historial | §4, §6.5 |
-
-## **9.3 Decisiones aceptadas en v4.6 (02/11/2026)**
-
-Revisión de Nicolás de las pantallas v4.5 en Figma. Las decisiones D12 a D16 se registran aquí; la D12 ajusta la D5 solo en lo que dice sobre el color del pico.
-
-| # | Decisión | Dónde aplica |
-| :---- | :---- | :---- |
-| D12 | El pico lleva un color propio junto a la etiqueta «Pico». **Reemplazada en v4.7 por D17.** Historial: blanco (descartado), cian #38BDF8 (descartado) y amarillo #FDE047 (descartado por choque con «Elevado») | RN-XIII-03 |
-| D13 | «Cerrar sesión» también en Onboarding e Invitación recibida; cierra la sesión y cancela la creación del hogar sin guardar nada | RN-IX-08 |
-| D14 | Lista de operadores de la tarifa: Afinia, Air-e, CHEC, Celsia, Enel Colombia, EPM, ESSA, Otro operador | RN-XVI-05, §10 |
-| D15 | Íconos de Lavandería, Terraza, Garaje y Cuarto de servicio: washing-machine, fence, car, door-closed (probables en Lucide) | §7.2, §10 |
-| D16 | El anillo de distribución por zona es vigente en Historial (Día, Semana y Mes), solo con el filtro General | RN-XIII-04 |
-
-## **9.4 Decisiones aceptadas en v4.7 (02/11/2026)**
-
-Pedido de Nicolás tras la revisión de la v4.6: pintar el pico en rojo y evitar que se confunda con «Crítico».
-
-| # | Decisión | Dónde aplica |
-| :---- | :---- | :---- |
-| D17 | El pico se pinta en rojo claro `chart/peak` (#F59099, red-400 de la paleta), distinto del rojo de estado `status/error` (#EF4444). Para no confundirlo con «Crítico»: etiqueta «Pico» neutra; sin componentes ni palabras de estado en el pico; rojo de estado solo para estados; identificación por posición antes que por color. Reemplaza a D12 y ajusta la D5 | RN-XIII-03 |
-
-**Riesgo abierto:** #F59099 es el mismo valor que el texto de error en oscuro (`z-color-red-400`). Por eso la separación depende de forma y texto, no del color. Si al probar en dispositivo o con daltonismo se confunde, la alternativa es cambiar el color del pico, no la regla de texto.
-
 ## **9.5 Decisiones de cierre (v4.9, 03/11/2026)**
 
 Tomadas con la autonomía que delegó Nicolás el 03/11/2026, después de verificar su coherencia con este documento, el contrato, el catálogo de textos y el sistema de diseño. Se consideran aprobadas salvo que Nicolás pida revertir alguna. El detalle, con su evidencia, está en `00_estado-y-pendientes/registro-decisiones-cierre-2026-11-03.md`.
@@ -1301,8 +1157,7 @@ Tomadas con la autonomía que delegó Nicolás el 03/11/2026, después de verifi
 
 Ninguno bloquea el modelo de datos. Todos están en `PENDIENTES-GENERAL-antes-de-backend.md` (v2).
 
-* Autorización de Nicolás para pasar a desarrollo (crear la base, configurar Supabase y generar Word y PDF de la v4.9).
-* Crear las cuentas: proyecto de Supabase, Brevo (remitente verificado), Render y EAS.
+* Crear las cuentas de Render y EAS (Supabase y Brevo ya existen desde el 08 y 10/11/2026; el paso a desarrollo se autorizó el 07/11/2026).
 * Correr el lint oficial del contrato (`npx @redocly/cli lint`) en un equipo con acceso a npm.
 * Medir el backfill en Render + Supabase (criterio de 10 s, RN-X-03).
 * Probar en Android e iOS, con lectores de pantalla, texto grande y simulación de daltonismo (pico D17).

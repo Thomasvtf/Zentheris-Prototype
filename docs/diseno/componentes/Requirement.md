@@ -1,6 +1,6 @@
 # Requirement
 
-Requisito de contraseña con ícono + texto (RN-IX-02): registro, restablecer y cambiar contraseña. Figma: `Control/Requisito` (4110:416). **Propuesto v4.5**.
+Requisito de contraseña con ícono + texto (RN-IX-02): registro, restablecer y cambiar contraseña. Figma: `Control/Requisito` (4110:416). **Aprobado v4.5** (D-SD-04, 07/11/2026).
 
 | Prop | Tipo | Notas |
 |---|---|---|

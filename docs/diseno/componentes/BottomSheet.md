@@ -1,6 +1,6 @@
 # BottomSheet
 
-Hoja inferior común a Android e iOS sobre `z-color-background-overlay`: selector de foto, menú de acciones del miembro, selector de operador y de mes y año. Figma: `Navegacion/Hoja-inferior` (4111:446; Tipo = Acciones | Encabezado). **Propuesto v4.5**.
+Hoja inferior común a Android e iOS sobre `z-color-background-overlay`: selector de foto, menú de acciones del miembro, selector de operador y de mes y año. Figma: `Navegacion/Hoja-inferior` (4111:446; Tipo = Acciones | Encabezado). **Aprobado v4.5** (D-SD-04, 07/11/2026).
 
 | Prop | Tipo | Notas |
 |---|---|---|

@@ -22,12 +22,12 @@ Contenedor: `z-color-background-surface`, borde `z-color-border-subtle`, radio `
 4. Divisor `z-color-border-subtle`.
 5. Bloque de estado: fondo/borde `z-color-status-*-bg|border`, ícono 16 de severidad, título `ui-s-semibold` en color de estado, mensaje `body-xs` muted.
 
-## Textos por estado *(propuestos, microcopy de trabajo)*
+## Textos por estado *(referencia de diseño; el texto vigente sale de `docs/textos/catalogo.es-CO.json`)*
 | Estado | Cápsula | Título | Mensaje |
 |---|---|---|---|
 | normal | Normal | Dentro de lo habitual | Vas bien, sigue así. |
 | elevado | Elevado | Consumo elevado | Revisa qué equipos están encendidos. |
-| critico | Crítico | Consumo crítico | Apaga los equipos que no estés usando. |
+| critico | Crítico | Consumo crítico | Apaga los equipos que no necesites. |
 | sin_datos | — | Sin datos | La lectura de la última hora aún no llega. Se actualizará en la próxima hora. |
 | sin_referencia | — | Sin referencia | Aún no tenemos suficiente historial para comparar. |
 | sin_permiso | (la card se reemplaza) | No tienes permiso para ver el consumo actual | Pídele acceso al administrador del hogar |

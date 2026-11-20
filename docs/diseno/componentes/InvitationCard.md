@@ -1,6 +1,6 @@
 # InvitationCard
 
-Invitación recibida por un usuario sin hogar (RN-X-01, RN-X-05, RN-X-06). Figma: `Card/Invitacion` (4113:408). **Propuesto v4.5**.
+Invitación recibida por un usuario sin hogar (RN-X-01, RN-X-05, RN-X-06). Figma: `Card/Invitacion` (4113:408). **Aprobado v4.5** (D-SD-04, 07/11/2026).
 
 | Prop | Tipo | Notas |
 |---|---|---|

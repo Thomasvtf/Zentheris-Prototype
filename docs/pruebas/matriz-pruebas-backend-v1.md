@@ -4,13 +4,14 @@ Complementa el plan v3.0 con lo que faltaba según las reglas §10: permisos, RL
 
 | ID | Área | Caso | Esperado | Regla |
 |---|---|---|---|---|
-| P-01 | Permisos | Usuario sin membresía consulta un hogar ajeno | 404 | RN-I-03 |
+| P-01 | Permisos | Usuario sin membresía consulta un hogar ajeno | 404 `NO_ENCONTRADO` | RN-I-03 |
 | P-02 | Permisos | Miembro sin `ver_consumo_actual` pide `consumo/actual` | 403 `SIN_PERMISO_VER_CONSUMO` | RN-XVII-01 |
 | P-03 | Permisos | Miembro sin `ver_historial` pide `historial` | 403 `SIN_PERMISO_VER_HISTORIAL` | RN-XVII-02 |
 | P-04 | Permisos | Miembro sin permiso de metas crea una meta | 403 `SIN_PERMISO_MODIFICAR_METAS` | RN-XVII-04 |
 | P-05 | Permisos | Miembro crea una tarifa, invita o mueve permisos | 403 `NO_ES_ADMINISTRADOR` | RN-X-08, XVI-05 |
 | P-06 | Permisos | El administrador sin permisos activados ve todo | 200 | RN-XVII-05 |
 | P-07 | Permisos | Fuentes de datos sin permiso | 200, `valores_ocultos=true`, kW `null` | RN-XVI-06 |
+| P-08 | Permisos | Miembro sin `permiso_recibir_alertas` marca alertas como leídas | 403 `SIN_PERMISO_RECIBIR_ALERTAS` | RN-VI-02, fase 2 |
 | R-01 | RLS | Cliente con JWT de A lee lecturas del hogar B directo en Supabase | 0 filas | DC-40 |
 | R-02 | RLS | Cliente intenta escribir cualquier tabla | Rechazado | DC-40 |
 | R-03 | RLS | Cliente lee `perfiles_simulacion` | 0 filas | DC-40 |
@@ -31,7 +32,7 @@ Complementa el plan v3.0 con lo que faltaba según las reglas §10: permisos, RL
 | A-03 | Alertas | Miembro con el interruptor apagado al disparar | Sin fila en `alertas_usuario` para él | RN-VI-02, XIV-06 |
 | A-04 | Alertas | Cierre de mes por encima de la referencia | Alerta de advertencia + consejo general de prioridad baja | RN-XIV-07, XV-07 |
 | A-05 | Consejos | Consejo creado con 3 miembros activos | 3 filas `pendiente` | RN-XV-06 |
-| C-01 | Contrato | Cada respuesta coincide con su esquema 0.2.5 | Sin errores (validación automática) | DC-47 |
+| C-01 | Contrato | Cada respuesta coincide con su esquema 0.2.6 | Sin errores (validación automática) | DC-47 |
 | C-02 | Contrato | Lint oficial | 0 errores con Redocly | DC-46 |
 | I-01 | Integridad | Sensor y zona de hogares distintos | 0 casos (consulta de integridad) | DC-38 |
 | I-02 | Integridad | Tarifas solapadas del mismo hogar | Rechazado | DC-39 |
@@ -39,5 +40,7 @@ Complementa el plan v3.0 con lo que faltaba según las reglas §10: permisos, RL
 | I-04 | Integridad | Eliminar la cuenta de un miembro (no único) | Membresía inactiva con usuario nulo; datos del hogar intactos | DC-36 |
 | S-01 | Seguridad | Error interno en cualquier endpoint | La respuesta no expone la excepción | Guía 3 §7 |
 | S-02 | Seguridad | Token de invitación | Solo se guarda su hash | RN-X-05 |
+| S-03 | Seguridad | Llamada protegida sin token, con token inválido o vencido | 401 `NO_AUTENTICADO` | Contrato 0.2.6, RN-I-01 |
+| S-04 | Seguridad | Fallo no previsto en cualquier endpoint | 500 `ERROR_INTERNO` sin exponer la excepción | Contrato 0.2.6, Guía 3 §7 |
 
 La referencia ejecutada está en `04_datos-simulados/calibracion-umbrales-v1/` (13/13 OK) y en el Avance 03 (59/59 OK). Nada de lo demás está ejecutado: el backend no existe todavía.

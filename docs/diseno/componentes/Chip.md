@@ -18,5 +18,5 @@ En grupo se comporta como radio (`role="radio"` dentro de un `radiogroup`). El c
 - Deshabilitado: `z-color-state-disabled-*`.
 - Tipografía `ui-s-semibold`; alto visual 34; **área táctil 48** (contenedor con alto mínimo 48 o `hitSlop`).
 
-## Pendiente
-Radio: el token `z-radius-sm` dice «chips», pero Figma dibuja píldora; aquí se usa `z-radius-full`. Confirmar cuál manda.
+## Decisión
+Radio `z-radius-full` (píldora), como en Figma; el token `z-radius-sm` dice «chips», pero manda Figma.

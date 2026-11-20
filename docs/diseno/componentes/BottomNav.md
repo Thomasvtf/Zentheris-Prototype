@@ -12,7 +12,7 @@ Barra inferior de cinco secciones con una única pestaña activa por pantalla. F
 | Sección | Opción en Figma | Glifo (Lucide probable) |
 |---|---|---|
 | Principal | `Icono/Nav/Principal` opción 1 (casa) | house |
-| Historial | `Icono/Nav/Historial` opción 3 | clock — **por confirmar** (ver README, Iconografía) |
+| Historial | `Icono/Nav/Historial` opción 3 | clock (DC-13) |
 | Zonas | `Icono/Nav/Zonas` opción 2 (cuadrícula) | layout-grid |
 | Consejos | `Icono/Nav/Consejos` opción 1 (bombilla) | lightbulb |
 | Configuración | `Icono/Nav/Configuracion` (engranaje) | settings |

@@ -1,6 +1,6 @@
 # ConfirmDialog
 
-Confirmación de acciones irreversibles (RN-IX-09, RN-X-06, RN-X-07). Figma: `Dialogo/Confirmacion` (4111:463). **Propuesto v4.5**.
+Confirmación de acciones irreversibles (RN-IX-09, RN-X-06, RN-X-07). Figma: `Dialogo/Confirmacion` (4111:463). **Aprobado v4.5** (D-SD-04, 07/11/2026).
 
 | Prop | Tipo | Notas |
 |---|---|---|
@@ -11,7 +11,7 @@ Confirmación de acciones irreversibles (RN-IX-09, RN-X-06, RN-X-07). Figma: `Di
 ## Tokens
 Fondo `z-color-background-surfaceAlt` (antes elevated; cambio aprobado por Nicolás el 2026-11-02 por mejor visibilidad), borde `z-color-border-subtle`, radio `z-radius-lg`, padding 24.
 
-## Casos (textos propuestos)
+## Casos (textos de referencia; los vigentes salen del catálogo)
 | Caso | Tono | Botón |
 |---|---|---|
 | Eliminar cuenta | destructivo | Eliminar cuenta |

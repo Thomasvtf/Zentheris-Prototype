@@ -20,5 +20,5 @@ Alto `z-size-button-height` (48) · radio `z-radius-md` (10) · padding `z-space
 - Foco: anillo 2 px `z-color-state-focus-ring`.
 
 ## Pendiente
-- Fantasma: los tokens (sin borde, texto `z-color-text-accent`) son una lectura de la propuesta del catálogo; confirmar.
+- Fantasma: sin borde y con texto `z-color-text-accent`; solo para acciones terciarias (decidido).
 - Figma también tiene «Default» (contorno neutro) y «Destructive-compacto»; no están en la propuesta de props.

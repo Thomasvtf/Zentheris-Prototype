@@ -15,5 +15,5 @@ Lista de Consejos que aplica el orden y el estado vacío de la v4.5: «¡Todo ba
 ## Tokens
 Los de `TipCard` y `StateMessage`; separación `z-space-12`.
 
-## Textos *(propuestos)*
+## Textos *(referencia de diseño; el texto vigente sale del catálogo)*
 «¡Todo bajo control!» (ejemplo de la v4.5 §6.8; el texto definitivo sale del catálogo).

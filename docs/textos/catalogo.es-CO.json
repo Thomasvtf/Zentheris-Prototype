@@ -316,6 +316,20 @@
       "titulo": "Revisa los datos marcados",
       "cuerpo": "Corrige los campos señalados e inténtalo de nuevo."
     },
+    "no_autenticado": {
+      "titulo": "Tu sesión ya no es válida",
+      "cuerpo": "Inicia sesión de nuevo para continuar."
+    },
+    "error_interno": {
+      "titulo": "Algo salió mal de nuestro lado",
+      "cuerpo": "No pudimos completar la acción. Inténtalo de nuevo en unos minutos.",
+      "accion": "Reintentar"
+    },
+    "no_encontrado": {
+      "titulo": "No encontramos esta información",
+      "cuerpo": "Puede que ya no tengas acceso al hogar. Vuelve al inicio.",
+      "accion": "Ir al inicio"
+    },
     "ficha_no_creada": {
       "interno": "(sin mensaje)"
     },

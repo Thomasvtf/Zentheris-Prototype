@@ -1,5 +1,5 @@
 # Configuración del linter oficial elegido (DC-46). Correr desde 03_api/:
-#   npx @redocly/cli@latest lint zentheris-api-v0.2.5.yaml
+#   npx @redocly/cli@latest lint zentheris-api-v0.2.6.yaml
 # Resultado esperado para congelar el contrato: 0 errores. Los avisos se revisan y se anotan.
 extends:
   - recommended

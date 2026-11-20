@@ -1,6 +1,6 @@
 """Errores de la API con la forma del contrato: {codigo, mensaje, detalles}.
 
-`CodigoError` copia el enum del contrato docs/api/zentheris-api-v0.2.5.yaml; sus
+`CodigoError` copia el enum del contrato docs/api/zentheris-api-v0.2.6.yaml; sus
 valores no se traducen (DC-62). Ningún manejador devuelve el texto, el tipo ni la traza
 de una excepción interna (guía 3 §7, prueba S-01).
 """
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class CodigoError(StrEnum):
-    """Códigos de error del contrato 0.2.5 (enum `CodigoError`)."""
+    """Códigos de error del contrato 0.2.6 (enum `CodigoError`)."""
 
     FICHA_NO_CREADA = "FICHA_NO_CREADA"
     FICHA_EXISTENTE = "FICHA_EXISTENTE"
@@ -46,6 +46,9 @@ class CodigoError(StrEnum):
     ADMIN_UNICO_MIEMBRO = "ADMIN_UNICO_MIEMBRO"
     BACKFILL_FALLIDO = "BACKFILL_FALLIDO"
     VALIDACION = "VALIDACION"
+    NO_AUTENTICADO = "NO_AUTENTICADO"
+    NO_ENCONTRADO = "NO_ENCONTRADO"
+    ERROR_INTERNO = "ERROR_INTERNO"
 
 
 class ErrorResponse(BaseModel):
@@ -58,12 +61,12 @@ class ErrorResponse(BaseModel):
 
 # Descripciones de `components.responses` del contrato, por código HTTP.
 ERROR_DESCRIPTIONS = {
-    401: "Token ausente, inválido o vencido.",
+    401: "Token ausente, inválido o vencido (`codigo` = `NO_AUTENTICADO`).",
     403: "El usuario no tiene el rol o el permiso necesario.",
-    404: "El recurso no existe o el usuario no tiene membresía activa en ese hogar.",
+    404: "El recurso no existe o el usuario no tiene membresía activa en ese hogar (`codigo` = `NO_ENCONTRADO`).",
     409: "La operación choca con el estado actual (límites, membresía o invitación).",
     422: "Los datos enviados no cumplen las reglas.",
-    500: "Error interno. En el onboarding, `BACKFILL_FALLIDO`; no queda ningún dato creado.",
+    500: "Error interno (`codigo` = `ERROR_INTERNO`). En `POST /onboarding` el código es `BACKFILL_FALLIDO` y no queda ningún dato creado.",
 }
 
 
@@ -119,7 +122,7 @@ async def _handle_validation_error(_request: Request, exc: Exception) -> JSONRes
 
 
 class PendingCodeError(Exception):
-    """TEMPORAL: error sin `CodigoError` en el contrato 0.2.5 (decisión abierta #29).
+    """TEMPORAL: error sin `CodigoError` en el contrato 0.2.6 (decisión abierta #29).
 
     Cubre el 401 (token ausente, inválido o vencido), el 404 por falta de membresía activa
     (RN-I-03) y el 500 genérico. Responde `{"mensaje": ERROR_DESCRIPTIONS[status], "detalles":

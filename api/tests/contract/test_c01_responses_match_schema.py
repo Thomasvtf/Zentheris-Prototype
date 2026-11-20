@@ -1,4 +1,4 @@
-"""C-01 · Contrato: Cada respuesta coincide con su esquema 0.2.5.
+"""C-01 · Contrato: Cada respuesta coincide con su esquema 0.2.6.
 
 Esperado: Sin errores (validación automática). Regla: DC-47.
 Matriz: docs/pruebas/matriz-pruebas-backend-v1.md."""

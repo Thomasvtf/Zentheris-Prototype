@@ -1,6 +1,6 @@
 # api/
 
-API REST de Zentheris: FastAPI y Python, monolito modular por capas (DC-56). Contrato primero: [`docs/api/zentheris-api-v0.2.5.yaml`](../docs/api/zentheris-api-v0.2.5.yaml). Reglas para Claude Code en [`CLAUDE.md`](CLAUDE.md); guía humana en [`docs/guias/GUIA-3-backend-y-arquitectura.md`](../docs/guias/GUIA-3-backend-y-arquitectura.md).
+API REST de Zentheris: FastAPI y Python, monolito modular por capas (DC-56). Contrato primero: [`docs/api/zentheris-api-v0.2.6.yaml`](../docs/api/zentheris-api-v0.2.6.yaml). Reglas para Claude Code en [`CLAUDE.md`](CLAUDE.md); guía humana en [`docs/guias/GUIA-3-backend-y-arquitectura.md`](../docs/guias/GUIA-3-backend-y-arquitectura.md).
 
 ## Comandos (desde `api/`)
 

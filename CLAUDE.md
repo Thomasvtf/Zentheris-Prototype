@@ -9,7 +9,7 @@ Zentheris es una app móvil (Android e iOS) que muestra y ayuda a reducir el con
 ## Fuentes de verdad (en este orden)
 
 1. `docs/reglas/reglas-de-negocio-v4.9.md`: reglas `RN-*`, las 18 tablas (§3) y las pantallas (§6).
-2. `docs/api/zentheris-api-v0.2.5.yaml`: contrato OpenAPI (contract-first). **No inventes endpoints ni campos.**
+2. `docs/api/zentheris-api-v0.2.6.yaml`: contrato OpenAPI (contract-first). **No inventes endpoints ni campos.**
 3. `docs/decisiones/registro-decisiones-cierre-2026-11-03.md`: decisiones DC-01 a DC-67.
 4. `docs/datos/umbrales-estado.v1.json` y `docs/datos/motor_estados_ref.py`: cálculo de estados. Las pruebas de referencia están en `test_escenarios_umbrales.py`.
 5. `docs/textos/`: catálogo de textos (app, backend y Supabase). **Ningún texto de interfaz se escribe a mano.**

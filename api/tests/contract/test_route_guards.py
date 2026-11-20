@@ -1,7 +1,7 @@
 """Guardia de cada operación (fase 2 · Seguridad; RN-I-03, RN-X-08, RN-XVII-01…05).
 
 Recorre el árbol de dependencias de cada ruta de `create_app()` y comprueba que cada
-`operationId` del contrato 0.2.5 tiene EXACTAMENTE el guardia de la tabla: solo
+`operationId` del contrato 0.2.6 tiene EXACTAMENTE el guardia de la tabla: solo
 `current_user`, `membership`, `require_admin` o la función de `require_permission(<permiso>)`
 (comparada por identidad). Orden de los guardias: 401 → 404 → 403.
 """
@@ -25,7 +25,7 @@ from app.security.dependencies import (
     require_permission,
 )
 
-CONTRACT_PATH = Path(__file__).resolve().parents[3] / "docs/api/zentheris-api-v0.2.5.yaml"
+CONTRACT_PATH = Path(__file__).resolve().parents[3] / "docs/api/zentheris-api-v0.2.6.yaml"
 CONTRACT: dict[str, Any] = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
 HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 PERMISSIONS: tuple[Permission, ...] = (

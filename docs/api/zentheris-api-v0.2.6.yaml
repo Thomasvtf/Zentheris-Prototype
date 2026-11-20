@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Zentheris API (MVP)
-  version: 0.2.5
+  version: 0.2.6
   description: |
-    Contrato de la API del MVP de Zentheris (proyecto formativo SENA). **Versión 0.2.5 · 03/11/2026.**
+    Contrato de la API del MVP de Zentheris (proyecto formativo SENA). **Versión 0.2.6 · 19/11/2026.**
 
     **Estado:** candidato a congelar. Validación estructural propia sin errores (referencias,
     operationId únicos, parámetros de ruta, esquemas JSON Schema 2020-12, enums cruzados con el
@@ -13,10 +13,10 @@ info:
     **Fuentes:** Reglas de Negocio y Modelo de Datos v4.9 (cada operación cita su regla RN-),
     registro de decisiones DC-01 a DC-58 (03/11/2026), umbrales `umbrales-estado.v1.json` y acta 04.
 
-    **Cambios frente a 0.2.4:** cabecera actualizada; enum `CodigoError` (26 códigos, iguales al
-    catálogo); textos del pico según D17; reglas de cálculo de referencias, comparación, pico y
-    proyección (v4.9); recuperación de horas antes de responder consultas de consumo; lista de
-    operadores aprobada. Sin endpoints nuevos ni campos nuevos: 40 operaciones.
+    **Cambios frente a 0.2.5:** el enum `CodigoError` pasa de 26 a 29 códigos (se agregan
+    `NO_AUTENTICADO`, para el `401`, `NO_ENCONTRADO`, para el `404`, y `ERROR_INTERNO`, para el `500`, con su texto en el catálogo v1);
+    la respuesta `422` (`VALIDACION`) se declara en las 19 operaciones que la devolvían sin listarla;
+    `/salud` declara `4XX`. Sin endpoints nuevos ni campos nuevos: 40 operaciones.
 
     **Convenciones**
     - Autenticación: Supabase Auth (RN-I-01). El cliente obtiene el JWT con Supabase
@@ -92,6 +92,11 @@ paths:
                 required: [estado]
                 properties:
                   estado: { type: string, enum: [ok] }
+        '4XX':
+          description: Solicitud no válida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────────── Usuario ─────────────────────────────
   /usuarios/me:
@@ -297,6 +302,7 @@ paths:
               schema: { $ref: '#/components/schemas/Hogar' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/zonas:
     parameters:
@@ -320,6 +326,7 @@ paths:
                     items: { $ref: '#/components/schemas/Zona' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   # ───────────────────────────── Onboarding ─────────────────────────────
   /onboarding:
@@ -385,6 +392,7 @@ paths:
               schema: { $ref: '#/components/schemas/MiembrosHogar' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/permisos:
     parameters:
@@ -425,6 +433,7 @@ paths:
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/miembros/{membresia_id}/transferir-administracion:
     parameters:
@@ -445,6 +454,7 @@ paths:
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/salir:
     parameters:
@@ -464,6 +474,7 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/invitaciones:
     parameters:
@@ -515,6 +526,7 @@ paths:
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /invitaciones/recibidas:
     get:
@@ -561,6 +573,7 @@ paths:
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /invitaciones/{invitacion_id}/aceptar:
     parameters:
@@ -584,6 +597,7 @@ paths:
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /invitaciones/{invitacion_id}/rechazar:
     parameters:
@@ -599,6 +613,7 @@ paths:
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409': { $ref: '#/components/responses/Conflicto' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   # ───────────────────────────── Consumo ─────────────────────────────
   /hogares/{hogar_id}/consumo/actual:
@@ -623,6 +638,7 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/consumo/zonas:
     parameters:
@@ -643,6 +659,7 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/consumo/zonas/{zona_id}:
     parameters:
@@ -664,6 +681,7 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/historial:
     parameters:
@@ -720,6 +738,7 @@ paths:
               schema: { $ref: '#/components/schemas/FuentesDatos' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   # ───────────────────────────── Metas y tarifa ─────────────────────────────
   /hogares/{hogar_id}/meta:
@@ -737,6 +756,7 @@ paths:
               schema: { $ref: '#/components/schemas/MetaVista' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/metas:
     parameters:
@@ -780,6 +800,7 @@ paths:
               schema: { $ref: '#/components/schemas/TarifaVista' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/tarifas:
     parameters:
@@ -847,6 +868,7 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/alertas/no-leidas:
     parameters:
@@ -869,6 +891,7 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/alertas/marcar-leidas:
     parameters:
@@ -879,7 +902,8 @@ paths:
       summary: Marcar como leídas las alertas visibles al entrar (RN-XIV-03, RN-VI-05)
       description: |
         Registra `leida_en` solo para esta persona. Los ids que ya estaban leídos o que no
-        pertenecen al usuario se ignoran.
+        pertenecen al usuario se ignoran. Exige `permiso_recibir_alertas`: sin él responde `403`
+        con `SIN_PERMISO_RECIBIR_ALERTAS`.
       requestBody:
         required: true
         content:
@@ -925,6 +949,7 @@ paths:
                     items: { $ref: '#/components/schemas/Consejo' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+        '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/consejos/{consejo_id}/estado:
     parameters:
@@ -990,7 +1015,7 @@ components:
 
   responses:
     NoAutenticado:
-      description: Token ausente, inválido o vencido.
+      description: Token ausente, inválido o vencido (`codigo` = `NO_AUTENTICADO`).
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -1000,7 +1025,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     NoEncontrado:
-      description: El recurso no existe o el usuario no tiene membresía activa en ese hogar.
+      description: El recurso no existe o el usuario no tiene membresía activa en ese hogar (`codigo` = `NO_ENCONTRADO`).
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -1015,7 +1040,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     ErrorServidor:
-      description: Error interno. En el onboarding, `BACKFILL_FALLIDO`; no queda ningún dato creado.
+      description: Error interno (`codigo` = `ERROR_INTERNO`). En `POST /onboarding` el código es `BACKFILL_FALLIDO` y no queda ningún dato creado.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -1037,7 +1062,8 @@ components:
             `CORREO_NO_COINCIDE`, `ZONAS_NO_PERMITIDAS`, `ZONAS_BASICAS_FALTANTES`,
             `CANTIDAD_ZONAS_INVALIDA`, `ZONAS_DUPLICADAS`, `VIGENCIA_NO_POSTERIOR`,
             `CONTRASENA_ACTUAL_INCORRECTA`, `CONTRASENA_NO_CUMPLE_REGLAS`,
-            `CONTRASENA_IGUAL_A_ACTUAL`, `ADMIN_UNICO_MIEMBRO`, `BACKFILL_FALLIDO`, `VALIDACION`.
+            `CONTRASENA_IGUAL_A_ACTUAL`, `ADMIN_UNICO_MIEMBRO`, `BACKFILL_FALLIDO`, `VALIDACION`,
+            `NO_AUTENTICADO`, `NO_ENCONTRADO`, `ERROR_INTERNO`.
         mensaje:
           type: string
           description: Descripción técnica; el texto para el usuario lo resuelve la app con `codigo`.
@@ -1049,7 +1075,7 @@ components:
     CodigoError:
       type: string
       description: Códigos de error del contrato. Cada uno tiene texto en el catálogo v1 (`error.<codigo en minúsculas>`), salvo FICHA_NO_CREADA y FICHA_EXISTENTE, que son internos. LIMITE_MIEMBROS tiene dos textos (invitar y aceptar).
-      enum: [FICHA_NO_CREADA, FICHA_EXISTENTE, NO_ES_ADMINISTRADOR, SIN_PERMISO_VER_CONSUMO, SIN_PERMISO_VER_HISTORIAL, SIN_PERMISO_RECIBIR_ALERTAS, SIN_PERMISO_MODIFICAR_METAS, ADMIN_DEBE_TRANSFERIR, MEMBRESIA_ACTIVA_EXISTENTE, LIMITE_MIEMBROS, INVITACION_EXPIRADA, INVITACION_NO_PENDIENTE, INVITACION_PENDIENTE_EXISTENTE, YA_ES_MIEMBRO, CORREO_NO_COINCIDE, ZONAS_NO_PERMITIDAS, ZONAS_BASICAS_FALTANTES, CANTIDAD_ZONAS_INVALIDA, ZONAS_DUPLICADAS, VIGENCIA_NO_POSTERIOR, CONTRASENA_ACTUAL_INCORRECTA, CONTRASENA_NO_CUMPLE_REGLAS, CONTRASENA_IGUAL_A_ACTUAL, ADMIN_UNICO_MIEMBRO, BACKFILL_FALLIDO, VALIDACION]
+      enum: [FICHA_NO_CREADA, FICHA_EXISTENTE, NO_ES_ADMINISTRADOR, SIN_PERMISO_VER_CONSUMO, SIN_PERMISO_VER_HISTORIAL, SIN_PERMISO_RECIBIR_ALERTAS, SIN_PERMISO_MODIFICAR_METAS, ADMIN_DEBE_TRANSFERIR, MEMBRESIA_ACTIVA_EXISTENTE, LIMITE_MIEMBROS, INVITACION_EXPIRADA, INVITACION_NO_PENDIENTE, INVITACION_PENDIENTE_EXISTENTE, YA_ES_MIEMBRO, CORREO_NO_COINCIDE, ZONAS_NO_PERMITIDAS, ZONAS_BASICAS_FALTANTES, CANTIDAD_ZONAS_INVALIDA, ZONAS_DUPLICADAS, VIGENCIA_NO_POSTERIOR, CONTRASENA_ACTUAL_INCORRECTA, CONTRASENA_NO_CUMPLE_REGLAS, CONTRASENA_IGUAL_A_ACTUAL, ADMIN_UNICO_MIEMBRO, BACKFILL_FALLIDO, VALIDACION, NO_AUTENTICADO, NO_ENCONTRADO, ERROR_INTERNO]
 
     EstadoConsumo:
       type: string

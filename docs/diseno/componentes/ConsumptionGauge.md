@@ -21,7 +21,7 @@ Figma (copia de trabajo `RD1IQ5L1OmUeMxteRimvMe`): `Grafico/Consumo/Gauge` (588:
 - Fondo de la card: `z-color-background-surface` (#162B25).
 
 ## Cómo se llena el arco (aprobada por Nicolás el 11/11/2026)
-La regla no estaba escrita en las reglas v4.9 (solo el ejemplo «Gauge al 40 %»). Se usan datos que el contrato 0.2.5 ya entrega en `consumo_actual` (`potencia_kw` y `referencia_kw`) y los umbrales v1 (`consumo_actual`: elevado desde +20 %, crítico desde +40 % sobre la referencia):
+La regla no estaba escrita en las reglas de negocio (solo el ejemplo «Gauge al 40 %»). Se usan datos que el contrato 0.2.5 ya entrega en `consumo_actual` (`potencia_kw` y `referencia_kw`) y los umbrales v1 (`consumo_actual`: elevado desde +20 %, crítico desde +40 % sobre la referencia):
 
 `proporcion = min( potencia_kw ÷ (referencia_kw × 1,6) , 1 )`
 

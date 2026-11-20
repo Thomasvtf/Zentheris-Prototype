@@ -1,6 +1,6 @@
 # supabase/
 
-Esquema de la base de Zentheris en Supabase (PostgreSQL, Auth y Storage). Reglas para Claude Code en [`CLAUDE.md`](CLAUDE.md). Fuente: [`docs/supabase/especificacion-supabase-v1.md`](../docs/supabase/especificacion-supabase-v1.md) y las reglas v4.9 §3.
+Esquema de la base de Zentheris en Supabase (PostgreSQL, Auth y Storage). Reglas para Claude Code en [`CLAUDE.md`](CLAUDE.md). Fuente: [`docs/supabase/especificacion-supabase-v1.md`](../docs/supabase/especificacion-supabase-v1.md) y las reglas de negocio §3.
 
 ## Qué va aquí
 

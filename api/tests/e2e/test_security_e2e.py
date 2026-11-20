@@ -2,7 +2,7 @@
 
 Usa `create_app(make_test_settings())` con sus routers reales, el JWKS de prueba, membresías
 falsas y una sesión falsa: sin base, sin red y sin secretos. Las operaciones salen del
-contrato `docs/api/zentheris-api-v0.2.6.yaml` (no de una lista escrita a mano); de las
+contrato `docs/api/zentheris-api.yaml` (no de una lista escrita a mano); de las
 reglas solo se toman qué operaciones exigen cada permiso (RN-XVII-01…04) y cuáles son solo
 del administrador (RN-X-08, RN-XVI-05).
 
@@ -47,7 +47,7 @@ from tests.helpers.auth import (
 
 # --- Contrato -------------------------------------------------------------------------------
 
-CONTRACT_PATH = Path(__file__).resolve().parents[3] / "docs/api/zentheris-api-v0.2.6.yaml"
+CONTRACT_PATH = Path(__file__).resolve().parents[3] / "docs/api/zentheris-api.yaml"
 CONTRACT: dict[str, Any] = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
 SCHEMAS: dict[str, Any] = CONTRACT["components"]["schemas"]
 HTTP_METHODS = ("get", "post", "put", "patch", "delete")

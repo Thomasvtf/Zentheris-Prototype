@@ -1,7 +1,7 @@
-"""Esquemas del contrato 0.2.6 · Etiqueta «Onboarding».
+"""Esquemas del contrato · Etiqueta «Onboarding».
 
 Los nombres de clases y campos son los del contrato (no se traducen, DC-62).
-Generado una vez desde docs/api/zentheris-api-v0.2.6.yaml y revisado a mano."""
+Generado una vez desde docs/api/zentheris-api.yaml y revisado a mano."""
 
 from pydantic import BaseModel, ConfigDict, Field
 

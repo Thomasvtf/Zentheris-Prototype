@@ -1,6 +1,6 @@
 # Sistema de diseño · decisiones v2 (03/11/2026)
 
-Reemplaza en lo que contradiga a `design-system-decisiones-2026-11-02.md`, que queda como antecedente en esta misma carpeta. Fuentes: artifact «Zentheris» (Design System, versión `1793682992-9b87`, leído el 03/11/2026), reglas v4.9 y registro DC.
+Reemplaza en lo que contradiga a `design-system-decisiones-2026-11-02.md`, que queda como antecedente en esta misma carpeta. Fuentes: artifact «Zentheris» (Design System, versión `1793682992-9b87`, leído el 03/11/2026), reglas de negocio y registro DC.
 
 ## 1. Pendientes del sistema de diseño y cómo quedaron
 

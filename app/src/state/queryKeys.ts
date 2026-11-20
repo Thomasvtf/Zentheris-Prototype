@@ -3,7 +3,7 @@
  * parámetros. Así cada consulta se rastrea hasta su fila de docs/MAPA-DE-INTEGRACION.md.
  */
 
-/** Operaciones GET del contrato 0.2.6 (las que se consultan con React Query). */
+/** Operaciones GET del contrato (las que se consultan con React Query). */
 export type QueryOperationId =
   | 'obtenerSalud'
   | 'obtenerUsuarioActual'

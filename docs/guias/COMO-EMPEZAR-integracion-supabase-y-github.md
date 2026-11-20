@@ -34,4 +34,4 @@ Abre Claude Code en el repositorio y lee `CLAUDE.md` y `docs/guias/GUIA-DEL-EQUI
 
 - Qué construir en la app: `docs/guias/GUIA-2-interfaces-app.md` (`11_guias-de-desarrollo/guias-detalle/GUIA-2-interfaces-app.md`; lectura corta: `11_guias-de-desarrollo/GUIA-2-interfaces-app-resumen.md`).
 - Qué construir en el backend: `docs/guias/GUIA-3-backend-y-arquitectura.md` (`11_guias-de-desarrollo/guias-detalle/GUIA-3-backend-y-arquitectura.md`; lectura corta: `11_guias-de-desarrollo/GUIA-3-backend-y-arquitectura-resumen.md`).
-- Qué falta en la refactorización: `docs/PENDIENTES-DE-REFACTORIZACION.md` (`00_estado-y-pendientes/PENDIENTES-DE-REFACTORIZACION.md`). Qué falta antes del backend: `PENDIENTES-GENERAL-antes-de-backend.md` (solo en la carpeta).
+- Qué falta: `PENDIENTES.md` (solo en la carpeta `Archivos_Zentheris`; la lista única de pendientes).

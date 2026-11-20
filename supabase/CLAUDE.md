@@ -1,6 +1,6 @@
 # CLAUDE.md · supabase/ (migraciones y semilla)
 
-Complementa al `CLAUDE.md` de la raíz. Fuente: `docs/supabase/especificacion-supabase-v1.md` y las reglas v4.9 §3.
+Complementa al `CLAUDE.md` de la raíz. Fuente: `docs/supabase/especificacion-supabase-v1.md` y las reglas de negocio §3.
 
 ## Reglas
 

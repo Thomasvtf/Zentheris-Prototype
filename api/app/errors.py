@@ -1,6 +1,6 @@
 """Errores de la API con la forma del contrato: {codigo, mensaje, detalles}.
 
-`CodigoError` copia el enum del contrato docs/api/zentheris-api-v0.2.6.yaml; sus
+`CodigoError` copia el enum del contrato docs/api/zentheris-api.yaml; sus
 valores no se traducen (DC-62). Ningún manejador devuelve el texto, el tipo ni la traza
 de una excepción interna (guía 3 §7, prueba S-01).
 """
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class CodigoError(StrEnum):
-    """Códigos de error del contrato 0.2.6 (enum `CodigoError`)."""
+    """Códigos de error del contrato (enum `CodigoError`)."""
 
     FICHA_NO_CREADA = "FICHA_NO_CREADA"
     FICHA_EXISTENTE = "FICHA_EXISTENTE"
@@ -122,7 +122,7 @@ async def _handle_validation_error(_request: Request, exc: Exception) -> JSONRes
 
 
 class PendingCodeError(Exception):
-    """TEMPORAL: error sin `CodigoError` en el contrato 0.2.6 (decisión abierta #29).
+    """TEMPORAL: error sin `CodigoError` en el contrato (decisión abierta #29).
 
     Cubre el 401 (token ausente, inválido o vencido), el 404 por falta de membresía activa
     (RN-I-03) y el 500 genérico. Responde `{"mensaje": ERROR_DESCRIPTIONS[status], "detalles":
@@ -130,9 +130,9 @@ class PendingCodeError(Exception):
     cabecera `WWW-Authenticate: Bearer`.
     """
 
-    # TODO(pendiente: código de error del 401, PENDIENTES #29; contrato 0.2.6)
-    # TODO(pendiente: código de error del 404, PENDIENTES #29; contrato 0.2.6)
-    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato 0.2.6)
+    # TODO(pendiente: código de error del 401, PENDIENTES #29; contrato)
+    # TODO(pendiente: código de error del 404, PENDIENTES #29; contrato)
+    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato)
     ALLOWED_STATUS_CODES = frozenset({401, 404, 500})
 
     def __init__(self, status_code: int) -> None:
@@ -163,7 +163,7 @@ def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
     route = request.scope.get("route")
     path = getattr(route, "path", None) or "(ruta desconocida)"
     logger.exception("Error interno no controlado en %s %s", request.method, path, exc_info=exc)
-    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato 0.2.6)
+    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato)
     return _pending_code_response(500)
 
 
@@ -194,5 +194,5 @@ def register_error_handlers(app: FastAPI) -> None:
     # TEMPORAL (esqueleto): 501 para las operaciones que aún no están implementadas.
     app.add_exception_handler(NotImplementedOperation, _handle_not_implemented)
     # 500 genérico sin exponer la excepción interna (guía 3 §7, prueba S-01).
-    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato 0.2.6)
+    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato)
     app.add_exception_handler(Exception, _handle_unexpected_error)

@@ -1,6 +1,6 @@
 # Especificación de Supabase y base de datos v1.1 · 10/11/2026
 
-Estado: **EJECUTADA el 08/11/2026** en el proyecto nuevo `zentheris` (ref `hylseqruipigpewjfxmf`); evidencia en `entornos/definitivo/acta-migracion-2026-11-08.md`. Esta v1.1 (10/11/2026) actualiza la v1 del 03/11/2026: cambia la sección 1 (proyecto nuevo, no el existente, M-1) y los datos de Auth (sección 2). Las tablas, RLS y Storage no cambian. No contiene SQL. Fuente: reglas v4.9 (sección 3 y «Integridad, seguridad y almacenamiento») y registro DC-36 a DC-45. El borrador `borrador-v4.4-no-ejecutado/` sirve como punto de partida, pero hay que aplicarle las diferencias de la sección 6.
+Estado: **EJECUTADA el 08/11/2026** en el proyecto nuevo `zentheris` (ref `hylseqruipigpewjfxmf`); evidencia en `entornos/definitivo/acta-migracion-2026-11-08.md`. Esta v1.1 (10/11/2026) actualiza la v1 del 03/11/2026: cambia la sección 1 (proyecto nuevo, no el existente, M-1) y los datos de Auth (sección 2). Las tablas, RLS y Storage no cambian. No contiene SQL. Fuente: reglas de negocio (sección 3 y «Integridad, seguridad y almacenamiento») y registro DC-36 a DC-45. El borrador `borrador-v4.4-no-ejecutado/` sirve como punto de partida, pero hay que aplicarle las diferencias de la sección 6.
 
 ## 1. Proyecto y entornos
 
@@ -22,7 +22,7 @@ Estado: **EJECUTADA el 08/11/2026** en el proyecto nuevo `zentheris` (ref `hylse
 | Confirm email | **Desactivado** (verificado el 10/11/2026); se activa antes de la entrega |
 | Contraseña | Mínimo 8; requisito «letras y dígitos» (DC-05). La app y el backend validan la mayúscula y el número (RN-IX-02). |
 | SMTP | **Configurado** el 10/11/2026: Brevo, `smtp-relay.brevo.com:587`, Username = Login SMTP de Brevo, clave SMTP en el panel; remitente = Gmail verificado del proyecto, en minúsculas (Brevo distingue mayúsculas). entrega validada el 10/11/2026 (llegó a spam) Dominio propio: fuera del MVP (DC-04) |
-| Plantillas | `06_catalogo-de-textos/catalogo-textos-v1/supabase/plantillas-auth.es-CO.json` (confirmación, recuperación, cambio de correo) |
+| Plantillas | `06_catalogo-de-textos/catalogo-textos/supabase/plantillas-auth.es-CO.json` (confirmación, recuperación, cambio de correo) |
 | URL del sitio y redirecciones | Site URL `zentheris://`; redirecciones `zentheris://**` y `exp://**` (hecho, DC-44) |
 | Metadatos de registro | `nombre_completo` y `telefono` (RN-IX-01, N5) |
 | JWT | El backend valida con JWKS (`/auth/v1/.well-known/jwks.json`); si el proyecto usa el secreto HS256 heredado, con ese secreto (DC-44) |
@@ -40,7 +40,7 @@ Bucket `avatares`, **privado**. Ruta `{usuario_id}/avatar.{jpg|png|webp}`, máxi
 
 `auth.users` ya existe. Se crean 17 tablas propias, todas con `created_at`, `updated_at` y la actualización automática de `updated_at`.
 
-| # | Tabla | Dependencias | Restricciones clave (v4.9) |
+| # | Tabla | Dependencias | Restricciones clave (reglas de negocio) |
 |---|---|---|---|
 | 1 | `perfiles_simulacion` | — | `nombre` único; 9 bases ≥ 0; `factor_fin_semana` > 0; JSON obligatorios |
 | 2 | `usuarios` | auth.users | PK = FK a `auth.users`, borrado en cascada |

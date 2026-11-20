@@ -60,6 +60,7 @@ httptools==0.8.0
     # via uvicorn
 httpx==0.28.1
     # via
+    #   api
     #   fastapi
     #   fastapi-cloud-cli
 idna==3.20

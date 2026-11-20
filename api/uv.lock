@@ -49,6 +49,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "apscheduler" },
     { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
     { name = "psycopg2-binary" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "python-dotenv" },
@@ -70,6 +71,7 @@ dev = [
 requires-dist = [
     { name = "apscheduler", specifier = ">=3.11.3" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.141.1" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "psycopg2-binary", specifier = ">=2.9.13" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
     { name = "python-dotenv", specifier = ">=1.2.3" },

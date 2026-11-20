@@ -1,12 +1,12 @@
-# docs/ · Contexto vigente de Zentheris (v4.9, 03/11/2026)
+# docs/ · Contexto vigente de Zentheris
 
 Copia de las fuentes vigentes de Archivos_Zentheris para el desarrollo, que hacen personas y Claude Code. El orden de prioridad y las reglas están en `../CLAUDE.md`.
 
 | Carpeta | Contenido |
 |---|---|
-| `reglas/` | Documento maestro v4.9 |
+| `reglas/` | Documento maestro |
 | `decisiones/` | Registro DC-01 a DC-70 |
-| `api/` | Contrato OpenAPI 0.2.6 + `redocly.yaml` + validador |
+| `api/` | Contrato OpenAPI + `redocly.yaml` + validador |
 | `supabase/` | Especificación de la base, RLS, Storage y variables de entorno |
 | `datos/` | Umbrales v1, motor de referencia, pruebas, perfiles y Avance 03 (zip) |
 | `textos/` | Catálogo de textos v1 |

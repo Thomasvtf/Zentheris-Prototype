@@ -32,7 +32,7 @@ Complementa el plan v3.0 con lo que faltaba según las reglas §10: permisos, RL
 | A-03 | Alertas | Miembro con el interruptor apagado al disparar | Sin fila en `alertas_usuario` para él | RN-VI-02, XIV-06 |
 | A-04 | Alertas | Cierre de mes por encima de la referencia | Alerta de advertencia + consejo general de prioridad baja | RN-XIV-07, XV-07 |
 | A-05 | Consejos | Consejo creado con 3 miembros activos | 3 filas `pendiente` | RN-XV-06 |
-| C-01 | Contrato | Cada respuesta coincide con su esquema 0.2.6 | Sin errores (validación automática) | DC-47 |
+| C-01 | Contrato | Cada respuesta coincide con su esquema del contrato | Sin errores (validación automática) | DC-47 |
 | C-02 | Contrato | Lint oficial | 0 errores con Redocly | DC-46 |
 | I-01 | Integridad | Sensor y zona de hogares distintos | 0 casos (consulta de integridad) | DC-38 |
 | I-02 | Integridad | Tarifas solapadas del mismo hogar | Rechazado | DC-39 |
@@ -40,7 +40,7 @@ Complementa el plan v3.0 con lo que faltaba según las reglas §10: permisos, RL
 | I-04 | Integridad | Eliminar la cuenta de un miembro (no único) | Membresía inactiva con usuario nulo; datos del hogar intactos | DC-36 |
 | S-01 | Seguridad | Error interno en cualquier endpoint | La respuesta no expone la excepción | Guía 3 §7 |
 | S-02 | Seguridad | Token de invitación | Solo se guarda su hash | RN-X-05 |
-| S-03 | Seguridad | Llamada protegida sin token, con token inválido o vencido | 401 `NO_AUTENTICADO` | Contrato 0.2.6, RN-I-01 |
-| S-04 | Seguridad | Fallo no previsto en cualquier endpoint | 500 `ERROR_INTERNO` sin exponer la excepción | Contrato 0.2.6, Guía 3 §7 |
+| S-03 | Seguridad | Llamada protegida sin token, con token inválido o vencido | 401 `NO_AUTENTICADO` | Contrato, RN-I-01 |
+| S-04 | Seguridad | Fallo no previsto en cualquier endpoint | 500 `ERROR_INTERNO` sin exponer la excepción | Contrato, Guía 3 §7 |
 
 La referencia ejecutada está en `04_datos-simulados/calibracion-umbrales-v1/` (13/13 OK) y en el Avance 03 (59/59 OK). Nada de lo demás está ejecutado: el backend no existe todavía.

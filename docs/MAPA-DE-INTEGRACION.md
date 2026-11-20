@@ -1,11 +1,11 @@
 # Mapa de integración · contrato ↔ API ↔ app
 
-Puerta de entrada de la integración (PENDIENTES #23). Una fila por operación del contrato `docs/api/zentheris-api-v0.2.6.yaml`.
+Puerta de entrada de la integración (PENDIENTES #23). Una fila por operación del contrato `docs/api/zentheris-api.yaml`.
 
 **Reglas**
 - Ninguna operación sin fila; ninguna fila sin archivo en el esqueleto; ninguna pantalla sin hook; todo texto visible sale del catálogo.
 - `scripts/check_integration.py` (parte B) comprueba en el CI que las 40 operaciones del contrato, los routers, el cliente de la app y esta tabla coinciden: método, ruta, `operationId`, función del router, función del servicio y función de la app.
-- **Tablas:** deducidas de las reglas v4.9 §3 y de la especificación §4; se confirman en la sesión de cada endpoint.
+- **Tablas:** deducidas de las reglas de negocio §3 y de la especificación §4; se confirman en la sesión de cada endpoint.
 - **Prueba:** todas las filas llevan además **C-01** (respuesta igual al esquema).
 - **Textos:** solo prefijos que existen en `docs/textos/catalogo.es-CO.json`.
 - **App:** la función existe en `app/src/api/` con su etiqueta `@operationId` y la parte B la comprueba (PR 6). El **hook** y la **pantalla** son previstos: se crean y se comprueban desde la sesión 9.

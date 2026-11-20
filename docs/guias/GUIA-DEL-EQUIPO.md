@@ -24,7 +24,7 @@ Esta guía explica, paso a paso, cómo trabajar en Zentheris con la estructura n
 **Tres palabras que se repiten:**
 - **API** o **back:** el servidor en Python que guarda y calcula los datos. Vive en `api/`.
 - **App** o **front:** la aplicación del celular. Vive en `app/`.
-- **Contrato:** el archivo `docs/api/zentheris-api-v0.2.6.yaml`. Dice qué direcciones (endpoints) tiene la API, qué recibe y qué devuelve cada una. La API y la app lo siguen al pie de la letra.
+- **Contrato:** el archivo `docs/api/zentheris-api.yaml`. Dice qué direcciones (endpoints) tiene la API, qué recibe y qué devuelve cada una. La API y la app lo siguen al pie de la letra.
 
 ---
 
@@ -229,7 +229,7 @@ Cada receta tiene las mismas partes: qué vas a construir, de qué te guías, d�
 
 | Qué | Dónde |
 |---|---|
-| Qué muestra la pantalla | `docs/reglas/reglas-de-negocio-v4.9.md`, sección «6.8 Consejos» (cada pantalla tiene su sección 6.x) |
+| Qué muestra la pantalla | `docs/reglas/reglas-de-negocio.md`, sección «6.8 Consejos» (cada pantalla tiene su sección 6.x) |
 | Cómo se ve | El Figma del equipo, página «Pantallas» (pide el enlace) |
 | Las piezas visuales | Las fichas de `docs/diseno/componentes/`: para Consejos, `TipCard.md`, `TipList.md`, `PriorityTag.md` y `StateMessage.md`. Sus propiedades están en `index.d.ts` |
 | Colores, espaciados y tipografías | `app/src/theme/` (se ven en `/catalogo-componentes`) |
@@ -430,7 +430,7 @@ Cada casa tiene una **personalidad de consumo** (compacto, eficiente, intermedio
 | El simulador de referencia, que ya funciona | `docs/datos/referencia/Zentheris_v4.3_Avance_03_Conjuntos_Calibrados.zip` → `codigo/zentheris_sim/` (`simulador.py`, `asignacion.py`, `semillas.py`, `constantes.py`) |
 | Sus 59 pruebas | Mismo zip → `pruebas/` |
 | Los parámetros de las 5 personalidades | `docs/datos/perfiles/` (en la base, tabla `perfiles_simulacion`, cargada por `supabase/migrations/…_0006_semilla_perfiles_simulacion.sql`) |
-| Las reglas | `docs/reglas/reglas-de-negocio-v4.9.md` (busca «simul» y «backfill») |
+| Las reglas | `docs/reglas/reglas-de-negocio.md` (busca «simul» y «backfill») |
 | Las pruebas que debe pasar la API | `docs/pruebas/matriz-pruebas-backend-v1.md`, grupos Z y B |
 
 Para ver el simulador de referencia funcionando (sirve igual en PowerShell y en Git Bash), desde `api/`:
@@ -495,7 +495,7 @@ Para ver el simulador de referencia funcionando (sirve igual en PowerShell y en 
 | El motor de referencia, que ya funciona | `docs/datos/motor_estados_ref.py` (funciones `estado_relativo`, `estado_acumulado_meta`, `comparacion_periodo`, `es_pico`, `proyeccion_cierre`…) |
 | Los 13 escenarios que debe reproducir | `docs/datos/test_escenarios_umbrales.py` |
 | Los textos de alertas y consejos | `docs/textos/textos-backend.es-CO.json` (copia en `api/app/config_files/`) |
-| Las reglas | `docs/reglas/reglas-de-negocio-v4.9.md`, secciones XI (estados), XIV (alertas) y XV (consejos) |
+| Las reglas | `docs/reglas/reglas-de-negocio.md`, secciones XI (estados), XIV (alertas) y XV (consejos) |
 | Las pruebas que debe pasar la API | `docs/pruebas/matriz-pruebas-backend-v1.md`, grupos U y A |
 
 Para ver los 13 escenarios pasar con el motor de referencia, descomprime el paquete en `api/_referencia` (paso 1 de la receta 3.2) y, desde `api/`:
@@ -588,7 +588,7 @@ Debe decir `Ran 13 tests … OK`. Al terminar, borra `_referencia` (paso 3 de la
 
 **Dónde va cada archivo** (ejemplo: `listarConsejos`):
 ```
-docs/api/zentheris-api-v0.2.6.yaml        el contrato
+docs/api/zentheris-api.yaml        el contrato
 api/app/schemas/alerts_tips.py            forma de la respuesta (ConsejosLista, Consejo)
 api/app/routers/alerts_tips.py            la dirección GET /hogares/{hogar_id}/consejos
 api/app/services/alerts_tips.py           list_tips: la lógica
@@ -599,9 +599,9 @@ docs/MAPA-DE-INTEGRACION.md               su fila
 ```
 
 **Paso a paso.**
-1. **Contrato** (solo si cambia): edita `docs/api/zentheris-api-v0.2.6.yaml` y valídalo. Desde `api/`:
+1. **Contrato** (solo si cambia): edita `docs/api/zentheris-api.yaml` y valídalo. Desde `api/`:
    ```bash
-   uv run python -I ../docs/api/validar_contrato.py ../docs/api/zentheris-api-v0.2.6.yaml ../docs/textos/mensaje_codigos.es-CO.json ../docs/textos/catalogo.es-CO.json
+   uv run python -I ../docs/api/validar_contrato.py ../docs/api/zentheris-api.yaml ../docs/textos/mensaje_codigos.es-CO.json ../docs/textos/catalogo.es-CO.json
    ```
    Debe terminar con `"errores": []`.
 2. **Schemas:** ajusta `api/app/schemas/<grupo>.py` con los mismos nombres, tipos y valores nulos que el contrato.
@@ -646,7 +646,7 @@ Puedes pedirle una tarea a Claude Code o a otra IA. Funciona bien si le das el c
 Lee CLAUDE.md, app/CLAUDE.md y docs/guias/GUIA-DEL-EQUIPO.md (receta 3.1).
 Tarea: hacer la pantalla <NOMBRE> en app/src/screens/<Carpeta>/<Pantalla>.tsx
 con su hook use<Pantalla>Data.ts, y conectar su ruta app/src/app/<ruta>.tsx.
-Guíate por: la sección 6.x «<NOMBRE>» de docs/reglas/reglas-de-negocio-v4.9.md,
+Guíate por: la sección 6.x «<NOMBRE>» de docs/reglas/reglas-de-negocio.md,
 las fichas <Componentes> de docs/diseno/componentes/ y la fila de la pantalla
 en docs/MAPA-DE-INTEGRACION.md (endpoints y hook).
 Reglas: colores, espaciados y tipografías solo desde @/theme; textos solo con t()
@@ -737,13 +737,13 @@ git push -u origin <tu-rama>
 | Archivo | Para qué sirve |
 |---|---|
 | [`CLAUDE.md`](../../CLAUDE.md), [`app/CLAUDE.md`](../../app/CLAUDE.md), [`api/CLAUDE.md`](../../api/CLAUDE.md) | Reglas completas del proyecto y de cada carpeta |
-| [`docs/reglas/reglas-de-negocio-v4.9.md`](../reglas/reglas-de-negocio-v4.9.md) | Qué hace la app: reglas (RN-*), tablas y pantallas |
-| [`docs/api/zentheris-api-v0.2.6.yaml`](../api/zentheris-api-v0.2.6.yaml) | El contrato de la API |
+| [`docs/reglas/reglas-de-negocio.md`](../reglas/reglas-de-negocio.md) | Qué hace la app: reglas (RN-*), tablas y pantallas |
+| [`docs/api/zentheris-api.yaml`](../api/zentheris-api.yaml) | El contrato de la API |
 | [`docs/MAPA-DE-INTEGRACION.md`](../MAPA-DE-INTEGRACION.md) | Qué archivo atiende cada endpoint en la API y en la app |
-| [`docs/decisiones/registro-decisiones-cierre-2026-11-03.md`](../decisiones/registro-decisiones-cierre-2026-11-03.md) | Por qué se decidió cada cosa (DC-*) |
+| [`docs/decisiones/registro-decisiones.md`](../decisiones/registro-decisiones.md) | Por qué se decidió cada cosa (DC-*) |
 | [`docs/diseno/componentes/`](../diseno/componentes/) | Fichas de los componentes del sistema de diseño |
 | [`docs/pruebas/matriz-pruebas-backend-v1.md`](../pruebas/matriz-pruebas-backend-v1.md) | Lista de pruebas que debe pasar la API |
 | [`docs/historias/historias-usuario-v5-mvp.md`](../historias/historias-usuario-v5-mvp.md) | Las historias de usuario del MVP |
 | [`docs/guias/GUIA-2-interfaces-app.md`](GUIA-2-interfaces-app.md) y [`docs/guias/GUIA-3-backend-y-arquitectura.md`](GUIA-3-backend-y-arquitectura.md) | Explicación más larga de la app y del back |
-| [`docs/PENDIENTES-DE-REFACTORIZACION.md`](../PENDIENTES-DE-REFACTORIZACION.md) y [`docs/PENDIENTES-DE-CONFIGURACION.md`](../PENDIENTES-DE-CONFIGURACION.md) | Tareas pendientes del repositorio y de la configuración |
+| `PENDIENTES.md` (solo en la carpeta `Archivos_Zentheris`, no en el repo) | La única lista de pendientes |
 | [`app/assets/fonts/README.md`](../../app/assets/fonts/README.md) | Detalle de las fuentes y de cómo instalar Satoshi |

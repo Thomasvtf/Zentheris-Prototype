@@ -1,6 +1,6 @@
 # Historias de usuario v5 · MVP Zentheris
 
-Versión 5.0 · 03/11/2026. Se derivan de las reglas v4.9 y el contrato 0.2.5 (DC-48), y reemplazan a las v4 FINAL, que quedan como históricas: tenían texto dañado e incluían IA, reportes y detección de anomalías, que no entran en el MVP. Formato: *Como … quiero … para …*, con criterios verificables, reglas y endpoint. La prioridad sigue el orden de construcción de la guía 3. Responsables y fechas viven en Notion.
+Versión 5.0 · 03/11/2026. Se derivan de las reglas de negocio y el contrato 0.2.5 (DC-48), y reemplazan a las v4 FINAL, que quedan como históricas: tenían texto dañado e incluían IA, reportes y detección de anomalías, que no entran en el MVP. Formato: *Como … quiero … para …*, con criterios verificables, reglas y endpoint. La prioridad sigue el orden de construcción de la guía 3. Responsables y fechas viven en Notion.
 
 ## 1. Acceso y cuenta
 

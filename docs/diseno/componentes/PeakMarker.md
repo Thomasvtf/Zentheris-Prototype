@@ -4,7 +4,7 @@ Marcador del pico más alto del periodo en barras y línea (RN-XIII-03, D5). Fig
 
 | Opción | Diseño | Estado |
 |---|---|---|
-| A | Píldora `z-color-accent-soft` + borde y texto `z-color-chart-peak` (rojo claro) | En uso en las pantallas v4.5 y en los tooltips de `Grafico/Historial/Barras` y `Linea` |
+| A | Píldora `z-color-accent-soft` + borde `z-color-chart-peak` (rojo claro) y texto `z-color-text-primary` | Vigente desde el 20/11/2026 (decisión de Nicolás: texto neutro, como pide la regla 2 de más abajo). Las pantallas v4.5 y los tooltips de `Grafico/Historial/Barras` y `Linea` tenían el texto en rojo claro y se corrigen al construirlos |
 | B | Etiqueta `z-color-text-primary` y contorno punteado `z-color-border-accent` | Alternativa |
 
 **Color del pico (D17, 02/11/2026; reemplaza a D12):** la barra o el punto del pico usan `z-color-chart-peak` (rojo claro #F59099; la primera versión era blanco y se descartó por revisión de Nicolás) y el resto de la serie conserva `z-color-chart-series1`. Además lleva la palabra «Pico», para no depender solo del color. El pico tiene color propio (rojo claro), distinto de los estados; el rojo queda para crítico (RN-XIII-03, D5). El valor va también en el resumen accesible. En Figma: `color/chart/peak`, aplicado en `Grafico/Historial/Barras` y `Grafico/Historial/Linea`.

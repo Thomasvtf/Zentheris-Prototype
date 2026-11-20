@@ -11,7 +11,7 @@ Las mismas que `BarChart` (`datos`, `unidad`, `titulo`, `periodo`): Día = 24 pu
 - Línea suave de 2 px en `z-color-chart-series1` (#5DD39E), sin relleno debajo.
 - Rejilla horizontal punteada de 3 líneas en `z-color-chart-grid`; etiquetas del eje Y y X en `data-s-mono-regular-12` con `z-color-chart-label` (#C4D4CF), con los decimales de su unidad y miles con «k» (RN-XII-08). Eje Y desde 0.
 - Línea de referencia punteada fina: el promedio histórico del periodo (RN-XIII-03).
-- Pico: punto en `z-color-chart-peak` (#F59099) sobre el valor más alto, con la píldora de `PeakMarker` (opción A: fondo `z-color-accent-soft`, borde y texto en rojo claro): «Pico · 12:00 · 3,20 kW», «Pico · Sáb · 28,4 kWh» o «Pico · 15/07 · 28,0 kWh». Se aplican las reglas anti-choque con «Crítico» de `PeakMarker`.
+- Pico: punto en `z-color-chart-peak` (#F59099) sobre el valor más alto, con la píldora de `PeakMarker` (opción A: fondo `z-color-accent-soft`, borde en rojo claro y texto `z-color-text-primary`): «Pico · 12:00 · 3,20 kW», «Pico · Sáb · 28,4 kWh» o «Pico · 15/07 · 28,0 kWh». Se aplican las reglas anti-choque con «Crítico» de `PeakMarker`.
 - Sin datos: línea punteada plana y el texto «Sin datos para este periodo».
 
 ## Defecto de Figma que se corrige en el código

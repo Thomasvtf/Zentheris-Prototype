@@ -1,4 +1,4 @@
-/** Operaciones de la etiqueta «Sistema» del contrato 0.2.6 (una función por operationId). */
+/** Operaciones de la etiqueta «Sistema» del contrato (una función por operationId). */
 import { apiRequest } from './client';
 import type { SuccessBody } from './client';
 

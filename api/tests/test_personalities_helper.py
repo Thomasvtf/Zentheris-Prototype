@@ -1,6 +1,6 @@
 """Comprueba el helper de promedios de personalidades contra la regla de negocio.
 
-Regla (reglas v4.9, sección de personalidades): el consumo mensual de un hogar con todas sus
+Regla (reglas de negocio, sección de personalidades): el consumo mensual de un hogar con todas sus
 zonas respeta el orden compacto < eficiente < intermedio < familiar < amplio.
 """
 

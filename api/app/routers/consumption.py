@@ -1,4 +1,4 @@
-"""Router de la etiqueta «Consumo» del contrato 0.2.6.
+"""Router de la etiqueta «Consumo» del contrato.
 
 Solo valida la entrada y llama al servicio (api/CLAUDE.md).
 """

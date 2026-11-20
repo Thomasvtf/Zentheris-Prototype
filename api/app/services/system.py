@@ -8,5 +8,5 @@ from app.schemas.system import SaludRespuesta
 
 
 def get_health() -> SaludRespuesta:
-    """Indica que el servicio responde; no consulta Supabase (contrato 0.2.6)."""
+    """Indica que el servicio responde; no consulta Supabase (contrato)."""
     return SaludRespuesta(estado="ok")

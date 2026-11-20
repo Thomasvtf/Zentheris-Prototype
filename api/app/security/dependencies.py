@@ -63,7 +63,7 @@ Permission = Literal["ver_consumo_actual", "ver_historial", "recibir_alertas", "
 
 
 def _unauthorized() -> PendingCodeError:
-    # TODO(pendiente: código de error del 401, PENDIENTES #29; contrato 0.2.6)
+    # TODO(pendiente: código de error del 401, PENDIENTES #29; contrato)
     return PendingCodeError(401)
 
 
@@ -104,7 +104,7 @@ def membership(
     """Membresía activa del usuario en el hogar; 404 si no existe (RN-I-03), nunca 403."""
     row = memberships_data.get_active_membership(session, user.id, hogar_id)
     if row is None:
-        # TODO(pendiente: código de error del 404, PENDIENTES #29; contrato 0.2.6)
+        # TODO(pendiente: código de error del 404, PENDIENTES #29; contrato)
         raise PendingCodeError(404)
     return Membership(
         membresia_id=row.membresia_id,

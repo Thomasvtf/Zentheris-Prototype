@@ -1,4 +1,4 @@
-"""Router de la etiqueta «Metas y tarifa» del contrato 0.2.6.
+"""Router de la etiqueta «Metas y tarifa» del contrato.
 
 Solo valida la entrada y llama al servicio (api/CLAUDE.md).
 """

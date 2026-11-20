@@ -1,6 +1,6 @@
 # **Zentheris - Reglas de Negocio y Modelo de Datos (v4.9)**
 
-**Versión 4.9 · 03/11/2026 (reducida el 18/11/2026).** Se retiraron, sin cambiar ninguna regla, §7.2, §9.1 a 9.4, «Parte 2: Explicación sencilla» y «Resumen de cambios frente al diccionario v3.1»; el texto completo está en `_historico/reglas-v4.9-completa-2026-11-05.md`. Fuentes: v4.8 y el registro de decisiones de cierre de pendientes del 03/11/2026 (`00_estado-y-pendientes/registro-decisiones-cierre-2026-11-03.md`, DC-01 a DC-58, tomadas con la autonomía que delegó Nicolás) y la calibración de umbrales v1 (`04_datos-simulados/calibracion-umbrales-v1/`). Fuentes de la v4.8: v4.6, pedido de Nicolás del 02/11/2026 de pintar el pico en rojo y de evitar que se confunda con «Crítico»; v4.5, revisión de Nicolás del 02/11/2026 sobre las pantallas v4.5 en Figma, v4.4, decisiones de Nicolás del 02/11/2026 sobre la propuesta v4.5 y la revisión de la v4.4, contrato API `zentheris-api` 0.2.5 (sustituye a la 0.2.4 de la v4.8), acta 04 de `perfiles_simulacion` y paquete Avance 03 (conjuntos calibrados v1.0).
+**Versión 4.9 · 03/11/2026 (reducida el 18/11/2026).** Se retiraron, sin cambiar ninguna regla, §7.2, §9.1 a 9.4, «Parte 2: Explicación sencilla» y «Resumen de cambios frente al diccionario v3.1»; el texto completo del 05/11/2026 sigue en el historial de git del repositorio. Fuentes: v4.8 y el registro de decisiones de cierre de pendientes del 03/11/2026 (`00_estado-y-pendientes/registro-decisiones.md`, DC-01 a DC-58, tomadas con la autonomía que delegó Nicolás) y la calibración de umbrales v1 (`04_datos-simulados/calibracion-umbrales-v1/`). Fuentes de la v4.8: v4.6, pedido de Nicolás del 02/11/2026 de pintar el pico en rojo y de evitar que se confunda con «Crítico»; v4.5, revisión de Nicolás del 02/11/2026 sobre las pantallas v4.5 en Figma, v4.4, decisiones de Nicolás del 02/11/2026 sobre la propuesta v4.5 y la revisión de la v4.4, contrato API `zentheris-api` 0.2.5 (sustituye a la 0.2.4 de la v4.8), acta 04 de `perfiles_simulacion` y paquete Avance 03 (conjuntos calibrados v1.0).
 
 **Documento maestro del MVP.** Agrupa las reglas de negocio formales, el diccionario de datos actualizado (18 tablas), el modelo matemático del simulador, la descripción de todas las pantallas validadas y la lista de trabajo pendiente de diseño. Reemplaza a la v4.8 y anteriores, y complementa al diccionario de datos v3.1 (que queda como comparativa). Los endpoints se definen en el contrato API `zentheris-api` 0.2.5 (archivo OpenAPI aparte, `03_api/`; validación estructural propia sin errores, lint oficial con Redocly pendiente de correr por el equipo), derivado de este documento.
 
@@ -1110,7 +1110,7 @@ El orden compacto < eficiente < intermedio < familiar < amplio se cumple en los 
 
 # **9. Decisiones Asumidas por Recomendación**
 
-Estas decisiones no fueron resueltas explícitamente por el equipo; se tomó la opción más simple y coherente con las reglas ya validadas. Se pueden cambiar sin afectar el resto del documento. Desde la v4.5, las decisiones 13, 17, 18 y 20 están ratificadas (sección 9.2, retirada el 18/11/2026; ver `_historico/reglas-v4.9-completa-2026-11-05.md`).
+Estas decisiones no fueron resueltas explícitamente por el equipo; se tomó la opción más simple y coherente con las reglas ya validadas. Se pueden cambiar sin afectar el resto del documento. Desde la v4.5, las decisiones 13, 17, 18 y 20 están ratificadas (sección 9.2, retirada el 18/11/2026; ver el historial de git del repositorio).
 
 | # | Decisión | Dónde aplica |
 | :---- | :---- | :---- |
@@ -1142,7 +1142,7 @@ Estas decisiones no fueron resueltas explícitamente por el equipo; se tomó la 
 
 ## **9.5 Decisiones de cierre (v4.9, 03/11/2026)**
 
-Tomadas con la autonomía que delegó Nicolás el 03/11/2026, después de verificar su coherencia con este documento, el contrato, el catálogo de textos y el sistema de diseño. Se consideran aprobadas salvo que Nicolás pida revertir alguna. El detalle, con su evidencia, está en `00_estado-y-pendientes/registro-decisiones-cierre-2026-11-03.md`.
+Tomadas con la autonomía que delegó Nicolás el 03/11/2026, después de verificar su coherencia con este documento, el contrato, el catálogo de textos y el sistema de diseño. Se consideran aprobadas salvo que Nicolás pida revertir alguna. El detalle, con su evidencia, está en `00_estado-y-pendientes/registro-decisiones.md`.
 
 | Grupo | IDs | Resumen |
 | :---- | :---- | :---- |
@@ -1155,7 +1155,7 @@ Tomadas con la autonomía que delegó Nicolás el 03/11/2026, después de verifi
 
 # **10. Pendientes que dependen de terceros (v4.9)**
 
-Ninguno bloquea el modelo de datos. Todos están en `PENDIENTES-GENERAL-antes-de-backend.md` (v2).
+Ninguno bloquea el modelo de datos. Todos están en `PENDIENTES.md` (raíz de la carpeta).
 
 * Crear las cuentas de Render y EAS (Supabase y Brevo ya existen desde el 08 y 10/11/2026; el paso a desarrollo se autorizó el 07/11/2026).
 * Correr el lint oficial del contrato (`npx @redocly/cli lint`) en un equipo con acceso a npm.

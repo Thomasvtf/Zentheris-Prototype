@@ -1,4 +1,4 @@
-"""Router de la etiqueta «Alertas y consejos» del contrato 0.2.6.
+"""Router de la etiqueta «Alertas y consejos» del contrato.
 
 Solo valida la entrada y llama al servicio (api/CLAUDE.md).
 """

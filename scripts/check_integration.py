@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CONTRACT = ROOT / "docs/api/zentheris-api-v0.2.6.yaml"
+CONTRACT = ROOT / "docs/api/zentheris-api.yaml"
 ROUTERS_DIR = ROOT / "api/app/routers"
 SERVICES_DIR = ROOT / "api/app/services"
 APP_API_DIR = ROOT / "app/src/api"

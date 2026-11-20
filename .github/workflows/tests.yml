@@ -31,7 +31,7 @@ jobs:
         run: uv run python ../scripts/check_integration.py
 
       - name: Lint oficial del contrato (C-02, DC-46)
-        run: npx --yes @redocly/cli@2.71.2 lint docs/api/zentheris-api-v0.2.6.yaml --config docs/api/redocly.yaml
+        run: npx --yes @redocly/cli@2.71.2 lint docs/api/zentheris-api.yaml --config docs/api/redocly.yaml
 
   app:
     runs-on: ubuntu-latest

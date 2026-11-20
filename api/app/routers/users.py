@@ -1,4 +1,4 @@
-"""Router de la etiqueta «Usuario» del contrato 0.2.6.
+"""Router de la etiqueta «Usuario» del contrato.
 
 Solo valida la entrada y llama al servicio (api/CLAUDE.md).
 """

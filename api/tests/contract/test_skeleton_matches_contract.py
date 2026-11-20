@@ -1,6 +1,6 @@
-"""Paridad del esqueleto con el contrato 0.2.6 (prueba real, no omitida).
+"""Paridad del esqueleto con el contrato (prueba real, no omitida).
 
-Compara el OpenAPI que genera FastAPI con docs/api/zentheris-api-v0.2.6.yaml:
+Compara el OpenAPI que genera FastAPI con docs/api/zentheris-api.yaml:
 operaciones (ruta, método, operationId, etiqueta, parámetros, cuerpo, respuestas y
 seguridad) y los 48 esquemas (propiedades, obligatorios, nulos, enum, formatos,
 límites y referencias). También comprueba que domain/ no importe FastAPI ni la base.
@@ -30,7 +30,7 @@ from tests.helpers.auth import (
 )
 
 API_DIR = Path(__file__).resolve().parents[2]
-CONTRACT_PATH = API_DIR.parent / "docs/api/zentheris-api-v0.2.6.yaml"
+CONTRACT_PATH = API_DIR.parent / "docs/api/zentheris-api.yaml"
 # Componentes con otro nombre en el código.
 NAME_MAP = {"ErrorResponse": "Error"}
 KEEP = ("type", "format", "enum", "minimum", "maximum", "exclusiveMinimum", "minLength",

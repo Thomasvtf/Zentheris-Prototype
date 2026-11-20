@@ -1,6 +1,6 @@
 # DataSourceRow
 
-Fila de la pantalla Fuentes de datos (antes Medidores), solo lectura (RN-XVI-06). Figma: `Configuracion/Fuente-datos` (4113:519). **Propuesto v4.5**.
+Fila de la pantalla Fuentes de datos (antes Medidores), solo lectura (RN-XVI-06). Figma: `Configuracion/Fuente-datos` (4113:519). **Aprobado v4.5** (D-SD-04, 07/11/2026).
 
 | Prop | Tipo | Notas |
 |---|---|---|

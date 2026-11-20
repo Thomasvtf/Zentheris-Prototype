@@ -15,3 +15,5 @@ Default `z-color-text-muted` · Active `z-color-accent-primary` · Disabled `z-c
 
 ## Aviso
 Los trazos de este componente son una **reconstrucción aproximada** para las vistas previas: los íconos del proyecto están aplanados en Figma y lucide.dev no estuvo accesible en esta sesión. En la app usar `lucide-react-native` con el nombre verificado.
+
+Nombre de `triangle-alert`: es el que usan estas fichas, pero el nombre canónico actual es `triangle-exclamation-point` (DC-14). Usar el export que traiga la versión instalada de `lucide-react-native`.

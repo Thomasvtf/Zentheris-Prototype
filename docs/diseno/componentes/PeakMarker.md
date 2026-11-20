@@ -1,6 +1,6 @@
 # PeakMarker
 
-Marcador del pico más alto del periodo en barras y línea (RN-XIII-03, D5). Figma: `Grafico/Marcador-pico` (4113:432). **Propuesto, pendiente de aprobación visual**.
+Marcador del pico más alto del periodo en barras y línea (RN-XIII-03, D5). Figma: `Grafico/Marcador-pico` (4113:432). **Aprobado v4.5** (D-SD-04, 07/11/2026); falta revisión visual en Figma.
 
 | Opción | Diseño | Estado |
 |---|---|---|

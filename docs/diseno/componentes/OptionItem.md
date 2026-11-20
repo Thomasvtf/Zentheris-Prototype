@@ -1,6 +1,6 @@
 # OptionItem
 
-Opción de una lista dentro de una hoja inferior (operador de la tarifa). Figma: `Control/Lista-opcion` (4110:407). **Propuesto v4.5**.
+Opción de una lista dentro de una hoja inferior (operador de la tarifa). Figma: `Control/Lista-opcion` (4110:407). **Aprobado v4.5** (D-SD-04, 07/11/2026).
 
 | Prop | Tipo | Notas |
 |---|---|---|

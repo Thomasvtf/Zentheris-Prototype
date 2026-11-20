@@ -1,6 +1,6 @@
 # StepIndicator
 
-Progreso del onboarding: paso 1 = nombre del hogar y tipo de vivienda; paso 2 = zonas. Figma: `Navegacion/Indicador-pasos` (4111:412). **Propuesto v4.5**.
+Progreso del onboarding: paso 1 = nombre del hogar y tipo de vivienda; paso 2 = zonas. Figma: `Navegacion/Indicador-pasos` (4111:412). **Aprobado v4.5** (D-SD-04, 07/11/2026).
 
 | Prop | Tipo | Notas |
 |---|---|---|

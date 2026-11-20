@@ -1,6 +1,6 @@
 # ActionItem
 
-Fila de acción dentro de una `BottomSheet`: selector de foto y menú de acciones del miembro. Figma: `Menu/Accion` (4111:401). **Propuesto v4.5**.
+Fila de acción dentro de una `BottomSheet`: selector de foto y menú de acciones del miembro. Figma: `Menu/Accion` (4111:401). **Aprobado v4.5** (D-SD-04, 07/11/2026).
 
 | Prop | Tipo | Notas |
 |---|---|---|

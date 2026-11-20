@@ -10,7 +10,7 @@ Reemplaza una card de datos o una lista vacía cuando no hay nada que mostrar; s
 | `titulo`, `descripcion` | texto | Sobrescriben el texto por defecto (p. ej. vacío de Consejos). |
 | `accion`, `onAccion` | texto, función | Enlace de acción (`ui-s-semibold-12`, `z-color-text-accent`, área 48). |
 
-## Textos por estado *(propuestos)*
+## Textos por estado *(referencia de diseño; el texto vigente sale de `docs/textos/catalogo.es-CO.json`)*
 | Tipo | Ícono | Título | Descripción |
 |---|---|---|---|
 | sin_datos | clock | Sin datos | La lectura de la última hora aún no llega. Se actualizará en la próxima hora. |

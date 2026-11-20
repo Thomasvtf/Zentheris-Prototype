@@ -21,7 +21,13 @@ from sqlmodel import Session
 from app.config import Settings, get_settings
 from app.data import memberships as memberships_data
 from app.data.database import get_session
-from app.errors import ERROR_DESCRIPTIONS, ApiError, CodigoError, PendingCodeError
+from app.errors import (
+    ERROR_DESCRIPTIONS,
+    NOT_FOUND_MESSAGE,
+    UNAUTHORIZED_MESSAGE,
+    ApiError,
+    CodigoError,
+)
 from app.security.jwt import InvalidTokenError, bearer_scheme, validate_jwt
 
 
@@ -62,16 +68,21 @@ class Membership:
 Permission = Literal["ver_consumo_actual", "ver_historial", "recibir_alertas", "modificar_metas"]
 
 
-def _unauthorized() -> PendingCodeError:
-    # TODO(pendiente: código de error del 401, PENDIENTES #29; contrato)
-    return PendingCodeError(401)
+def _unauthorized() -> ApiError:
+    """401 `NO_AUTENTICADO` con `WWW-Authenticate: Bearer` (DC-44, DC-16)."""
+    return ApiError(
+        401,
+        CodigoError.NO_AUTENTICADO,
+        UNAUTHORIZED_MESSAGE,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AuthenticatedUser:
-    """Valida el token con `validate_jwt` y devuelve el usuario; si no, 401.
+    """Valida el token con `validate_jwt` y devuelve el usuario; si no, 401 `NO_AUTENTICADO`.
 
     `AuthUnavailableError` (infraestructura) no se captura: el manejador genérico da 500.
     """
@@ -95,17 +106,19 @@ def current_user(
 CurrentUser = Annotated[AuthenticatedUser, Depends(current_user)]
 
 
-# TODO(pendiente: sesión compartida guardia-servicio; decidir antes del primer servicio que escribe si el router pasa la misma Session al servicio o si el servicio revalida la membresía en su transacción)
+# Sesión compartida guardia-servicio (decisión de la fase 3): el router recibe la sesión con
+# `Depends(get_session)` y FastAPI entrega la MISMA `Session` por petición a esta dependencia
+# y al router; el router se la pasa al servicio, que hace el `commit` (si lanza antes, la
+# sesión se cierra sin commit).
 def membership(
     hogar_id: UUID,
     user: CurrentUser,
     session: Annotated[Session, Depends(get_session)],
 ) -> Membership:
-    """Membresía activa del usuario en el hogar; 404 si no existe (RN-I-03), nunca 403."""
+    """Membresía activa del usuario en el hogar; 404 `NO_ENCONTRADO` si no existe (RN-I-03), nunca 403."""
     row = memberships_data.get_active_membership(session, user.id, hogar_id)
     if row is None:
-        # TODO(pendiente: código de error del 404, PENDIENTES #29; contrato)
-        raise PendingCodeError(404)
+        raise ApiError(404, CodigoError.NO_ENCONTRADO, NOT_FOUND_MESSAGE)
     return Membership(
         membresia_id=row.membresia_id,
         hogar_id=row.hogar_id,

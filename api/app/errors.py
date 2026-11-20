@@ -3,6 +3,12 @@
 `CodigoError` copia el enum del contrato docs/api/zentheris-api.yaml; sus
 valores no se traducen (DC-62). Ningún manejador devuelve el texto, el tipo ni la traza
 de una excepción interna (guía 3 §7, prueba S-01).
+
+Códigos genéricos (DC-16): 401 `NO_AUTENTICADO` (con `WWW-Authenticate: Bearer`, DC-44),
+404 `NO_ENCONTRADO` (también sin membresía activa, RN-I-03, y rutas inexistentes) y 500
+`ERROR_INTERNO`. Su `mensaje` es una descripción técnica corta (`*_MESSAGE`); la app resuelve
+el texto para el usuario con `codigo`. `ERROR_DESCRIPTIONS` solo alimenta `responses=` del
+OpenAPI.
 """
 
 import logging
@@ -10,9 +16,11 @@ from enum import StrEnum
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +67,15 @@ class ErrorResponse(BaseModel):
     detalles: dict[str, Any] | None = None
 
 
-# Descripciones de `components.responses` del contrato, por código HTTP.
+# Mensajes técnicos cortos de los errores genéricos (el contrato define `mensaje` como
+# descripción técnica). Los usan el 401 de `current_user`, el 404 de `membership` y de las
+# rutas inexistentes, y el 500 genérico.
+UNAUTHORIZED_MESSAGE = "Token ausente, inválido o vencido."
+NOT_FOUND_MESSAGE = "Recurso no encontrado."
+INTERNAL_ERROR_MESSAGE = "Error interno."
+
+# Descripciones de `components.responses` del contrato, por código HTTP. Solo para
+# `responses=` del OpenAPI, no para el cuerpo de las respuestas genéricas.
 ERROR_DESCRIPTIONS = {
     401: "Token ausente, inválido o vencido (`codigo` = `NO_AUTENTICADO`).",
     403: "El usuario no tiene el rol o el permiso necesario.",
@@ -72,7 +88,9 @@ ERROR_DESCRIPTIONS = {
 
 def error_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
     """Respuestas de error de una operación, con el esquema `Error` del contrato."""
-    return {code: {"model": ErrorResponse, "description": ERROR_DESCRIPTIONS[code]} for code in codes}
+    return {
+        code: {"model": ErrorResponse, "description": ERROR_DESCRIPTIONS[code]} for code in codes
+    }
 
 
 class ApiError(Exception):
@@ -84,18 +102,18 @@ class ApiError(Exception):
         codigo: CodigoError,
         mensaje: str,
         detalles: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(mensaje)
         self.status_code = status_code
         self.codigo = codigo
         self.mensaje = mensaje
         self.detalles = detalles
+        self.headers = headers
 
 
 def _error_body(codigo: CodigoError, mensaje: str, detalles: dict[str, Any] | None) -> dict:
-    return ErrorResponse(codigo=codigo, mensaje=mensaje, detalles=detalles).model_dump(
-        mode="json"
-    )
+    return ErrorResponse(codigo=codigo, mensaje=mensaje, detalles=detalles).model_dump(mode="json")
 
 
 async def _handle_api_error(_request: Request, exc: Exception) -> JSONResponse:
@@ -103,6 +121,7 @@ async def _handle_api_error(_request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content=_error_body(exc.codigo, exc.mensaje, exc.detalles),
+        headers=exc.headers,
     )
 
 
@@ -121,50 +140,29 @@ async def _handle_validation_error(_request: Request, exc: Exception) -> JSONRes
     )
 
 
-class PendingCodeError(Exception):
-    """TEMPORAL: error sin `CodigoError` en el contrato (decisión abierta #29).
-
-    Cubre el 401 (token ausente, inválido o vencido), el 404 por falta de membresía activa
-    (RN-I-03) y el 500 genérico. Responde `{"mensaje": ERROR_DESCRIPTIONS[status], "detalles":
-    null}` sin `codigo`; la app los distingue por el estado HTTP (DC-16). El 401 lleva la
-    cabecera `WWW-Authenticate: Bearer`.
-    """
-
-    # TODO(pendiente: código de error del 401, PENDIENTES #29; contrato)
-    # TODO(pendiente: código de error del 404, PENDIENTES #29; contrato)
-    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato)
-    ALLOWED_STATUS_CODES = frozenset({401, 404, 500})
-
-    def __init__(self, status_code: int) -> None:
-        if status_code not in self.ALLOWED_STATUS_CODES:
-            raise ValueError(f"PendingCodeError solo admite 401, 404 o 500, no {status_code}.")
-        super().__init__(ERROR_DESCRIPTIONS[status_code])
-        self.status_code = status_code
-
-
-def _pending_code_response(status_code: int) -> JSONResponse:
-    headers = {"WWW-Authenticate": "Bearer"} if status_code == 401 else None
-    return JSONResponse(
-        status_code=status_code,
-        content={"mensaje": ERROR_DESCRIPTIONS[status_code], "detalles": None},
-        headers=headers,
-    )
-
-
-def _handle_pending_code(_request: Request, exc: Exception) -> JSONResponse:
-    # TEMPORAL: ver PendingCodeError (cuerpo sin `codigo` hasta cerrar PENDIENTES #29).
-    assert isinstance(exc, PendingCodeError)
-    return _pending_code_response(exc.status_code)
-
-
 def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
-    """500 genérico: la excepción va al log, nunca a la respuesta (S-01)."""
+    """500 `ERROR_INTERNO`: la excepción va al log, nunca a la respuesta (S-01)."""
     # Plantilla de la ruta (`/hogares/{hogar_id}/...`), no la URL: sin valores del cliente.
     route = request.scope.get("route")
     path = getattr(route, "path", None) or "(ruta desconocida)"
     logger.exception("Error interno no controlado en %s %s", request.method, path, exc_info=exc)
-    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato)
-    return _pending_code_response(500)
+    return JSONResponse(
+        status_code=500,
+        content=_error_body(CodigoError.ERROR_INTERNO, INTERNAL_ERROR_MESSAGE, None),
+    )
+
+
+async def _handle_http_exception(request: Request, exc: Exception) -> Response:
+    """404 de Starlette (ruta inexistente) con la forma del contrato; el resto, por defecto."""
+    assert isinstance(exc, StarletteHTTPException)
+    if exc.status_code == 404:
+        return JSONResponse(
+            status_code=404,
+            content=_error_body(CodigoError.NO_ENCONTRADO, NOT_FOUND_MESSAGE, None),
+            headers=exc.headers,
+        )
+    # TODO(pendiente: código de error para 405, no existe en CodigoError)
+    return await http_exception_handler(request, exc)
 
 
 class NotImplementedOperation(Exception):
@@ -189,10 +187,9 @@ def register_error_handlers(app: FastAPI) -> None:
     """Registra los manejadores que devuelven {codigo, mensaje, detalles}."""
     app.add_exception_handler(ApiError, _handle_api_error)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
-    # TEMPORAL (PENDIENTES #29): 401, 404 sin membresía y 500 sin `codigo`.
-    app.add_exception_handler(PendingCodeError, _handle_pending_code)
+    # Ruta inexistente → 404 `NO_ENCONTRADO`; 405 y otros, respuesta por defecto de FastAPI.
+    app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     # TEMPORAL (esqueleto): 501 para las operaciones que aún no están implementadas.
     app.add_exception_handler(NotImplementedOperation, _handle_not_implemented)
-    # 500 genérico sin exponer la excepción interna (guía 3 §7, prueba S-01).
-    # TODO(pendiente: código de error del 500, PENDIENTES #29; contrato)
+    # 500 `ERROR_INTERNO` sin exponer la excepción interna (guía 3 §7, prueba S-01).
     app.add_exception_handler(Exception, _handle_unexpected_error)

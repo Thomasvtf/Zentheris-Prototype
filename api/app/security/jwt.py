@@ -23,7 +23,7 @@ from app.config import Settings
 logger = logging.getLogger(__name__)
 
 # Mismo esquema que `components.securitySchemes.supabaseJwt` del contrato.
-# auto_error=False: la falta de token la responde `current_user` con 401 (PendingCodeError).
+# auto_error=False: la falta de token la responde `current_user` con 401 `NO_AUTENTICADO`.
 bearer_scheme = HTTPBearer(
     scheme_name="supabaseJwt",
     bearerFormat="JWT",

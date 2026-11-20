@@ -23,7 +23,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
-from app.errors import ERROR_DESCRIPTIONS, register_error_handlers
+from app.errors import INTERNAL_ERROR_MESSAGE, UNAUTHORIZED_MESSAGE, register_error_handlers
 from app.security import jwt as jwt_module
 from app.security.dependencies import CurrentUser
 from app.security.jwt import (
@@ -44,10 +44,19 @@ from tests.helpers.auth import (
     make_test_settings,
     make_token,
 )
+from tests.security.error_schema import assert_contract_error
 
 USER_ID = UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
-UNAUTHORIZED_BODY = {"mensaje": ERROR_DESCRIPTIONS[401], "detalles": None}
-INTERNAL_ERROR_BODY = {"mensaje": ERROR_DESCRIPTIONS[500], "detalles": None}
+UNAUTHORIZED_BODY = {
+    "codigo": "NO_AUTENTICADO",
+    "mensaje": UNAUTHORIZED_MESSAGE,
+    "detalles": None,
+}
+INTERNAL_ERROR_BODY = {
+    "codigo": "ERROR_INTERNO",
+    "mensaje": INTERNAL_ERROR_MESSAGE,
+    "detalles": None,
+}
 MISSING_CONFIGURATIONS = [
     pytest.param(Settings(_env_file=None), id="sin-nada"),
     pytest.param(Settings(_env_file=None, SUPABASE_URL=TEST_SUPABASE_URL), id="sin-claves"),
@@ -123,8 +132,10 @@ def test_issuer_ignores_trailing_slash_in_supabase_url() -> None:
     [
         pytest.param(foreign_token, id="firma-con-otra-clave"),
         pytest.param(lambda: make_token(USER_ID, expired=True), id="vencido"),
-        pytest.param(lambda: make_token(USER_ID, issuer="https://otro.supabase.co/auth/v1"),
-                     id="emisor-incorrecto"),
+        pytest.param(
+            lambda: make_token(USER_ID, issuer="https://otro.supabase.co/auth/v1"),
+            id="emisor-incorrecto",
+        ),
         pytest.param(lambda: make_token(USER_ID, audience="anon"), id="audiencia-incorrecta"),
         pytest.param(lambda: make_token(USER_ID, algorithm="none"), id="alg-none"),
         pytest.param(lambda: make_token(USER_ID, algorithm="HS256"), id="hs256-con-jwks"),
@@ -267,6 +278,7 @@ def test_current_user_rejects_with_401(client: TestClient, headers: dict[str, st
     response = client.get("/yo", headers=headers)
     assert response.status_code == 401
     assert response.json() == UNAUTHORIZED_BODY
+    assert_contract_error(response.json(), "NO_AUTENTICADO")
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
@@ -290,9 +302,17 @@ def _get_me_with(settings: Settings) -> httpx.Response:
 def _assert_generic_500(response: httpx.Response) -> None:
     assert response.status_code == 500
     assert response.json() == INTERNAL_ERROR_BODY
+    assert_contract_error(response.json(), "ERROR_INTERNO")
     assert "WWW-Authenticate" not in response.headers
-    for fragment in ("AuthUnavailableError", "PyJWKClientConnectionError", "detalle-de-red",
-                     "configuración incompleta", "JWKS", "SUPABASE", "Traceback"):
+    for fragment in (
+        "AuthUnavailableError",
+        "PyJWKClientConnectionError",
+        "detalle-de-red",
+        "configuración incompleta",
+        "JWKS",
+        "SUPABASE",
+        "Traceback",
+    ):
         assert fragment not in response.text
 
 

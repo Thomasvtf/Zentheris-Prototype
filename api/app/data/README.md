@@ -6,4 +6,4 @@ Acceso a datos: un archivo por grupo de tablas, más `database.py` (conexión) y
 - **No va:** reglas de negocio ni cambios de esquema (esos van en `supabase/migrations/`).
 - **Ejemplo:** `insert_readings_batch(session, lecturas) -> int`.
 
-Estado: solo firmas; las consultas se escriben en la sesión de cada endpoint.
+Estado: `memberships.py`, `users.py` y `households.py` (bloqueo y borrado del hogar) tienen consultas; el resto se escribe en la sesión de cada endpoint.

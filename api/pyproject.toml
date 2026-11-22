@@ -5,6 +5,7 @@ requires-python = ">=3.14"
 dependencies = [
     "apscheduler>=3.11.3",
     "fastapi[standard]>=0.141.1",
+    "httpx>=0.28.1",
     "psycopg2-binary>=2.9.13",
     "pyjwt[crypto]>=2.15.1",
     "python-dotenv>=1.2.3",

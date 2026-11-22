@@ -3,9 +3,9 @@
 Esperado: La respuesta no expone la excepción. Regla: Guía 3 §7.
 Matriz: docs/pruebas/matriz-pruebas-backend-v1.md.
 
-La app real (`create_app`) responde 500 con `{"mensaje", "detalles": null}` (sin `codigo`
-mientras siga abierta la decisión #29) y registra la excepción en el log, nunca en la
-respuesta: ni el texto, ni el tipo, ni la traza.
+La app real (`create_app`) responde 500 con `{"codigo": "ERROR_INTERNO", "mensaje",
+"detalles": null}` (esquema `Error` del contrato) y registra la excepción en el log, nunca en
+la respuesta: ni el texto, ni el tipo, ni la traza.
 """
 
 import logging
@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
 from app.data import memberships as memberships_data
-from app.errors import ERROR_DESCRIPTIONS
+from app.errors import INTERNAL_ERROR_MESSAGE
 from app.main import API_PREFIX, create_app
 from app.security.dependencies import CurrentMembership
 from tests.helpers.auth import (
@@ -29,9 +29,14 @@ from tests.helpers.auth import (
     make_token,
     override_db_session,
 )
+from tests.security.error_schema import assert_contract_error
 
 SECRET_DETAIL = "detalle-interno-que-no-debe-salir postgresql://<redactado>"
-INTERNAL_ERROR_BODY = {"mensaje": ERROR_DESCRIPTIONS[500], "detalles": None}
+INTERNAL_ERROR_BODY = {
+    "codigo": "ERROR_INTERNO",
+    "mensaje": INTERNAL_ERROR_MESSAGE,
+    "detalles": None,
+}
 
 
 class InternalFailureError(RuntimeError):
@@ -39,8 +44,15 @@ class InternalFailureError(RuntimeError):
 
 
 def _assert_does_not_leak(text: str) -> None:
-    for fragment in (SECRET_DETAIL, "detalle-interno", "InternalFailureError", "RuntimeError",
-                     "Traceback", "postgresql://", 'File "'):
+    for fragment in (
+        SECRET_DETAIL,
+        "detalle-interno",
+        "InternalFailureError",
+        "RuntimeError",
+        "Traceback",
+        "postgresql://",
+        'File "',
+    ):
         assert fragment not in text
 
 
@@ -62,13 +74,12 @@ def test_unhandled_exception_returns_generic_500(real_app: FastAPI) -> None:
     )
     assert response.status_code == 500
     assert response.json() == INTERNAL_ERROR_BODY
+    assert_contract_error(response.json(), "ERROR_INTERNO")
     _assert_does_not_leak(response.text)
     _assert_does_not_leak(str(response.headers))
 
 
-def test_unhandled_exception_is_logged(
-    real_app: FastAPI, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_unhandled_exception_is_logged(real_app: FastAPI, caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.ERROR, logger="app.errors"):
         TestClient(real_app, raise_server_exceptions=False).get(f"{API_PREFIX}/_prueba/falla")
     records = [r for r in caplog.records if r.name == "app.errors"]
@@ -103,4 +114,5 @@ def test_dependency_failure_does_not_leak(
 
     assert response.status_code == 500
     assert response.json() == INTERNAL_ERROR_BODY
+    assert_contract_error(response.json(), "ERROR_INTERNO")
     _assert_does_not_leak(response.text)

@@ -6,6 +6,7 @@ docs/MAPA-DE-INTEGRACION.md).
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -81,4 +82,97 @@ def _to_active_membership_row(row: Mapping[str, Any]) -> ActiveMembershipRow:
         permiso_ver_historial=bool(row["permiso_ver_historial"]),
         permiso_recibir_alertas=bool(row["permiso_recibir_alertas"]),
         permiso_modificar_metas=bool(row["permiso_modificar_metas"]),
+    )
+
+
+# RN-IX-09, DC-36: la membresía activa del usuario (como máximo una por el índice único
+# parcial uq_miembros_usuario_activo). Se filtra por el usuario autenticado.
+_ACTIVE_MEMBERSHIP_OF_USER_BASE = """
+    select id as membresia_id,
+           hogar_id,
+           rol
+      from hogar_miembros
+     where usuario_id = :usuario_id
+       and estado = 'activo'
+    """
+ACTIVE_MEMBERSHIP_OF_USER_SQL = text(_ACTIVE_MEMBERSHIP_OF_USER_BASE)
+# Igual, bloqueando la fila hasta el fin de la transacción (eliminar cuenta, RN-IX-09).
+ACTIVE_MEMBERSHIP_OF_USER_FOR_UPDATE_SQL = text(_ACTIVE_MEMBERSHIP_OF_USER_BASE + " for update")
+
+# RN-IX-09, DC-36: cuántos miembros activos quedan en el hogar además del usuario.
+COUNT_OTHER_ACTIVE_MEMBERS_SQL = text(
+    """
+    select count(*) as total
+      from hogar_miembros
+     where hogar_id = :hogar_id
+       and estado = 'activo'
+       and usuario_id <> :usuario_id
+    """
+)
+
+# RN-X-07, DC-36: cierra la membresía (los datos del hogar quedan intactos).
+CLOSE_MEMBERSHIP_SQL = text(
+    """
+    update hogar_miembros
+       set estado = 'inactivo',
+           fecha_salida = :closed_at
+     where id = :membresia_id
+       and estado = 'activo'
+    """
+)
+
+
+@dataclass(frozen=True)
+class MembershipSummaryRow:
+    """Membresía activa del usuario sin permisos: id, hogar y rol (RN-IX-09, DC-36)."""
+
+    membresia_id: UUID
+    hogar_id: UUID
+    rol: Literal["administrador", "miembro"]
+
+
+def get_active_membership_of_user(
+    session: Session, usuario_id: UUID, *, for_update: bool = False
+) -> MembershipSummaryRow | None:
+    """Membresía con estado 'activo' del usuario en cualquier hogar; None si no tiene.
+
+    RN-I-03 y uq_miembros_usuario_activo: como máximo una. Filtra por el usuario
+    autenticado, así que no expone membresías ajenas (R-01). Con `for_update=True` bloquea
+    la fila (`FOR UPDATE`) para serializar la eliminación de cuenta (RN-IX-09, DC-36).
+    """
+    statement = (
+        ACTIVE_MEMBERSHIP_OF_USER_FOR_UPDATE_SQL if for_update else ACTIVE_MEMBERSHIP_OF_USER_SQL
+    )
+    result = session.exec(statement, params={"usuario_id": usuario_id})
+    row = result.mappings().first()
+    if row is None:
+        return None
+    return MembershipSummaryRow(
+        membresia_id=_as_uuid(row["membresia_id"]),
+        hogar_id=_as_uuid(row["hogar_id"]),
+        rol=row["rol"],
+    )
+
+
+def count_other_active_members(session: Session, hogar_id: UUID, usuario_id: UUID) -> int:
+    """Miembros activos del hogar distintos de `usuario_id` (RN-IX-09, DC-36).
+
+    0 significa que el usuario es el único miembro: al eliminar su cuenta se borra el hogar.
+    """
+    result = session.exec(
+        COUNT_OTHER_ACTIVE_MEMBERS_SQL,
+        params={"hogar_id": hogar_id, "usuario_id": usuario_id},
+    )
+    row = result.mappings().first()
+    return int(row["total"]) if row is not None else 0
+
+
+def close_membership(session: Session, membresia_id: UUID, closed_at: datetime) -> None:
+    """Deja la membresía en 'inactivo' con `fecha_salida = closed_at` (RN-X-07, DC-36).
+
+    El usuario_id queda en nulo después, por la cascada al borrar la cuenta en Auth. Sin commit.
+    """
+    session.exec(
+        CLOSE_MEMBERSHIP_SQL,
+        params={"membresia_id": membresia_id, "closed_at": closed_at},
     )

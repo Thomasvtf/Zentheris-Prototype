@@ -52,7 +52,7 @@ api/
     security/            # validar JWT; dependencias: current_user, membership(hogar_id), require_permission(...), require_admin
     schemas/             # modelos Pydantic iguales al contrato (campos en español, como el YAML)
     routers/             # un archivo por tag del contrato: system, users, households, onboarding, members_invitations, consumption, goals_tariff, alerts_tips; las funciones de cada router van en inglés (por ejemplo `get_health` para `obtenerSalud`; la tabla completa está en `docs/MAPA-DE-INTEGRACION.md`)
-    services/            # la lógica de cada caso de uso, con los mismos nombres que routers/; más hour_recovery.py, scheduler.py y email.py
+    services/            # la lógica de cada caso de uso, con los mismos nombres que routers/; más hour_recovery.py, scheduler.py, email.py y supabase_admin.py
     domain/              # código puro, sin FastAPI ni SQL
       simulator/         # el paquete zentheris_sim del Avance 03 (DC-53)
       states.py          # motor de estados (mismo comportamiento que motor_estados_ref.py)
@@ -80,7 +80,7 @@ supabase/LEEME.md        # huella de las migraciones aplicadas
 | Seguridad (validar el JWT, permisos) | `security/` |
 | Umbrales o textos del backend | `config_files/` |
 | Un error de la API | `errors.py` |
-| Una tarea programada, la recuperación de horas o el envío de correo | `services/` (`scheduler.py`, `hour_recovery.py`, `email.py`) |
+| Una tarea programada, la recuperación de horas, el envío de correo o las llamadas de administración a Supabase | `services/` (`scheduler.py`, `hour_recovery.py`, `email.py`, `supabase_admin.py`) |
 | Una prueba | `tests/`, en la subcarpeta de su grupo de la matriz |
 | Un cambio en la base de datos | Una migración nueva en `supabase/migrations/` (la aplica una persona) |
 | Comprobar que contrato, routers y app coinciden | `scripts/check_integration.py` |

@@ -9,5 +9,5 @@ Autenticación y autorización. `jwt.py` valida el token de Supabase por JWKS (D
 Guardias, en este orden: `CurrentUser` (401) → `CurrentMembership` (404) → `require_permission(...)` o `AdminMembership` (403). El administrador pasa todos los permisos (RN-XVII-05).
 
 - JWKS (`SUPABASE_JWKS_URL`): solo `ES256`/`RS256`, emisor `SUPABASE_URL/auth/v1`, audiencia `authenticated`. Sin JWKS, HS256 con `SUPABASE_JWT_SECRET`. Nunca `alg=none`.
-- 401, 404 y 500 usan la excepción TEMPORAL `PendingCodeError` (sin `codigo`) hasta cerrar PENDIENTES #29.
+- 401 `NO_AUTENTICADO` (con `WWW-Authenticate: Bearer`), 404 `NO_ENCONTRADO` (sin membresía) y 500 `ERROR_INTERNO` (manejador genérico de `app/errors.py`, sin exponer la excepción).
 - Pruebas: `tests/permissions/` (P-01…P-06), `tests/security/` (JWT y S-01) y el helper `tests/helpers/auth.py`.

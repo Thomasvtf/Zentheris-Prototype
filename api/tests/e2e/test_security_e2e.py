@@ -10,8 +10,8 @@ Cuando los guardias dejan pasar, responde el esqueleto del servicio: 501 `TODO(<
 Eso prueba que el guardia no bloquea, no que la operación devuelva 200: el 200 de P-06 y los
 valores ocultos de P-07 se prueban cuando cada servicio exista.
 
-Los 401 y el 404 sin membresía no llevan `codigo` mientras siga abierta la decisión #29
-(`PendingCodeError`); se comprueban por el estado HTTP y el cuerpo provisional.
+Los 401 llevan `codigo` = `NO_AUTENTICADO` (con `WWW-Authenticate: Bearer`) y el 404 sin
+membresía `NO_ENCONTRADO`; ambos cuerpos validan contra el esquema `Error` del contrato.
 
 Matriz: docs/pruebas/matriz-pruebas-backend-v1.md (P-01…P-06).
 """
@@ -32,7 +32,7 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.data.memberships import ActiveMembershipRow
-from app.errors import ERROR_DESCRIPTIONS
+from app.errors import NOT_FOUND_MESSAGE, UNAUTHORIZED_MESSAGE
 from app.main import API_PREFIX, create_app
 from tests.helpers.auth import (
     TEST_KEY_ID,
@@ -183,8 +183,12 @@ OTHER_PATH_IDS: dict[str, UUID] = {
 FOREIGN_PRIVATE_KEY = ec.generate_private_key(ec.SECP256R1())
 
 ERROR_BODY_KEYS = {"codigo", "mensaje", "detalles"}
-UNAUTHORIZED_BODY = {"mensaje": ERROR_DESCRIPTIONS[401], "detalles": None}
-NOT_FOUND_BODY = {"mensaje": ERROR_DESCRIPTIONS[404], "detalles": None}
+UNAUTHORIZED_BODY = {
+    "codigo": "NO_AUTENTICADO",
+    "mensaje": UNAUTHORIZED_MESSAGE,
+    "detalles": None,
+}
+NOT_FOUND_BODY = {"codigo": "NO_ENCONTRADO", "mensaje": NOT_FOUND_MESSAGE, "detalles": None}
 
 # --- Cuerpos válidos según el contrato ------------------------------------------------------
 
@@ -387,18 +391,17 @@ def test_generated_body_is_valid_per_contract(op_id: str) -> None:
 
 @pytest.mark.parametrize("rol", ["miembro", "administrador"])
 @pytest.mark.parametrize("op_id", HOUSEHOLD_OPERATIONS)
-def test_p01_member_of_another_household_gets_404(
-    call_api: CallApi, op_id: str, rol: str
-) -> None:
+def test_p01_member_of_another_household_gets_404(call_api: CallApi, op_id: str, rol: str) -> None:
     """P-01 · Usuario sin membresía en ese hogar (sí en otro, incluso como administrador).
 
-    Esperado: 404 (cuerpo provisional sin `codigo`, #29), nunca 403 ni 501. Regla: RN-I-03.
+    Esperado: 404 `NO_ENCONTRADO`, nunca 403 ni 501. Regla: RN-I-03.
     """
     rows = [make_membership_row(USER_ID, OTHER_HOGAR_ID, rol=rol, **ALL_TRUE)]
     response = call_api(op_id, rows=rows, hogar=HOGAR_ID)
     assert response.status_code == 404, (response.status_code, response.text)
     # El cuerpo del guardia, no el 404 genérico de FastAPI («Not Found») por ruta mal armada.
     assert response.json() == NOT_FOUND_BODY
+    jsonschema.validate(response.json(), {**SCHEMAS["Error"], "components": CONTRACT["components"]})
 
 
 # --- P-02, P-03, RN-XVII-03 y P-04 ----------------------------------------------------------
@@ -516,12 +519,13 @@ def test_invalid_token_gets_401(call_api: CallApi, op_id: str, token: str) -> No
     """401 · Sin token, token vencido o firmado con una clave que el JWKS no publica.
 
     El usuario SÍ es administrador del hogar: el rechazo es solo por el token.
-    Esperado: 401 con `WWW-Authenticate: Bearer` (cuerpo provisional, #29). Regla: DC-44.
+    Esperado: 401 `NO_AUTENTICADO` con `WWW-Authenticate: Bearer`. Regla: DC-44.
     """
     response = call_api(op_id, rows=[admin(**ALL_TRUE)], token=token)
     assert response.status_code == 401, (response.status_code, response.text)
     assert response.headers.get("WWW-Authenticate") == "Bearer"
     assert response.json() == UNAUTHORIZED_BODY
+    jsonschema.validate(response.json(), {**SCHEMAS["Error"], "components": CONTRACT["components"]})
 
 
 def test_public_health_needs_no_token(call_api: CallApi) -> None:

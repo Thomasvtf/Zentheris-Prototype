@@ -5,4 +5,8 @@ Matriz: docs/pruebas/matriz-pruebas-backend-v1.md."""
 
 import pytest
 
-pytest.skip("TODO(I-04)", allow_module_level=True)
+pytest.skip(
+    "TODO(I-04): requiere Postgres de prueba; la lógica está cubierta con datos falsos "
+    "en tests/services y tests/e2e",
+    allow_module_level=True,
+)

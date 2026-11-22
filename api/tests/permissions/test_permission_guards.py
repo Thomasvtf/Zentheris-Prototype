@@ -6,7 +6,7 @@ Complementa P-02…P-06.
 
 import pytest
 
-from app.errors import CodigoError, PendingCodeError
+from app.errors import NOT_FOUND_MESSAGE, ApiError, CodigoError
 from app.security.dependencies import (
     PERMISSION_ERRORS,
     AuthenticatedUser,
@@ -78,8 +78,12 @@ def test_membership_dependency_builds_membership_with_permissions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     row = make_membership_row(
-        MEMBER_ID, HOGAR_ID, ver_consumo_actual=False, ver_historial=True,
-        recibir_alertas=False, modificar_metas=True,
+        MEMBER_ID,
+        HOGAR_ID,
+        ver_consumo_actual=False,
+        ver_historial=True,
+        recibir_alertas=False,
+        modificar_metas=True,
     )
     install_fake_memberships(monkeypatch, [row])
     user = AuthenticatedUser(id=MEMBER_ID, correo="persona@example.com")
@@ -92,7 +96,9 @@ def test_membership_dependency_builds_membership_with_permissions(
         usuario_id=MEMBER_ID,
         rol="miembro",
         permisos=HouseholdPermissions(
-            ver_consumo_actual=False, ver_historial=True, recibir_alertas=False,
+            ver_consumo_actual=False,
+            ver_historial=True,
+            recibir_alertas=False,
             modificar_metas=True,
         ),
     )
@@ -104,14 +110,20 @@ def test_membership_dependency_raises_404_without_active_membership(
 ) -> None:
     install_fake_memberships(monkeypatch, [])
     user = AuthenticatedUser(id=MEMBER_ID, correo="persona@example.com")
-    with pytest.raises(PendingCodeError) as error:
+    with pytest.raises(ApiError) as error:
         membership(HOGAR_ID, user, session=FakeSession())  # type: ignore[arg-type]
     assert error.value.status_code == 404
+    assert error.value.codigo is CodigoError.NO_ENCONTRADO
+    assert error.value.mensaje == NOT_FOUND_MESSAGE
+    assert error.value.detalles is None
 
 
 def test_admin_membership_is_administrator() -> None:
     member = Membership(
-        membresia_id=MEMBER_ID, hogar_id=HOGAR_ID, usuario_id=MEMBER_ID, rol="administrador",
+        membresia_id=MEMBER_ID,
+        hogar_id=HOGAR_ID,
+        usuario_id=MEMBER_ID,
+        rol="administrador",
         permisos=HouseholdPermissions(False, False, False, False),
     )
     assert member.is_admin is True

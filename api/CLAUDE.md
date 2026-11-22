@@ -11,7 +11,7 @@ app/errors.py          ApiError y respuesta {codigo, mensaje, detalles}; manejad
 app/security/          validate_jwt (JWKS), current_user, membership(hogar_id), require_permission(...), require_admin
 app/schemas/           modelos Pydantic iguales al contrato (campos en español, como el YAML)
 app/routers/           un archivo por etiqueta: system, users, households, onboarding, members_invitations, consumption, goals_tariff, alerts_tips; solo validan la entrada y llaman a servicios
-app/services/          casos de uso (crear hogar, invitar, historial…) con los mismos nombres que routers/; manejan las transacciones. Más hour_recovery.py, scheduler.py y email.py
+app/services/          casos de uso (crear hogar, invitar, historial…) con los mismos nombres que routers/; manejan las transacciones. Más hour_recovery.py, scheduler.py, email.py y supabase_admin.py
 app/domain/            código puro y probado: simulator/ (portado de zentheris_sim), states.py, history.py, zone_rules.py, alert_rules.py, formats.py
 app/data/              consultas SQL e inserción por lotes (COPY o INSERT de varias filas); un archivo por grupo de tablas
 app/config_files/      umbrales-estado.v1.json y textos-backend.es-CO.json (copias exactas de docs/, conservan su nombre)

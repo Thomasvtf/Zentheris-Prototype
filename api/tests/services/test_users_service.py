@@ -1,4 +1,4 @@
-"""Pruebas de app.services.users con `app.data.*` falso en memoria (sin base ni red).
+"""Pruebas de app.services.users con `app.data.*` y `supabase_admin` falsos (sin base ni red).
 
 Cubre las 8 operaciones de la fase 3: ficha (RN-IX-01, RN-IX-07), avatar (RN-I-02, DC-43),
 preferencias (RN-VI-04, RN-VII-01, RN-XVI-02, RN-XVI-03) y baja de la cuenta (RN-IX-09,
@@ -17,10 +17,8 @@ import pytest
 from app.config import Settings
 from app.data import households as households_data
 from app.data import memberships as memberships_data
-from app.data import supabase_admin
 from app.data import users as users_data
 from app.data.memberships import MembershipSummaryRow
-from app.data.supabase_admin import SupabaseAdminError
 from app.data.users import PreferencesRow, UserProfileRow
 from app.errors import ApiError, CodigoError, NotImplementedOperation
 from app.schemas.common import ReferenciaTipo, Rol
@@ -34,7 +32,9 @@ from app.schemas.users import (
     UsuarioActualizar,
     UsuarioCrear,
 )
+from app.services import supabase_admin
 from app.services import users as service
+from app.services.supabase_admin import SupabaseAdminError
 
 USER_ID = UUID("6f1c2d3e-4a5b-4c6d-8e7f-90a1b2c3d4e5")
 OTHER_USER_ID = UUID("0a0b0c0d-1e1f-4a2b-8c3d-4e5f60718293")

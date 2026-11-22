@@ -1,4 +1,4 @@
-"""Pruebas de app.data.supabase_admin sin red (RN-IX-09, RN-I-02, DC-36, DC-43).
+"""Pruebas de app.services.supabase_admin sin red (RN-IX-09, RN-I-02, DC-36, DC-43).
 
 httpx.MockTransport reemplaza la red: se comprueban la URL, el método, las cabeceras con la
 clave de servicio, el cuerpo de Storage, el 404 de Auth solo con `user_not_found`, el 404 de
@@ -16,8 +16,8 @@ import httpx
 import pytest
 
 from app.config import Settings
-from app.data import supabase_admin
-from app.data.supabase_admin import (
+from app.services import supabase_admin
+from app.services.supabase_admin import (
     AVATAR_BUCKET,
     AVATAR_EXTENSIONS,
     TIMEOUT_SECONDS,

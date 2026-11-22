@@ -33,12 +33,12 @@ from jsonschema import Draft202012Validator
 from app.config import Settings, get_settings
 from app.data import households as households_data
 from app.data import memberships as memberships_data
-from app.data import supabase_admin
 from app.data import users as users_data
 from app.data.database import get_session
 from app.data.memberships import MembershipSummaryRow
 from app.data.users import PreferencesRow, UserProfileRow
 from app.main import API_PREFIX, create_app
+from app.services import supabase_admin
 from tests.helpers.auth import (
     TEST_SUPABASE_URL,
     auth_header,
@@ -277,7 +277,7 @@ class FakeStore:
         assert session is self.session
         self.calls.append(("delete_household", hogar_id))
 
-    # app.data.supabase_admin
+    # app.services.supabase_admin
     def delete_auth_user(self, settings: Settings, usuario_id: UUID) -> None:
         self.calls.append(("delete_auth_user", settings.supabase_url, usuario_id))
         if self.auth_delete_fails:

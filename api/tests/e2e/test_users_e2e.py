@@ -7,7 +7,7 @@ memoria. Solo se reemplaza lo más bajo:
   tablas y solo la publica en `commit()` (si la petición falla antes, la copia se descarta,
   como un rollback). Cualquier otro uso de la sesión (SQL) falla.
 - Las funciones de `app.data.users`, `app.data.memberships`, `app.data.households` y
-  `app.data.supabase_admin` leen y escriben ese almacén en memoria, que respeta las reglas
+  `app.services.supabase_admin` leen y escriben ese almacén en memoria, que respeta las reglas
   de las tablas de `supabase/migrations/` (0002 y 0003): ficha 1:1 con `auth.users`,
   preferencias 1:1 con valores por defecto true/true/'promedio', `base_comparacion` en
   ('meta', 'promedio'), una membresía activa por usuario (`uq_miembros_usuario_activo`), un
@@ -40,13 +40,13 @@ from fastapi.testclient import TestClient
 from app.config import Settings, get_settings
 from app.data import households as households_data
 from app.data import memberships as memberships_data
-from app.data import supabase_admin
 from app.data import users as users_data
 from app.data.database import get_session
 from app.data.memberships import MembershipSummaryRow
 from app.data.users import PreferencesRow, UserProfileRow
 from app.errors import INTERNAL_ERROR_MESSAGE
 from app.main import API_PREFIX, create_app
+from app.services import supabase_admin
 from tests.contract.test_c01_responses_match_schema import (
     OPERATIONS,
     assert_matches_contract,
@@ -366,7 +366,7 @@ class InMemoryDatabase:
         tables.delete_household_cascade(hogar_id)
         tables.check()
 
-    # --- app.data.supabase_admin (otro servicio: fuera de la transacción) ---------------
+    # --- app.services.supabase_admin (otro servicio: fuera de la transacción) -----------
 
     def delete_auth_user(self, settings: Settings, usuario_id: UUID) -> None:
         self.events.append(("delete_auth_user", settings.supabase_url, usuario_id))

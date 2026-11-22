@@ -17,7 +17,6 @@ from sqlmodel import Session
 from app.config import Settings
 from app.data import households as households_data
 from app.data import memberships as memberships_data
-from app.data import supabase_admin
 from app.data import users as users_data
 from app.errors import ApiError, CodigoError, NotImplementedOperation
 from app.schemas.users import (
@@ -31,6 +30,7 @@ from app.schemas.users import (
     UsuarioActualizar,
     UsuarioCrear,
 )
+from app.services import supabase_admin
 
 logger = logging.getLogger(__name__)
 

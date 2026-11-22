@@ -76,6 +76,8 @@ COVERED_OPERATIONS = PHASE_OPERATIONS | {"obtenerSalud"}
 # Rangos del contrato que no se pueden provocar: `/salud` no tiene parámetros ni cuerpo, así que
 # ninguna petición a esa operación da un 4XX propio.
 UNREACHABLE_RANGES = frozenset({("obtenerSalud", "4XX")})
+# Respuestas que necesitan un cliente propio (el 500 no se propaga) y tienen su prueba aparte.
+COVERED_BY_OWN_TEST = frozenset({("eliminarCuenta", "500")})
 
 
 # --- contrato ---------------------------------------------------------------------------
@@ -616,6 +618,33 @@ CASES: tuple[Case, ...] = (
         codigo="VALIDACION",
         commits=0,
     ),
+    # 404 FICHA_NO_CREADA: la persona aún no creó su ficha (contrato 0.2.7)
+    Case(
+        "sin-ficha",
+        "actualizarPerfil",
+        404,
+        body={"telefono": None},
+        codigo="FICHA_NO_CREADA",
+        commits=0,
+    ),
+    Case(
+        "sin-ficha",
+        "guardarAvatar",
+        404,
+        body={"avatar_url": f"{USER_ID}/avatar.jpg"},
+        codigo="FICHA_NO_CREADA",
+        commits=0,
+    ),
+    Case("sin-ficha", "eliminarAvatar", 404, codigo="FICHA_NO_CREADA", commits=0),
+    Case("sin-ficha", "obtenerPreferencias", 404, codigo="FICHA_NO_CREADA", commits=0),
+    Case(
+        "sin-ficha",
+        "actualizarPreferencias",
+        404,
+        body={"notif_consejos": False},
+        codigo="FICHA_NO_CREADA",
+        commits=0,
+    ),
 )
 
 
@@ -635,7 +664,7 @@ def test_cases_cover_every_declared_response_of_the_phase() -> None:
         (operation_id, int(code))
         for operation_id in COVERED_OPERATIONS
         for code in OPERATIONS[operation_id][2]["responses"]
-        if (operation_id, str(code)) not in UNREACHABLE_RANGES
+        if (operation_id, str(code)) not in UNREACHABLE_RANGES | COVERED_BY_OWN_TEST
     }
     covered = {(case.operation_id, case.status) for case in CASES}
     assert covered == declared
@@ -727,40 +756,14 @@ def test_delete_account_conflict_touches_nothing(client: TestClient, store: Fake
     assert store.calls == []
 
 
-# --- hueco del contrato -------------------------------------------------------------------
-
-# El servicio responde 404 `FICHA_NO_CREADA` si no hay ficha, pero el contrato solo declara
-# el 404 en `obtenerUsuarioActual`. Hasta que el contrato lo declare, se comprueba al menos
-# que el cuerpo cumple el esquema `Error`. Cuando el contrato lo agregue, la primera
-# aserción falla: pasar estos casos a CASES.
-NO_PROFILE_OUTSIDE_CONTRACT = (
-    Case("sin-ficha", "actualizarPerfil", 404, body={"telefono": None}),
-    Case("sin-ficha", "guardarAvatar", 404, body={"avatar_url": f"{USER_ID}/avatar.jpg"}),
-    Case("sin-ficha", "eliminarAvatar", 404),
-    Case("sin-ficha", "obtenerPreferencias", 404),
-    Case("sin-ficha", "actualizarPreferencias", 404, body={"notif_consejos": False}),
-)
+# --- fallo de Supabase al eliminar la cuenta -----------------------------------------------
 
 
-@pytest.mark.parametrize("case", NO_PROFILE_OUTSIDE_CONTRACT, ids=lambda c: c.operation_id)
-def test_no_profile_404_not_declared_in_contract_still_uses_error_schema(
-    case: Case, client: TestClient, store: FakeStore
-) -> None:
-    assert "404" not in OPERATIONS[case.operation_id][2]["responses"]
-    response = send(client, case)
-    assert response.status_code == 404
-    assert_matches_error_schema(response)
-    assert response.json()["codigo"] == "FICHA_NO_CREADA"
-    assert store.session.commits == 0
+def test_delete_account_supabase_failure_is_500(store: FakeStore) -> None:
+    """Si falla el borrado en Supabase Auth: 500 `ERROR_INTERNO` con el esquema del contrato.
 
-
-def test_delete_account_supabase_failure_is_500_outside_contract(store: FakeStore) -> None:
-    """Si falla el borrado en Supabase Auth: 500 `ERROR_INTERNO` con el esquema `Error`.
-
-    El contrato no declara 500 en `eliminarCuenta` (hueco reportado). La baja en la base ya
-    quedó confirmada (commit) y reintentar es seguro.
+    La baja en la base ya quedó confirmada (commit) y reintentar es seguro.
     """
-    assert "500" not in OPERATIONS["eliminarCuenta"][2]["responses"]
     with_profile(store)
     store.auth_delete_fails = True
     app = create_app(Settings(_env_file=None))
@@ -773,7 +776,7 @@ def test_delete_account_supabase_failure_is_500_outside_contract(store: FakeStor
     client = TestClient(app, raise_server_exceptions=False)
     response = send(client, Case("x", "eliminarCuenta", 500))
     assert response.status_code == 500
-    assert_matches_error_schema(response)
+    assert_matches_contract("eliminarCuenta", response)
     assert response.json()["codigo"] == "ERROR_INTERNO"
     assert "fallo simulado" not in response.text
     assert store.session.commits == 1

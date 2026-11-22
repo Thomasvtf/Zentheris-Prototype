@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Zentheris API (MVP)
-  version: 0.2.6
+  version: 0.2.7
   description: |
-    Contrato de la API del MVP de Zentheris (proyecto formativo SENA). **Versión 0.2.6 · 19/11/2026.**
+    Contrato de la API del MVP de Zentheris (proyecto formativo SENA). **Versión 0.2.7 · 22/11/2026.**
 
     **Estado:** candidato a congelar. Validación estructural propia sin errores (referencias,
     operationId únicos, parámetros de ruta, esquemas JSON Schema 2020-12, enums cruzados con el
@@ -13,10 +13,10 @@ info:
     **Fuentes:** Reglas de Negocio y Modelo de Datos v4.9 (cada operación cita su regla RN-),
     registro de decisiones DC-01 a DC-58 (03/11/2026), umbrales `umbrales-estado.v1.json` y acta 04.
 
-    **Cambios frente a 0.2.5:** el enum `CodigoError` pasa de 26 a 29 códigos (se agregan
-    `NO_AUTENTICADO`, para el `401`, `NO_ENCONTRADO`, para el `404`, y `ERROR_INTERNO`, para el `500`, con su texto en el catálogo v1);
-    la respuesta `422` (`VALIDACION`) se declara en las 19 operaciones que la devolvían sin listarla;
-    `/salud` declara `4XX`. Sin endpoints nuevos ni campos nuevos: 40 operaciones.
+    **Cambios frente a 0.2.6:** se declara el `404` con `FICHA_NO_CREADA` en las operaciones de Usuario
+    que lo devuelven sin listarlo (`actualizarPerfil`, `guardarAvatar`, `eliminarAvatar`,
+    `obtenerPreferencias` y `actualizarPreferencias`) y el `500` (`ERROR_INTERNO`) en `eliminarCuenta`.
+    Sin endpoints nuevos ni campos nuevos: 40 operaciones.
 
     **Convenciones**
     - Autenticación: Supabase Auth (RN-I-01). El cliente obtiene el JWT con Supabase
@@ -107,7 +107,8 @@ paths:
       description: |
         Punto de entrada tras iniciar sesión (RN-X-01). Si `membresia` es `null`, la app
         consulta `GET /invitaciones/recibidas` y, si no hay ninguna, pasa al onboarding.
-        Devuelve `404` con `FICHA_NO_CREADA` si aún no existe la ficha en `usuarios`.
+        Devuelve `404` con `FICHA_NO_CREADA` si aún no existe la ficha en `usuarios`. Las demás
+        operaciones de `/usuarios/me` devuelven el mismo `404` si se llaman antes de crear la ficha.
       responses:
         '200':
           description: Usuario actual.
@@ -156,6 +157,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/UsuarioActual' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
         '422': { $ref: '#/components/responses/Validacion' }
     delete:
       tags: [Usuario]
@@ -170,6 +172,7 @@ paths:
         '204': { description: Cuenta eliminada. }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '409': { $ref: '#/components/responses/Conflicto' }
+        '500': { $ref: '#/components/responses/ErrorServidor' }
 
   /usuarios/me/avatar:
     put:
@@ -191,6 +194,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/UsuarioActual' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
         '422': { $ref: '#/components/responses/Validacion' }
     delete:
       tags: [Usuario]
@@ -200,6 +204,7 @@ paths:
       responses:
         '204': { description: Foto eliminada. }
         '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
 
   /usuarios/me/preferencias:
     get:
@@ -213,6 +218,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Preferencias' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
     patch:
       tags: [Usuario]
       operationId: actualizarPreferencias
@@ -232,6 +238,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Preferencias' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
         '422': { $ref: '#/components/responses/Validacion' }
 
   /usuarios/me/contrasena/verificar:
@@ -1025,7 +1032,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     NoEncontrado:
-      description: El recurso no existe o el usuario no tiene membresía activa en ese hogar (`codigo` = `NO_ENCONTRADO`).
+      description: El recurso no existe o el usuario no tiene membresía activa en ese hogar (`codigo` = `NO_ENCONTRADO`). En `/usuarios/me` y sus subrutas, si el usuario aún no tiene ficha, el código es `FICHA_NO_CREADA`.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

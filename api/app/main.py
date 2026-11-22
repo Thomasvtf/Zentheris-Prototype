@@ -66,7 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="Zentheris API",
         description="API de monitoreo y optimización del consumo energético",
-        version="0.2.6",
+        version="0.2.7",
         # Un solo esquema por modelo, con el nombre del contrato (sin «-Input»/«-Output»).
         separate_input_output_schemas=False,
     )

@@ -103,6 +103,23 @@ INSERT_ZONE_SENSORS_SQL = text(
 )
 
 
+# RN-IV-05, DC-34: hogares con algo que generar, para la tarea programada. Es la única consulta
+# que recorre todos los hogares: solo devuelve ids y cada hogar se procesa después con su propio
+# filtro por hogar_id (R-01).
+# TODO(pendiente: ¿un sensor pausado o una zona inactiva generan lecturas? ¿se rellena el
+# periodo pausado al reactivar? En el MVP no hay operación que cambie esos estados)
+HOUSEHOLDS_WITH_SENSORS_SQL = text(
+    """
+    select distinct z.hogar_id
+      from zonas z
+      join sensores_zona s on s.zona_id = z.id
+     where z.estado = 'activa'
+       and s.estado = 'activo'
+     order by z.hogar_id
+    """
+)
+
+
 @dataclass(frozen=True)
 class HouseholdRow:
     """Fila de hogares con sus 4 permisos generales (RN-II-03, RN-XVII)."""
@@ -204,6 +221,20 @@ def insert_zone_sensors(
         },
     )
     return result.rowcount
+
+
+def list_household_ids_with_active_sensors(session: Session) -> list[UUID]:
+    """Ids de los hogares con al menos un sensor 'activo' en una zona 'activa' (RN-IV-05, DC-34).
+
+    Ordenados por id. Para la tarea programada: lee todos los hogares con la conexión del
+    backend y no devuelve ningún otro dato. Sin commit.
+    """
+    result = session.exec(HOUSEHOLDS_WITH_SENSORS_SQL)
+    return [_as_uuid(row["hogar_id"]) for row in result.mappings().all()]
+
+
+def _as_uuid(value: UUID | str) -> UUID:
+    return value if isinstance(value, UUID) else UUID(str(value))
 
 
 def _to_household_row(row: Mapping[str, Any]) -> HouseholdRow:

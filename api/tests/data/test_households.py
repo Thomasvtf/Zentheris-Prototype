@@ -21,6 +21,7 @@ from app.data.households import (
     insert_main_source,
     insert_zone_sensors,
     insert_zones,
+    list_household_ids_with_active_sensors,
     lock_household,
 )
 from tests.data.fake_session import FakeResult, FakeSession, assert_bound_only, normalized_sql
@@ -261,3 +262,56 @@ def test_phase4_functions_do_not_commit() -> None:
 
     assert len(session.calls) == 4
     assert session.commits == 0
+
+
+# --- Fase 5: hogares para la tarea programada (RN-IV-05, DC-34) ------------------------------
+
+
+def test_households_with_sensors_query_has_no_parameters_and_active_filters() -> None:
+    session = FakeSession()
+
+    assert list_household_ids_with_active_sensors(session) == []  # type: ignore[arg-type]
+
+    assert len(session.calls) == 1
+    statement, params = session.calls[0]
+    assert statement is households.HOUSEHOLDS_WITH_SENSORS_SQL
+    assert isinstance(statement, TextClause)
+    assert params is None
+    assert statement._bindparams == {}
+    assert normalized_sql(statement) == (
+        "select distinct z.hogar_id from zonas z "
+        "join sensores_zona s on s.zona_id = z.id "
+        "where z.estado = 'activa' and s.estado = 'activo' "
+        "order by z.hogar_id"
+    )
+
+
+def test_households_with_sensors_are_mapped_to_uuid_in_the_query_order() -> None:
+    first, second = sorted([uuid4(), uuid4()])
+    session = FakeSession([{"hogar_id": first}, {"hogar_id": str(second)}])
+
+    result = list_household_ids_with_active_sensors(session)  # type: ignore[arg-type]
+
+    assert result == [first, second]
+    assert all(isinstance(hogar_id, UUID) for hogar_id in result)
+
+
+def test_households_with_sensors_does_not_commit() -> None:
+    session = FakeSession([{"hogar_id": uuid4()}])
+
+    list_household_ids_with_active_sensors(session)  # type: ignore[arg-type]
+
+    assert session.commits == 0
+    sql = str(households.HOUSEHOLDS_WITH_SENSORS_SQL)
+    assert "{" not in sql
+    assert "%" not in sql
+
+
+def test_households_with_sensors_documents_the_pending_rule_for_paused_sensors() -> None:
+    source = Path(households.__file__).read_text(encoding="utf-8")
+    before_sql = source.split("HOUSEHOLDS_WITH_SENSORS_SQL = text(")[0]
+
+    assert (
+        "TODO(pendiente: ¿un sensor pausado o una zona inactiva generan lecturas?"
+        in (before_sql.rsplit("\n\n", 1)[1])
+    )

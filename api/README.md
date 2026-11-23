@@ -12,6 +12,11 @@ API REST de Zentheris: FastAPI y Python, monolito modular por capas (DC-56). Con
 | Pruebas | `uv run pytest` |
 | Comprobar integración | `uv run python ../scripts/check_integration.py` |
 
+**Generación horaria (RN-IV-05, DC-34).** Al arrancar con `DATABASE_URL`, la API completa las horas que faltan de todos los hogares y luego repite esa tarea cada hora, en el minuto 0 (hora de Colombia). Sin `DATABASE_URL` no programa nada: lo avisa en la consola con un WARNING. Cada copia de la API que arranca con la misma base corre su propia tarea. Un candado por hogar y la restricción única de `lecturas` impiden duplicados, pero la carga se multiplica. Por eso:
+
+- En Render, arranca con **un solo proceso**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, sin `--workers` ni `--reload`.
+- En local, si no necesitas la base, deja `DATABASE_URL` vacía. Si la usas, ten presente que tu copia también genera las horas de todos los hogares de ese proyecto.
+
 Variables de entorno: copia [`.env.example`](.env.example) como `api/.env` y rellénalo (guía de claves v3). `api/.env` nunca se sube.
 
 ## Qué va aquí y qué no

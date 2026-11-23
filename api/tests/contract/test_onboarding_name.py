@@ -2,8 +2,8 @@
 
 Un carácter Unicode de categoría Cc da 422 `VALIDACION` antes de tocar la base: NUL no se puede
 guardar en PostgreSQL y CR/LF acabaría en el asunto del correo de invitación. El resto del texto
-(tildes, emoji, comillas) se acepta tal cual. El JSON Schema publicado no cambia: el contrato solo
-declara `minLength: 1`.
+(tildes, emoji, comillas) se acepta tal cual. El JSON Schema publicado es el del contrato: `minLength: 1` y
+`maxLength: 80`.
 """
 
 from collections.abc import Iterator
@@ -99,6 +99,7 @@ def test_published_schema_is_still_the_contract() -> None:
     assert canon(generated["OnboardingCrear"], "gen") == canon(expected, "contract")
     assert generated["OnboardingCrear"]["properties"]["nombre_hogar"] == {
         "type": "string",
+        "maxLength": 80,
         "minLength": 1,
         "title": "Nombre Hogar",
     }

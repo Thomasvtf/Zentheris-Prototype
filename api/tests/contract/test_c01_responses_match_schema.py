@@ -52,6 +52,7 @@ from tests.helpers.onboarding import (
     REFERENCE_HOUSEHOLDS,
     FakeDatabase,
     install_fake_database,
+    missing_profile_error,
 )
 from tests.helpers.personalities import PERSONALITY_ORDER
 
@@ -714,6 +715,10 @@ ONBOARDING_CASES: tuple[Case, ...] = (
     ),
     # 401
     onboarding_error("sin-token", 401, "NO_AUTENTICADO", authenticated=False),
+    onboarding_error("sin-ficha", 404, "FICHA_NO_CREADA", setup=failing_at("insert_admin_membership", missing_profile_error())),
+    onboarding_error(
+        "nombre-de-81-caracteres", 422, "VALIDACION", onboarding_body(nombre_hogar="a" * 81)
+    ),
     # 409: ya tiene un hogar, también si otra petición suya se adelantó (RN-II-01)
     onboarding_error(
         "ya-tiene-hogar", 409, "MEMBRESIA_ACTIVA_EXISTENTE", setup=with_active_membership
@@ -982,6 +987,7 @@ def test_onboarding_cases_cover_every_code_of_the_operation() -> None:
     """Los códigos que el contrato nombra para `crearHogarOnboarding`, ni uno más."""
     assert {case.codigo for case in ONBOARDING_CASES if case.codigo} == {
         "NO_AUTENTICADO",
+        "FICHA_NO_CREADA",
         "MEMBRESIA_ACTIVA_EXISTENTE",
         "ZONAS_NO_PERMITIDAS",
         "ZONAS_BASICAS_FALTANTES",

@@ -28,7 +28,7 @@ DbSession = Annotated[Session, Depends(get_session)]
     summary="Crear el hogar y generar el backfill (RN-X-02, RN-X-03, RN-X-04, RN-IV-01, RN-IV-07)",
     response_model=Hogar,
     status_code=201,
-    responses=error_responses(401, 409, 422, 500),
+    responses=error_responses(401, 404, 409, 422, 500),
 )
 def create_household_onboarding(
     user: CurrentUser, session: DbSession, payload: OnboardingCrear

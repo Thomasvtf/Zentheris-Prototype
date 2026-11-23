@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Zentheris API (MVP)
-  version: 0.2.7
+  version: 0.2.8
   description: |
-    Contrato de la API del MVP de Zentheris (proyecto formativo SENA). **Versión 0.2.7 · 22/11/2026.**
+    Contrato de la API del MVP de Zentheris (proyecto formativo SENA). **Versión 0.2.8 · 22/11/2026.**
 
     **Estado:** candidato a congelar. Validación estructural propia sin errores (referencias,
     operationId únicos, parámetros de ruta, esquemas JSON Schema 2020-12, enums cruzados con el
@@ -13,9 +13,9 @@ info:
     **Fuentes:** Reglas de Negocio y Modelo de Datos v4.9 (cada operación cita su regla RN-),
     registro de decisiones DC-01 a DC-58 (03/11/2026), umbrales `umbrales-estado.v1.json` y acta 04.
 
-    **Cambios frente a 0.2.6:** se declara el `404` con `FICHA_NO_CREADA` en las operaciones de Usuario
-    que lo devuelven sin listarlo (`actualizarPerfil`, `guardarAvatar`, `eliminarAvatar`,
-    `obtenerPreferencias` y `actualizarPreferencias`) y el `500` (`ERROR_INTERNO`) en `eliminarCuenta`.
+    **Cambios frente a 0.2.7:** `POST /onboarding` declara el `404` con `FICHA_NO_CREADA` (la persona
+    aún no creó su ficha) y `nombre_hogar` tiene un máximo de 80 caracteres. El texto del error
+    `MEMBRESIA_ACTIVA_EXISTENTE` del catálogo deja de hablar solo de invitaciones.
     Sin endpoints nuevos ni campos nuevos: 40 operaciones.
 
     **Convenciones**
@@ -363,6 +363,7 @@ paths:
         básicas obligatorias y cualquier otra zona. Códigos en `422`: `ZONAS_NO_PERMITIDAS`,
         `ZONAS_BASICAS_FALTANTES`, `CANTIDAD_ZONAS_INVALIDA`, `ZONAS_DUPLICADAS`.
         `409` con `MEMBRESIA_ACTIVA_EXISTENTE` si el usuario ya pertenece a un hogar (RN-II-01).
+        `404` con `FICHA_NO_CREADA` si el usuario aún no creó su ficha (`POST /usuarios/me`).
       requestBody:
         required: true
         content:
@@ -376,6 +377,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Hogar' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
         '409': { $ref: '#/components/responses/Conflicto' }
         '422': { $ref: '#/components/responses/Validacion' }
 
@@ -1265,7 +1267,7 @@ components:
       required: [nombre_hogar, tipo_vivienda, zonas]
       additionalProperties: false
       properties:
-        nombre_hogar: { type: string, minLength: 1 }
+        nombre_hogar: { type: string, minLength: 1, maxLength: 80 }
         tipo_vivienda: { $ref: '#/components/schemas/TipoVivienda' }
         zonas:
           type: array

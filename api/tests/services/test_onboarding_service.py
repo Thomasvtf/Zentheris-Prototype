@@ -366,7 +366,7 @@ def test_failure_log_has_no_personal_data(
     db.rollback_failure = RuntimeError(f"rollback {USER_ID} {HOUSEHOLD_NAME}")
     with caplog.at_level(logging.DEBUG):
         error = run_error(db)
-    assert error.codigo == CodigoError.BACKFILL_FALLIDO
+    assert error.codigo in (CodigoError.BACKFILL_FALLIDO, CodigoError.FICHA_NO_CREADA)
     assert caplog.records
     for record in caplog.records:
         assert record.exc_info is None and record.stack_info is None
@@ -453,7 +453,7 @@ def _real_data(monkeypatch: pytest.MonkeyPatch, variant: str) -> None:
     ("variant", "seed", "status"),
     [
         ("unique-sqlite", "insert into hogares values ('previo', :nombre)", 500),
-        ("fk-postgres", None, 500),
+        ("fk-postgres", None, 404),
         ("carrera", "insert into miembros values (:usuario_id, 'otro', :nombre)", 409),
     ],
 )

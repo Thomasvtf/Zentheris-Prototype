@@ -11,7 +11,12 @@ from app.domain.simulator.engine import (
     hour_index,
     last_complete_hour,
 )
-from app.domain.simulator.recovery import generate_missing_readings
+from app.domain.simulator.recovery import (
+    SensorGaps,
+    generate_missing_readings,
+    generate_readings_for_gaps,
+    recovery_end_hour,
+)
 from app.domain.simulator.validation import (
     ProfileParameterError,
     validate_or_raise,
@@ -24,11 +29,14 @@ __all__ = [
     "VERSION_MODELO",
     "DegenerateRealizationError",
     "ProfileParameterError",
+    "SensorGaps",
     "generate_backfill",
     "generate_missing_readings",
+    "generate_readings_for_gaps",
     "hour_from_index",
     "hour_index",
     "last_complete_hour",
+    "recovery_end_hour",
     "validate_or_raise",
     "validate_profile",
 ]

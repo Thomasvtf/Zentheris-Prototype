@@ -57,7 +57,7 @@ Puerta de entrada de la integración (PENDIENTES #23). Una fila por operación d
 
 | Pieza | Dónde | Prueba |
 |---|---|---|
-| Generación horaria y recuperación (sin `pandas` ni `numpy`) | services/hour_recovery.py + scheduler.py, con domain/simulator | B-04 |
+| Generación horaria y recuperación (sin `pandas` ni `numpy`; RN-IV-05, RN-IV-07, DC-34, DC-38) | services.hour_recovery.fill_missing_hours; services.scheduler.run_hourly_generation / start_scheduler (tarea `generacion_horaria`, minuto 0 de Bogotá y al arrancar); domain.simulator.generate_readings_for_gaps; data.readings.lock_household_recovery (candado de transacción por hogar, pg_advisory_xact_lock: serializa las recuperaciones del mismo hogar hasta el commit o rollback) + get_sensor_gaps + insert_readings_batch; data.simulation_profiles.get_household_profile; data.households.list_household_ids_with_active_sensors; main.lifespan. Tablas: lecturas (lectura y alta, ON CONFLICT DO NOTHING), sensores_zona, zonas, hogares, perfiles_simulacion (lectura). Las fases 6–10 deben llamar fill_missing_hours al inicio de consumo, historial, fuentes y alertas, después de la seguridad. Sin alertas todavía (fase 8, DC-35) | B-04 (dominio: test_b04_hour_recovery; servicio: test_hour_recovery_service; e2e: test_hour_recovery_e2e), test_scheduler, test_app_lifespan, test_readings, test_simulation_profiles, test_households; SQL real pendiente (Postgres real) |
 | Alertas y consejos (solo horas en vivo, DC-35) | domain/alert_rules.py + services/alerts_tips.py | A-01, A-02, A-05 |
 | Cierre de mes | services/scheduler.py | A-04 |
 | RLS y Storage desde el cliente | supabase/ (segunda defensa) | R-01 a R-04 |

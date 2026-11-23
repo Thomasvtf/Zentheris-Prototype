@@ -4,8 +4,9 @@ El consumo de cada fila es el promedio horario real de la personalidad (tests/he
 Postgres rechace de verdad los duplicados necesita base: aquí se comprueba la sentencia.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -16,7 +17,12 @@ from sqlalchemy.dialects.postgresql import psycopg2 as psycopg2_dialect
 from sqlalchemy.sql.elements import TextClause
 
 from app.data import readings
-from app.data.readings import insert_readings_batch
+from app.data.readings import (
+    SensorGapRow,
+    get_sensor_gaps,
+    insert_readings_batch,
+    lock_household_recovery,
+)
 from tests.data.fake_session import FakeResult, FakeSession, assert_bound_only, normalized_sql
 from tests.helpers.personalities import ZONE_KEYS, load_personalities
 
@@ -160,5 +166,227 @@ def test_does_not_commit_and_statement_has_no_python_formatting() -> None:
 
     assert session.commits == 0
     sql = str(readings.INSERT_READINGS_BATCH_SQL)
+    assert "{" not in sql
+    assert "%" not in sql
+
+
+# --- Fase 5: huecos por sensor para recuperar horas (RN-IV-05, DC-34, R-01) ------------------
+
+UNTIL = FIRST_HOUR + timedelta(hours=10)
+
+
+def _gap_row(**overrides: Any) -> dict[str, Any]:
+    """Fila como la entregaría psycopg2: timestamptz[] como lista de datetime con zona."""
+    row: dict[str, Any] = {
+        "sensor_id": uuid4(),
+        "zona_tipo": "cocina",
+        "first_hour": FIRST_HOUR,
+        "missing_hours": [FIRST_HOUR + timedelta(hours=3), FIRST_HOUR + timedelta(hours=4)],
+    }
+    row.update(overrides)
+    return row
+
+
+def test_gaps_query_sends_household_and_end_hour_as_parameters() -> None:
+    hogar_id = uuid4()
+    session = FakeSession()
+
+    assert get_sensor_gaps(session, hogar_id, UNTIL) == []  # type: ignore[arg-type]
+
+    assert len(session.calls) == 1
+    statement, params = session.calls[0]
+    assert statement is readings.SENSOR_GAPS_SQL
+    assert isinstance(statement, TextClause)
+    assert params == {"hogar_id": hogar_id, "until": UNTIL}
+    assert_bound_only(statement, params)
+    compiled = statement.compile(dialect=psycopg2_dialect.dialect())
+    assert set(compiled.params) == {"hogar_id", "until"}
+
+
+def test_gaps_query_filters_by_household_and_active_states() -> None:
+    """R-01: solo zonas del hogar; solo sensores 'activo' de zonas 'activa' (RN-IV-07)."""
+    sql = normalized_sql(readings.SENSOR_GAPS_SQL)
+    where = sql.rsplit(" where ", 1)[1]
+
+    assert "from sensores_zona s join zonas z on z.id = s.zona_id" in sql
+    assert "z.hogar_id = :hogar_id" in where
+    assert "z.estado = 'activa'" in where
+    assert "s.estado = 'activo'" in where
+    assert sql.endswith("order by z.tipo, s.id")
+
+
+def test_gaps_query_reads_min_max_and_count_through_the_unique_index() -> None:
+    sql = normalized_sql(readings.SENSOR_GAPS_SQL)
+
+    assert (
+        "select min(l.fecha_hora) as first_hour, max(l.fecha_hora) as last_hour, "
+        "count(*) as stored_hours from lecturas l where l.sensor_id = s.id"
+    ) in sql
+
+
+def test_gaps_query_has_both_series_start_branches() -> None:
+    """Sin huecos internos empieza en max + 1 h (solo horas nuevas); con huecos, en min (A13)."""
+    sql = normalized_sql(readings.SENSOR_GAPS_SQL)
+
+    assert (
+        "generate_series( case "
+        "when st.stored_hours = extract(epoch from st.last_hour - st.first_hour) / 3600 + 1 "
+        "then st.last_hour + interval '1 hour' "
+        "else st.first_hour "
+        "end, cast(:until as timestamptz), interval '1 hour' ) as h (missing_hour)"
+    ) in sql
+
+
+def test_gaps_query_is_an_anti_join_over_the_unique_index() -> None:
+    sql = normalized_sql(readings.SENSOR_GAPS_SQL)
+
+    assert (
+        "where not exists ( select 1 from lecturas e "
+        "where e.sensor_id = s.id and e.fecha_hora = h.missing_hour )"
+    ) in sql
+    assert "array_agg(h.missing_hour order by h.missing_hour) as missing_hours" in sql
+
+
+def test_gaps_query_documents_the_pending_rule_for_paused_sensors() -> None:
+    source = Path(readings.__file__).read_text(encoding="utf-8")
+    comment = source.split("SENSOR_GAPS_SQL = text(")[0].rsplit("\n\n", 1)[1]
+
+    assert "TODO(pendiente: ¿un sensor pausado o una zona inactiva generan lecturas?" in comment
+    assert "huecos internos, A13" in comment
+
+
+def test_gaps_rows_are_mapped_in_the_order_the_query_returns() -> None:
+    rows = [
+        _gap_row(zona_tipo="cocina"),
+        _gap_row(zona_tipo="sala", missing_hours=[UNTIL]),
+    ]
+    session = FakeSession(rows)
+
+    result = get_sensor_gaps(session, uuid4(), UNTIL)  # type: ignore[arg-type]
+
+    assert result == [
+        SensorGapRow(
+            sensor_id=rows[0]["sensor_id"],
+            zona_tipo="cocina",
+            first_hour=FIRST_HOUR,
+            missing_hours=[FIRST_HOUR + timedelta(hours=3), FIRST_HOUR + timedelta(hours=4)],
+        ),
+        SensorGapRow(
+            sensor_id=rows[1]["sensor_id"],
+            zona_tipo="sala",
+            first_hour=FIRST_HOUR,
+            missing_hours=[UNTIL],
+        ),
+    ]
+    assert all(type(gap.missing_hours) is list for gap in result)
+
+
+def test_sensor_without_readings_has_no_first_hour_and_no_gaps() -> None:
+    """array_agg sin filas da NULL: se entrega lista vacía, nunca None."""
+    session = FakeSession([_gap_row(first_hour=None, missing_hours=None)])
+
+    (gap,) = get_sensor_gaps(session, uuid4(), UNTIL)  # type: ignore[arg-type]
+
+    assert gap.first_hour is None
+    assert gap.missing_hours == []
+
+
+def test_complete_sensor_and_first_hour_after_end_give_empty_list() -> None:
+    later = UNTIL + timedelta(hours=1)
+    session = FakeSession(
+        [
+            _gap_row(missing_hours=None),
+            _gap_row(zona_tipo="sala", first_hour=later, missing_hours=[]),
+        ]
+    )
+
+    complete, future = get_sensor_gaps(session, uuid4(), UNTIL)  # type: ignore[arg-type]
+
+    assert complete.first_hour == FIRST_HOUR
+    assert complete.missing_hours == []
+    assert future.first_hour == later
+    assert future.missing_hours == []
+
+
+def test_gaps_keep_the_hours_as_delivered_with_their_time_zone() -> None:
+    """El SQL ya ordena y recorta en :until; Python no reordena ni filtra."""
+    h1 = FIRST_HOUR + timedelta(hours=1)
+    h3 = (FIRST_HOUR + timedelta(hours=3)).astimezone(UTC)
+    session = FakeSession([_gap_row(missing_hours=(h1, h3))])
+
+    (gap,) = get_sensor_gaps(session, uuid4(), UNTIL)  # type: ignore[arg-type]
+
+    assert gap.missing_hours == [h1, h3]
+    assert type(gap.missing_hours) is list
+    assert all(hour.utcoffset() is not None for hour in gap.missing_hours)
+
+
+def test_gaps_map_text_sensor_id_to_uuid() -> None:
+    sensor_id = uuid4()
+    session = FakeSession([_gap_row(sensor_id=str(sensor_id))])
+
+    (gap,) = get_sensor_gaps(session, uuid4(), UNTIL)  # type: ignore[arg-type]
+
+    assert gap.sensor_id == sensor_id
+    assert isinstance(gap.sensor_id, UUID)
+
+
+def test_gaps_reject_naive_end_hour_without_sql() -> None:
+    session = FakeSession()
+
+    with pytest.raises(ValueError, match="zona horaria"):
+        get_sensor_gaps(session, uuid4(), UNTIL.replace(tzinfo=None))  # type: ignore[arg-type]
+
+    assert session.calls == []
+
+
+def test_gaps_do_not_commit_and_statement_has_no_python_formatting() -> None:
+    session = FakeSession([_gap_row()])
+
+    get_sensor_gaps(session, uuid4(), UNTIL)  # type: ignore[arg-type]
+
+    assert session.commits == 0
+    sql = str(readings.SENSOR_GAPS_SQL)
+    assert "{" not in sql
+    assert "%" not in sql
+
+
+# --- Fase 5: candado de recuperación por hogar (RN-IV-05, DC-34) -----------------------------
+
+
+def test_recovery_lock_is_a_transaction_advisory_lock_on_the_household() -> None:
+    hogar_id = uuid4()
+    session = FakeSession()
+
+    assert lock_household_recovery(session, hogar_id) is None  # type: ignore[arg-type]
+
+    assert len(session.calls) == 1
+    statement, params = session.calls[0]
+    assert statement is readings.LOCK_HOUSEHOLD_RECOVERY_SQL
+    assert isinstance(statement, TextClause)
+    assert params == {"hogar_id": hogar_id}
+    assert_bound_only(statement, params)
+    assert normalized_sql(statement) == (
+        "select pg_advisory_xact_lock(hashtextextended(cast(:hogar_id as text), 0))"
+    )
+
+
+def test_recovery_lock_is_released_by_the_transaction_not_a_row_lock() -> None:
+    """Candado de transacción (se suelta en commit/rollback): ni de sesión ni FOR UPDATE."""
+    sql = normalized_sql(readings.LOCK_HOUSEHOLD_RECOVERY_SQL)
+
+    assert "pg_advisory_xact_lock" in sql
+    assert "pg_advisory_lock(" not in sql
+    assert "for update" not in sql
+    assert "hogares" not in sql
+
+
+def test_recovery_lock_does_not_commit() -> None:
+    session = FakeSession()
+
+    lock_household_recovery(session, uuid4())  # type: ignore[arg-type]
+
+    assert session.commits == 0
+    sql = str(readings.LOCK_HOUSEHOLD_RECOVERY_SQL)
     assert "{" not in sql
     assert "%" not in sql

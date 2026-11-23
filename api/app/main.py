@@ -1,6 +1,8 @@
 """Punto de entrada de la API de Zentheris."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
@@ -19,6 +21,7 @@ from app.routers import (
     system,
     users,
 )
+from app.services import scheduler
 
 API_PREFIX = "/api/v1"
 APP_LOG_HANDLER = "app.console"
@@ -83,12 +86,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """Crea la aplicación con CORS, manejadores de error y routers bajo /api/v1."""
     settings = settings or get_settings()
     _configure_logging()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        """RN-IV-05, DC-34: la generación horaria corre mientras el servidor está activo.
+
+        Solo lo ejecutan uvicorn y `with TestClient(...)`; importar el módulo no arranca nada.
+        `scheduler` se usa como módulo para que las pruebas reemplacen sus funciones.
+        """
+        running = scheduler.start_scheduler(settings)
+        try:
+            yield
+        finally:
+            scheduler.stop_scheduler(running)
+
     app = FastAPI(
         title="Zentheris API",
         description="API de monitoreo y optimización del consumo energético",
         version="0.2.8",
         # Un solo esquema por modelo, con el nombre del contrato (sin «-Input»/«-Output»).
         separate_input_output_schemas=False,
+        lifespan=lifespan,
     )
     # La app nativa no necesita CORS; la lista sirve para el navegador en desarrollo.
     # Sin cookies: la app manda el token en la cabecera Authorization.

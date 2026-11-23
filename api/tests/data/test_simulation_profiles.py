@@ -18,6 +18,7 @@ from app.data.simulation_profiles import (
     JSON_FIELDS,
     NUMERIC_FIELDS,
     SimulationProfileRow,
+    get_household_profile,
     get_profiles,
 )
 from tests.data.fake_session import FakeSession, assert_bound_only, normalized_sql
@@ -149,3 +150,100 @@ def test_does_not_commit_and_statement_has_no_python_formatting(
     sql = str(simulation_profiles.PROFILES_BY_NAME_SQL)
     assert "{" not in sql
     assert "%" not in sql
+
+
+# --- Fase 5: perfil asignado al hogar (RN-IV-05, DC-37) --------------------------------------
+
+
+def _selected_columns(statement: Any) -> list[str]:
+    sql = normalized_sql(statement)
+    return sql.removeprefix("select ").split(" from ")[0].split(", ")
+
+
+def test_household_profile_joins_the_assigned_profile_of_that_household() -> None:
+    hogar_id = uuid4()
+    session = FakeSession()
+
+    assert get_household_profile(session, hogar_id) is None  # type: ignore[arg-type]
+
+    assert len(session.calls) == 1
+    statement, params = session.calls[0]
+    assert statement is simulation_profiles.HOUSEHOLD_PROFILE_SQL
+    assert isinstance(statement, TextClause)
+    assert params == {"hogar_id": hogar_id}
+    assert_bound_only(statement, params)
+    assert normalized_sql(statement).endswith(
+        "from hogares h join perfiles_simulacion p on p.id = h.perfil_simulacion_id "
+        "where h.id = :hogar_id"
+    )
+
+
+def test_household_profile_selects_the_same_columns_as_by_name() -> None:
+    columns = _selected_columns(simulation_profiles.HOUSEHOLD_PROFILE_SQL)
+
+    assert all(column.startswith("p.") for column in columns)
+    assert [column.removeprefix("p.") for column in columns] == _selected_columns(
+        simulation_profiles.PROFILES_BY_NAME_SQL
+    )
+
+
+@pytest.mark.parametrize("json_as_text", [False, True])
+@pytest.mark.parametrize("name", PERSONALITY_ORDER)
+def test_household_profile_params_equal_the_official_file(
+    profiles: dict[str, dict[str, Any]], name: str, json_as_text: bool
+) -> None:
+    """NUMERIC llega como Decimal y sale como float; JSONB como dict (RN-IV-04)."""
+    row = _db_row(profiles[name], json_as_text=json_as_text)
+    session = FakeSession([row])
+
+    result = get_household_profile(session, uuid4())  # type: ignore[arg-type]
+
+    assert isinstance(result, SimulationProfileRow)
+    assert result.id == row["id"]
+    assert result.nombre == name
+    assert result.params == profiles[name]
+    for field in NUMERIC_FIELDS:
+        assert type(result.params[field]) is float
+    for field in JSON_FIELDS:
+        assert type(result.params[field]) is dict
+
+
+def test_household_profile_is_returned_even_if_inactive(
+    profiles: dict[str, dict[str, Any]],
+) -> None:
+    """La serie del hogar no cambia aunque el perfil se desactive: no se filtra por `activo`."""
+    profile_id = uuid4()
+    session = FakeSession([_db_row(profiles["Consumo amplio"], id=str(profile_id), activo=False)])
+
+    result = get_household_profile(session, uuid4())  # type: ignore[arg-type]
+
+    assert result is not None
+    assert result.activo is False
+    assert result.id == profile_id
+    assert isinstance(result.id, UUID)
+    where = normalized_sql(session.calls[0][0]).split(" where ")[1]
+    assert "activo" not in where
+
+
+def test_household_profile_does_not_commit_and_has_no_python_formatting(
+    profiles: dict[str, dict[str, Any]],
+) -> None:
+    session = FakeSession([_db_row(profiles["Consumo eficiente"])])
+
+    get_household_profile(session, uuid4())  # type: ignore[arg-type]
+
+    assert session.commits == 0
+    sql = str(simulation_profiles.HOUSEHOLD_PROFILE_SQL)
+    assert "{" not in sql
+    assert "%" not in sql
+
+
+def test_both_profile_queries_are_built_from_the_single_column_list() -> None:
+    """Una sola lista de columnas (PROFILE_COLUMNS); el SQL sigue siendo constante."""
+    assert _selected_columns(simulation_profiles.PROFILES_BY_NAME_SQL) == list(
+        simulation_profiles.PROFILE_COLUMNS
+    )
+    assert _selected_columns(simulation_profiles.HOUSEHOLD_PROFILE_SQL) == [
+        "p." + column for column in simulation_profiles.PROFILE_COLUMNS
+    ]
+    assert set(simulation_profiles.PROFILE_COLUMNS) == {"id", *PROFILE_FIELDS}

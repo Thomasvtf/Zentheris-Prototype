@@ -1,0 +1,75 @@
+{
+  "version_congelamiento": "1.0",
+  "criterios": {
+    "archivo": "insumos/avance02/03_criterios_aceptacion_propuestos.md",
+    "sha256": "a045222f1d5e7b9061112de6299d492878a214eb656f4577424355ad90f8376b",
+    "adopcion": "tal cual (decisión D1)",
+    "media": "error relativo <= 3% frente a objetivo de la ventana (CE01)",
+    "realizaciones": ">= 95 de 100 semillas de validación dentro de ±10% (CE03)",
+    "zona": "media por zona dentro de max(5% del regular de zona, 0,02 kWh) (CE02)",
+    "razon_fin_semana": "error de media <= 5% de la razón objetivo (CE15)"
+  },
+  "referencias": {
+    "Consumo compacto": {
+      "vivienda": "apartaestudio",
+      "zonas": [
+        "cocina",
+        "sala",
+        "dormitorio",
+        "bano"
+      ],
+      "razon_fin_semana_laboral_objetivo": "0.9621427147114670548784144294588315984048",
+      "objetivo_validacion_kwh": "34.0998114285714285714285714285720"
+    },
+    "Consumo eficiente": {
+      "vivienda": "apartamento",
+      "zonas": [
+        "cocina",
+        "sala",
+        "dormitorio",
+        "bano"
+      ],
+      "razon_fin_semana_laboral_objetivo": "1.122734933322321472354636982818931676979",
+      "objetivo_validacion_kwh": "57.628309523809523809523809523807280"
+    },
+    "Consumo intermedio": {
+      "vivienda": "apartamento",
+      "zonas": [
+        "cocina",
+        "sala",
+        "dormitorio",
+        "bano",
+        "oficina"
+      ],
+      "razon_fin_semana_laboral_objetivo": "1.003195891870794438566516986785151555885",
+      "objetivo_validacion_kwh": "75.057540952380952380952380952382490"
+    },
+    "Consumo familiar": {
+      "vivienda": "apartamento",
+      "zonas": [
+        "cocina",
+        "sala",
+        "dormitorio",
+        "bano",
+        "oficina",
+        "lavanderia"
+      ],
+      "razon_fin_semana_laboral_objetivo": "1.042252376462979738281115567239724740005",
+      "objetivo_validacion_kwh": "109.826935928571428571428571428569590"
+    },
+    "Consumo amplio": {
+      "vivienda": "duplex",
+      "zonas": [
+        "cocina",
+        "sala",
+        "dormitorio",
+        "bano",
+        "lavanderia",
+        "terraza",
+        "garaje"
+      ],
+      "razon_fin_semana_laboral_objetivo": "1.149969641376551532551821198529659930171",
+      "objetivo_validacion_kwh": "152.96147726190476190476190476190360"
+    }
+  }
+}

@@ -12,11 +12,15 @@ from typing import Any
 class FakeResult:
     """Imita el Result de SQLAlchemy: solo lo que usa la capa de datos."""
 
-    def __init__(self, rows: Sequence[Mapping[str, Any]]) -> None:
+    def __init__(self, rows: Sequence[Mapping[str, Any]] = (), *, rowcount: int = -1) -> None:
         self._rows = list(rows)
+        self.rowcount = rowcount
 
     def mappings(self) -> FakeResult:
         return self
+
+    def all(self) -> list[Mapping[str, Any]]:
+        return list(self._rows)
 
     def first(self) -> Mapping[str, Any] | None:
         return self._rows[0] if self._rows else None
@@ -28,9 +32,13 @@ class FakeResult:
 
 
 class FakeSession:
-    """`results[i]` son las filas que devuelve la llamada i; sin entrada, ninguna fila."""
+    """`results[i]` es lo que produce la llamada i; sin entrada, ninguna fila.
 
-    def __init__(self, *results: Sequence[Mapping[str, Any]]) -> None:
+    Cada entrada puede ser una lista de filas, un `FakeResult` (por ejemplo, con `rowcount`)
+    o una excepción, que se lanza.
+    """
+
+    def __init__(self, *results: Sequence[Mapping[str, Any]] | FakeResult | Exception) -> None:
         self._results = list(results)
         self.calls: list[tuple[Any, Mapping[str, Any] | None]] = []
         self.commits = 0
@@ -38,8 +46,10 @@ class FakeSession:
     def exec(self, statement: Any, *, params: Mapping[str, Any] | None = None) -> FakeResult:
         index = len(self.calls)
         self.calls.append((statement, params))
-        rows = self._results[index] if index < len(self._results) else []
-        return FakeResult(rows)
+        result = self._results[index] if index < len(self._results) else []
+        if isinstance(result, Exception):
+            raise result
+        return result if isinstance(result, FakeResult) else FakeResult(result)
 
     def execute(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover
         raise AssertionError("usar Session.exec (Session.execute está obsoleto en SQLModel)")
@@ -54,14 +64,18 @@ def normalized_sql(statement: Any) -> str:
 
 
 def assert_bound_only(statement: Any, params: Mapping[str, Any] | None) -> None:
-    """Los valores viajan como parámetros: el SQL no los contiene y no hay formateo Python."""
+    """Los valores viajan como parámetros: el SQL no los contiene y no hay formateo Python.
+
+    En las inserciones por lotes el parámetro es una lista: se comprueba cada elemento.
+    """
     sql = str(statement)
     assert "{" not in sql
     assert "%" not in sql
     assert params is not None
     assert set(statement._bindparams) == set(params)
-    for value in params.values():
-        if isinstance(value, str) and value:
-            assert value not in sql
-        elif value is not None and not isinstance(value, bool):
-            assert str(value) not in sql
+    for param in params.values():
+        for value in param if isinstance(param, list) else [param]:
+            if isinstance(value, str) and value:
+                assert value not in sql
+            elif value is not None and not isinstance(value, bool):
+                assert str(value) not in sql

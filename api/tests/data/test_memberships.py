@@ -8,20 +8,25 @@ y el mapeo de la fila a ActiveMembershipRow.
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+import psycopg2.errors
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql.elements import TextClause
 
 from app.data import memberships
 from app.data.memberships import (
+    ActiveMembershipExistsError,
     ActiveMembershipRow,
     MembershipSummaryRow,
     close_membership,
     count_other_active_members,
     get_active_membership,
     get_active_membership_of_user,
+    insert_admin_membership,
 )
 from tests.data.fake_session import FakeSession as QueuedFakeSession
 from tests.data.fake_session import assert_bound_only, normalized_sql
@@ -330,3 +335,138 @@ def test_phase3_statements_are_constants_without_python_formatting(statement: An
     assert isinstance(statement, TextClause)
     assert "{" not in str(statement)
     assert "%" not in str(statement)
+
+
+# --- Fase 4: membresía del administrador en el onboarding (RN-X-03, RN-II-01) -----------------
+
+
+class _FakeDiag:
+    def __init__(self, constraint_name: str | None) -> None:
+        self.constraint_name = constraint_name
+
+
+class _FakeDriverError(Exception):
+    """Imita la excepción de psycopg2: `pgcode`, `diag` (si viene) y el mensaje con el índice."""
+
+    def __init__(
+        self, pgcode: str | None, *, message: str = "", diag: _FakeDiag | None = None
+    ) -> None:
+        super().__init__(message)
+        self.pgcode = pgcode
+        if diag is not None:
+            self.diag = diag
+
+
+def _unique_message(constraint: str) -> str:
+    return f'duplicate key value violates unique constraint "{constraint}"\n'
+
+
+def _integrity_error(orig: Exception) -> IntegrityError:
+    return IntegrityError("insert into hogar_miembros ...", {}, orig)
+
+
+def _insert_admin(session: QueuedFakeSession, **overrides: Any) -> None:
+    values: dict[str, Any] = {
+        "hogar_id": uuid4(),
+        "usuario_id": uuid4(),
+        "joined_at": datetime(2026, 11, 22, 10, 0, tzinfo=UTC),
+    }
+    values.update(overrides)
+    insert_admin_membership(session, **values)  # type: ignore[arg-type]
+
+
+def test_insert_admin_membership_sql_and_params() -> None:
+    hogar_id, usuario_id = uuid4(), uuid4()
+    joined_at = datetime(2026, 11, 22, 10, 0, tzinfo=UTC)
+    session = QueuedFakeSession()
+
+    _insert_admin(session, hogar_id=hogar_id, usuario_id=usuario_id, joined_at=joined_at)
+
+    assert len(session.calls) == 1
+    statement, params = session.calls[0]
+    assert isinstance(statement, TextClause)
+    assert params == {"hogar_id": hogar_id, "usuario_id": usuario_id, "joined_at": joined_at}
+    assert_bound_only(statement, params)
+    assert normalized_sql(statement) == (
+        "insert into hogar_miembros (hogar_id, usuario_id, rol, estado, fecha_ingreso) "
+        "values (:hogar_id, :usuario_id, 'administrador', 'activo', :joined_at)"
+    )
+    assert session.commits == 0
+
+
+@pytest.mark.parametrize(
+    "orig",
+    [
+        _FakeDriverError("23505", diag=_FakeDiag("uq_miembros_usuario_activo")),
+        _FakeDriverError("23505", message=_unique_message("uq_miembros_usuario_activo")),
+        _FakeDriverError(
+            "23505",
+            message=_unique_message("uq_miembros_usuario_activo"),
+            diag=_FakeDiag(None),
+        ),
+    ],
+    ids=["diag", "sin diag", "diag sin nombre"],
+)
+def test_insert_admin_membership_raises_when_user_already_has_a_household(
+    orig: Exception,
+) -> None:
+    """RN-II-01: el índice único cierra la carrera entre dos onboardings del mismo usuario."""
+    usuario_id = uuid4()
+    session = QueuedFakeSession(_integrity_error(orig))
+
+    with pytest.raises(ActiveMembershipExistsError) as exc_info:
+        _insert_admin(session, usuario_id=usuario_id)
+
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
+    assert str(usuario_id) not in str(exc_info.value)
+    assert not isinstance(exc_info.value, IntegrityError)
+    assert session.commits == 0
+
+
+@pytest.mark.parametrize(
+    "orig",
+    [
+        _FakeDriverError("23505", diag=_FakeDiag("uq_miembros_admin_activo")),
+        _FakeDriverError("23505", message=_unique_message("uq_miembros_admin_activo")),
+        _FakeDriverError(
+            "23505",
+            message=_unique_message("uq_miembros_usuario_activo"),
+            diag=_FakeDiag("uq_miembros_admin_activo"),
+        ),
+        _FakeDriverError("23505"),
+        _FakeDriverError("23503", diag=_FakeDiag("hogar_miembros_usuario_id_fkey")),
+        _FakeDriverError("23503", message=_unique_message("uq_miembros_usuario_activo")),
+        _FakeDriverError("23514"),
+        _FakeDriverError(None),
+        psycopg2.errors.UniqueViolation(),
+    ],
+    ids=[
+        "otro índice en diag",
+        "otro índice en el mensaje",
+        "diag manda sobre el mensaje",
+        "23505 sin nombre",
+        "FK de usuarios",
+        "otro SQLSTATE con el nombre",
+        "trigger de 5 miembros",
+        "sin SQLSTATE",
+        "excepción real de psycopg2 sin datos",
+    ],
+)
+def test_insert_admin_membership_reraises_any_other_integrity_error(orig: Exception) -> None:
+    error = _integrity_error(orig)
+    session = QueuedFakeSession(error)
+
+    with pytest.raises(IntegrityError) as exc_info:
+        _insert_admin(session)
+
+    assert exc_info.value is error
+
+
+def test_active_user_index_name_matches_the_migration() -> None:
+    """El nombre del índice que detecta el código es el de la migración 0003."""
+    migrations = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
+    (migration,) = migrations.glob("*_0003_*.sql")
+
+    expected = f"create unique index {memberships.ACTIVE_USER_INDEX}\n"
+    assert expected in migration.read_text(encoding="utf-8")

@@ -13,8 +13,9 @@ explícito no admite campos que el contrato no declara; las propiedades `writeOn
 salir en una respuesta; las `readOnly` (como `UsuarioActual.correo`) sí salen y siguen siendo
 obligatorias. `oneOf` con `type: 'null'` valida tal cual (null o el objeto, nunca ambos).
 
-Cubre `obtenerSalud` y las 8 operaciones de la fase 3 (Usuario): RN-IX-01, RN-IX-07,
-RN-IX-09, RN-I-02, RN-VII-01, RN-VI-04, RN-XVI-02, RN-XVI-03; errores DC-16.
+Cubre `obtenerSalud`, las 8 operaciones de la fase 3 (Usuario): RN-IX-01, RN-IX-07, RN-IX-09,
+RN-I-02, RN-VII-01, RN-VI-04, RN-XVI-02, RN-XVI-03; y `crearHogarOnboarding` (fase 4): RN-X-02,
+RN-X-03, RN-X-04, RN-IV-01, RN-IV-07, RN-II-01, RN-II-03; errores DC-16.
 Las demás: TODO(C-01).
 """
 
@@ -35,8 +36,9 @@ from app.data import households as households_data
 from app.data import memberships as memberships_data
 from app.data import users as users_data
 from app.data.database import get_session
-from app.data.memberships import MembershipSummaryRow
+from app.data.memberships import ActiveMembershipExistsError, MembershipSummaryRow
 from app.data.users import PreferencesRow, UserProfileRow
+from app.domain.zone_rules import BASIC_ZONES, PERSONALITIES, ZONE_TYPES
 from app.main import API_PREFIX, create_app
 from app.services import supabase_admin
 from tests.helpers.auth import (
@@ -46,6 +48,12 @@ from tests.helpers.auth import (
     make_test_settings,
     make_token,
 )
+from tests.helpers.onboarding import (
+    REFERENCE_HOUSEHOLDS,
+    FakeDatabase,
+    install_fake_database,
+)
+from tests.helpers.personalities import PERSONALITY_ORDER
 
 CONTRACT_PATH = Path(__file__).resolve().parents[3] / "docs/api/zentheris-api.yaml"
 CONTRACT: dict[str, Any] = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
@@ -71,8 +79,8 @@ PHASE_OPERATIONS = frozenset(
         "actualizarPreferencias",
     }
 )
-# Operaciones con C-01 real: las de la fase 3 y la salud (sin autenticación).
-COVERED_OPERATIONS = PHASE_OPERATIONS | {"obtenerSalud"}
+# Operaciones con C-01 real: las de la fase 3, el onboarding y la salud (sin autenticación).
+COVERED_OPERATIONS = PHASE_OPERATIONS | {"obtenerSalud", "crearHogarOnboarding"}
 # Rangos del contrato que no se pueden provocar: `/salud` no tiene parámetros ni cuerpo, así que
 # ninguna petición a esa operación da un 4XX propio.
 UNREACHABLE_RANGES = frozenset({("obtenerSalud", "4XX")})
@@ -393,7 +401,7 @@ class Case:
     operation_id: str
     status: int
     body: Any = NO_BODY
-    setup: Callable[[FakeStore], None] | None = None
+    setup: Callable[[Any], None] | None = None  # recibe el doble de datos del caso
     authenticated: bool = True
     codigo: str | None = None
     commits: int | None = None
@@ -648,6 +656,162 @@ CASES: tuple[Case, ...] = (
 )
 
 
+# --- casos de crearHogarOnboarding --------------------------------------------------------
+
+HOUSEHOLD_NAME = "Casa Gómez"
+INTERNAL_DETAIL = "detalle interno de la base"
+
+
+def onboarding_body(housing: str = "apartamento", zones: Any = BASIC_ZONES, **changes: Any) -> Any:
+    zones = list(zones) if isinstance(zones, tuple) else zones
+    return {"nombre_hogar": HOUSEHOLD_NAME, "tipo_vivienda": housing, "zonas": zones, **changes}
+
+
+def without(field_name: str) -> dict[str, Any]:
+    return {name: value for name, value in onboarding_body().items() if name != field_name}
+
+
+def with_active_membership(db: FakeDatabase) -> None:
+    db.membership = MembershipSummaryRow(
+        membresia_id=MEMBRESIA_ID, hogar_id=HOGAR_ID, rol="miembro"
+    )
+
+
+def failing_at(step: str, error: Exception) -> Callable[[FakeDatabase], None]:
+    return lambda db: db.failures.update({step: error})
+
+
+def onboarding_error(name: str, status: int, codigo: str, body: Any = NO_BODY, **kw: Any) -> Case:
+    body = onboarding_body() if body is NO_BODY else body
+    return Case(name, "crearHogarOnboarding", status, body=body, codigo=codigo, commits=0, **kw)
+
+
+ONBOARDING_CASES: tuple[Case, ...] = (
+    # 201: el hogar de referencia de cada personalidad, el máximo y el mínimo de zonas
+    *(
+        Case(
+            f"crea-{name.split()[1]}",
+            "crearHogarOnboarding",
+            201,
+            body=onboarding_body(*REFERENCE_HOUSEHOLDS[name]),
+            commits=1,
+        )
+        for name in PERSONALITY_ORDER
+    ),
+    Case(
+        "crea-nueve-zonas",
+        "crearHogarOnboarding",
+        201,
+        body=onboarding_body("duplex", ZONE_TYPES),
+        commits=1,
+    ),
+    Case(
+        "crea-tres-zonas",
+        "crearHogarOnboarding",
+        201,
+        body=onboarding_body("apartaestudio", ("cocina", "sala", "bano")),
+        commits=1,
+    ),
+    # 401
+    onboarding_error("sin-token", 401, "NO_AUTENTICADO", authenticated=False),
+    # 409: ya tiene un hogar, también si otra petición suya se adelantó (RN-II-01)
+    onboarding_error(
+        "ya-tiene-hogar", 409, "MEMBRESIA_ACTIVA_EXISTENTE", setup=with_active_membership
+    ),
+    onboarding_error(
+        "otra-peticion-se-adelanto",
+        409,
+        "MEMBRESIA_ACTIVA_EXISTENTE",
+        setup=failing_at("insert_admin_membership", ActiveMembershipExistsError(INTERNAL_DETAIL)),
+    ),
+    # 422 de las reglas de zonas (RN-X-02)
+    onboarding_error(
+        "extra-en-apartaestudio",
+        422,
+        "ZONAS_NO_PERMITIDAS",
+        onboarding_body("apartaestudio", ("cocina", "sala", "dormitorio", "garaje")),
+    ),
+    onboarding_error(
+        "falta-una-basica",
+        422,
+        "ZONAS_BASICAS_FALTANTES",
+        onboarding_body("casa", ("cocina", "sala", "dormitorio", "oficina")),
+    ),
+    onboarding_error(
+        "seis-en-apartaestudio",
+        422,
+        "CANTIDAD_ZONAS_INVALIDA",
+        onboarding_body("apartaestudio", (*BASIC_ZONES, "oficina", "lavanderia")),
+    ),
+    onboarding_error(
+        "dos-basicas-en-apartaestudio",
+        422,
+        "CANTIDAD_ZONAS_INVALIDA",
+        onboarding_body("apartaestudio", ("cocina", "sala", "oficina")),
+    ),
+    # Pydantic no comprueba `uniqueItems`: de 3 a 9 elementos llegan al servicio.
+    onboarding_error(
+        "repetida-en-tres",
+        422,
+        "ZONAS_DUPLICADAS",
+        onboarding_body("apartaestudio", ("cocina", "cocina", "sala")),
+    ),
+    onboarding_error(
+        "repetida-con-todas-las-basicas",
+        422,
+        "ZONAS_DUPLICADAS",
+        onboarding_body("apartamento", (*BASIC_ZONES, "bano")),
+    ),
+    onboarding_error(
+        "repetida-en-nueve",
+        422,
+        "ZONAS_DUPLICADAS",
+        onboarding_body("duplex", (*ZONE_TYPES[:8], "cocina")),
+    ),
+    # 422 del esquema: no llega al servicio
+    onboarding_error("sin-zonas", 422, "VALIDACION", onboarding_body(zones=[])),
+    onboarding_error("dos-zonas", 422, "VALIDACION", onboarding_body(zones=["cocina", "sala"])),
+    onboarding_error(
+        "diez-zonas", 422, "VALIDACION", onboarding_body("duplex", (*ZONE_TYPES, "cocina"))
+    ),
+    onboarding_error(
+        "zona-desconocida", 422, "VALIDACION", onboarding_body(zones=(*BASIC_ZONES, "piscina"))
+    ),
+    onboarding_error("zonas-null", 422, "VALIDACION", onboarding_body(zones=None)),
+    onboarding_error("zona-null", 422, "VALIDACION", onboarding_body(zones=(*BASIC_ZONES, None))),
+    onboarding_error("vivienda-desconocida", 422, "VALIDACION", onboarding_body("finca")),
+    onboarding_error("vivienda-null", 422, "VALIDACION", onboarding_body(tipo_vivienda=None)),
+    onboarding_error("nombre-vacio", 422, "VALIDACION", onboarding_body(nombre_hogar="")),
+    onboarding_error("nombre-null", 422, "VALIDACION", onboarding_body(nombre_hogar=None)),
+    onboarding_error("nombre-numero", 422, "VALIDACION", onboarding_body(nombre_hogar=7)),
+    *(
+        onboarding_error(f"falta-{name}", 422, "VALIDACION", without(name))
+        for name in ("nombre_hogar", "tipo_vivienda", "zonas")
+    ),
+    # La personalidad la calcula el servidor: el cliente no la envía (RN-X-04)
+    *(
+        onboarding_error(f"extra-{name}", 422, "VALIDACION", onboarding_body(**{name: value}))
+        for name, value in (
+            ("personalidad", "Consumo amplio"),
+            ("perfil_simulacion_id", str(HOGAR_ID)),
+            ("estrato", 3),
+        )
+    ),
+    onboarding_error("cuerpo-vacio", 422, "VALIDACION", {}),
+    onboarding_error("cuerpo-lista", 422, "VALIDACION", []),
+    # 500: falla cualquier paso y no queda nada (RN-X-03)
+    *(
+        onboarding_error(
+            f"falla-{step}",
+            500,
+            "BACKFILL_FALLIDO",
+            setup=failing_at(step, RuntimeError(INTERNAL_DETAIL)),
+        )
+        for step in ("insert_household", "insert_readings_batch", "commit")
+    ),
+)
+
+
 def send(client: TestClient, case: Case) -> Any:
     method, path, _op = OPERATIONS[case.operation_id]
     headers = auth_header(make_token(USER_ID, CORREO)) if case.authenticated else {}
@@ -666,9 +830,10 @@ def test_cases_cover_every_declared_response_of_the_phase() -> None:
         for code in OPERATIONS[operation_id][2]["responses"]
         if (operation_id, str(code)) not in UNREACHABLE_RANGES | COVERED_BY_OWN_TEST
     }
-    covered = {(case.operation_id, case.status) for case in CASES}
+    cases = CASES + ONBOARDING_CASES
+    covered = {(case.operation_id, case.status) for case in cases}
     assert covered == declared
-    assert len({(c.operation_id, c.name) for c in CASES}) == len(CASES)
+    assert len({(c.operation_id, c.name) for c in cases}) == len(cases)
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: f"{c.operation_id}-{c.status}-{c.name}")
@@ -780,6 +945,100 @@ def test_delete_account_supabase_failure_is_500(store: FakeStore) -> None:
     assert response.json()["codigo"] == "ERROR_INTERNO"
     assert "fallo simulado" not in response.text
     assert store.session.commits == 1
+
+
+# --- crearHogarOnboarding -----------------------------------------------------------------
+
+
+@pytest.fixture
+def onboarding_db(store: FakeStore, monkeypatch: pytest.MonkeyPatch) -> FakeDatabase:
+    """Datos del onboarding en memoria; el servicio, las zonas y el simulador son los reales."""
+    db = install_fake_database(monkeypatch)
+    store.session = db  # type: ignore[assignment]  # la sesión que entrega `get_session`
+    return db
+
+
+@pytest.mark.parametrize("case", ONBOARDING_CASES, ids=lambda c: f"{c.status}-{c.name}")
+def test_onboarding_response_matches_contract_schema(
+    case: Case, client: TestClient, onboarding_db: FakeDatabase
+) -> None:
+    if case.setup is not None:
+        case.setup(onboarding_db)
+    response = send(client, case)
+    assert response.status_code == case.status, response.text
+    assert_matches_contract("crearHogarOnboarding", response)
+    assert onboarding_db.commits == case.commits
+    if case.status == 201:
+        return
+    assert response.json()["codigo"] == case.codigo
+    assert (response.headers.get("WWW-Authenticate") == "Bearer") == (case.status == 401)
+    assert INTERNAL_DETAIL not in response.text
+    onboarding_db.assert_nothing_saved()
+    if case.status in (401, 422):
+        assert onboarding_db.events == []  # sin tocar la base
+
+
+def test_onboarding_cases_cover_every_code_of_the_operation() -> None:
+    """Los códigos que el contrato nombra para `crearHogarOnboarding`, ni uno más."""
+    assert {case.codigo for case in ONBOARDING_CASES if case.codigo} == {
+        "NO_AUTENTICADO",
+        "MEMBRESIA_ACTIVA_EXISTENTE",
+        "ZONAS_NO_PERMITIDAS",
+        "ZONAS_BASICAS_FALTANTES",
+        "CANTIDAD_ZONAS_INVALIDA",
+        "ZONAS_DUPLICADAS",
+        "VALIDACION",
+        "BACKFILL_FALLIDO",
+    }
+
+
+@pytest.mark.parametrize("name", PERSONALITY_ORDER)
+def test_onboarding_body_is_the_saved_household_without_personality(
+    name: str, client: TestClient, onboarding_db: FakeDatabase
+) -> None:
+    """RN-X-04: el 201 no expone la personalidad. Permisos por defecto de RN-II-03."""
+    housing, zones = REFERENCE_HOUSEHOLDS[name]
+    response = send(
+        client, Case("x", "crearHogarOnboarding", 201, body=onboarding_body(housing, zones))
+    )
+    (household,) = onboarding_db.saved["hogares"]
+    assert response.json() == {
+        "id": str(household["id"]),
+        "nombre": HOUSEHOLD_NAME,
+        "tipo_vivienda": housing,
+        "rol_usuario": "administrador",
+        "permisos": {
+            "ver_consumo_actual": True,
+            "ver_historial": True,
+            "recibir_alertas": True,
+            "modificar_metas": False,
+        },
+    }
+    assert onboarding_db.used_profiles == [name]
+    hidden = (*PERSONALITIES, str(household["perfil_simulacion_id"]), "perfil", "personalidad")
+    assert not [value for value in hidden if value in response.text]
+    (member,) = onboarding_db.saved["hogar_miembros"]
+    assert member["usuario_id"] == USER_ID  # el del token
+
+
+@pytest.mark.parametrize(
+    ("zones", "location"),
+    [
+        (["cocina", "sala"], ["body", "zonas"]),
+        ([*ZONE_TYPES, "cocina"], ["body", "zonas"]),
+        ([*BASIC_ZONES, "piscina"], ["body", "zonas", "4"]),
+    ],
+    ids=["dos", "diez", "desconocida"],
+)
+def test_onboarding_validation_error_locates_the_field_without_echoing_it(
+    zones: list[str], location: list[str], client: TestClient, onboarding_db: FakeDatabase
+) -> None:
+    response = send(
+        client, Case("x", "crearHogarOnboarding", 422, body=onboarding_body(zones=zones))
+    )
+    assert [campo["ubicacion"] for campo in response.json()["detalles"]["campos"]] == [location]
+    assert HOUSEHOLD_NAME not in response.text
+    assert "piscina" not in response.text
 
 
 # --- operaciones pendientes ---------------------------------------------------------------

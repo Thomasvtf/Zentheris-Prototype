@@ -1,0 +1,179 @@
+{
+  "nombre": "Consumo intermedio",
+  "activo": true,
+  "base_cocina_kwh_dia": 1.2,
+  "base_sala_kwh_dia": 0.6,
+  "base_dormitorio_kwh_dia": 0.3,
+  "base_bano_kwh_dia": 0.1,
+  "base_oficina_kwh_dia": 0.4,
+  "base_lavanderia_kwh_dia": 0.5,
+  "base_terraza_kwh_dia": 0.2,
+  "base_garaje_kwh_dia": 0.15,
+  "base_cuarto_servicio_kwh_dia": 0.25,
+  "curva_horaria": {
+    "base": [
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.02,
+      0.04,
+      0.06,
+      0.04,
+      0.03,
+      0.03,
+      0.04,
+      0.06,
+      0.05,
+      0.04,
+      0.03,
+      0.03,
+      0.04,
+      0.07,
+      0.1,
+      0.1,
+      0.09,
+      0.04,
+      0.04
+    ],
+    "dormitorio": [
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
+      0.06,
+      0.04,
+      0.02,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.02,
+      0.04,
+      0.07,
+      0.1,
+      0.14,
+      0.12
+    ],
+    "oficina": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.02,
+      0.08,
+      0.11,
+      0.11,
+      0.11,
+      0.08,
+      0.1,
+      0.11,
+      0.11,
+      0.09,
+      0.05,
+      0.02,
+      0.01,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "humor_min": 0.9,
+  "humor_max": 1.1,
+  "ruido_config": {
+    "memoria": 0.6,
+    "intensidad": 0.05
+  },
+  "picos_config": {
+    "cocina": {
+      "probabilidad": 0.02,
+      "franjas": [
+        {
+          "desde": 18,
+          "hasta": 21,
+          "multiplicador": 2.0
+        }
+      ],
+      "potencia_w": [
+        1000,
+        1800
+      ],
+      "duracion_min": [
+        10,
+        30
+      ],
+      "minuto_inicio": [
+        0,
+        59
+      ],
+      "fraccion_uso": [
+        0.5,
+        0.9
+      ]
+    },
+    "lavanderia": {
+      "probabilidad": 0.01,
+      "franjas": [],
+      "potencia_w": [
+        500,
+        2000
+      ],
+      "duracion_min": [
+        30,
+        90
+      ],
+      "minuto_inicio": [
+        0,
+        59
+      ],
+      "fraccion_uso": [
+        0.6,
+        1.0
+      ]
+    },
+    "terraza": {
+      "probabilidad": 0.01,
+      "franjas": [
+        {
+          "desde": 22,
+          "hasta": 24,
+          "multiplicador": 3.0
+        },
+        {
+          "desde": 0,
+          "hasta": 2,
+          "multiplicador": 3.0
+        }
+      ],
+      "potencia_w": [
+        200,
+        600
+      ],
+      "duracion_min": [
+        60,
+        180
+      ],
+      "minuto_inicio": [
+        0,
+        59
+      ],
+      "fraccion_uso": [
+        0.8,
+        1.0
+      ]
+    }
+  },
+  "factor_fin_semana": 1.1
+}

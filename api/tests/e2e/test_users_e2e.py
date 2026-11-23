@@ -84,8 +84,7 @@ INTERNAL_ERROR_BODY = {
 # Texto de la excepción interna simulada: nunca debe salir en la respuesta (S-01).
 AUTH_FAILURE_DETAIL = "detalle-interno-de-supabase-auth"
 
-# El contrato no declara 404 en estas operaciones (hueco conocido, se reporta en el PR).
-NO_PROFILE_404_OUTSIDE_CONTRACT = frozenset(
+NO_PROFILE_404 = frozenset(
     {
         "actualizarPerfil",
         "guardarAvatar",
@@ -450,9 +449,8 @@ def call(
 ) -> httpx.Response:
     """Llama la operación como `user_id` (None = sin token) y valida el cuerpo con el contrato.
 
-    Estado declarado en la operación → su esquema exacto. Huecos conocidos (404
-    `FICHA_NO_CREADA` fuera del contrato y 500 sin declarar) → el esquema `Error`.
-    Cualquier otro estado no declarado hace fallar la prueba.
+    Estado declarado en la operación → su esquema exacto. Un 500 no declarado → el esquema
+    `Error`. Cualquier otro estado no declarado hace fallar la prueba.
     """
     method, path, op = OPERATIONS[operation_id]
     headers = auth_header(make_token(user_id, email_of(user_id))) if user_id else {}
@@ -462,9 +460,6 @@ def call(
     response = client.request(method.upper(), API_PREFIX + path, **kwargs)
     if str(response.status_code) in op["responses"]:
         assert_matches_contract(operation_id, response)
-    elif response.status_code == 404 and operation_id in NO_PROFILE_404_OUTSIDE_CONTRACT:
-        assert_matches_error_schema(response)
-        assert response.json()["codigo"] == "FICHA_NO_CREADA"
     elif response.status_code == 500:
         assert_matches_error_schema(response)
     else:
@@ -669,8 +664,8 @@ def test_operations_without_profile_answer_404_ficha_no_creada(
     El contrato no declara este 404 en estas operaciones: hueco conocido, se reporta.
     """
     db.seed_auth_user(NEW_USER_ID)
-    assert operation_id in NO_PROFILE_404_OUTSIDE_CONTRACT
-    assert "404" not in OPERATIONS[operation_id][2]["responses"]
+    assert operation_id in NO_PROFILE_404
+    assert "404" in OPERATIONS[operation_id][2]["responses"]
     assert_error(call(client, operation_id, NEW_USER_ID, body), 404, "FICHA_NO_CREADA")
     assert db.total_commits == 0
     assert db.committed.usuarios == {}

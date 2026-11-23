@@ -36,7 +36,8 @@ export interface paths {
          * Ficha, preferencias y membresía del usuario autenticado
          * @description Punto de entrada tras iniciar sesión (RN-X-01). Si `membresia` es `null`, la app
          *     consulta `GET /invitaciones/recibidas` y, si no hay ninguna, pasa al onboarding.
-         *     Devuelve `404` con `FICHA_NO_CREADA` si aún no existe la ficha en `usuarios`.
+         *     Devuelve `404` con `FICHA_NO_CREADA` si aún no existe la ficha en `usuarios`. Las demás
+         *     operaciones de `/usuarios/me` devuelven el mismo `404` si se llaman antes de crear la ficha.
          */
         get: operations["obtenerUsuarioActual"];
         put?: never;
@@ -1329,7 +1330,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description El recurso no existe o el usuario no tiene membresía activa en ese hogar (`codigo` = `NO_ENCONTRADO`). */
+        /** @description El recurso no existe o el usuario no tiene membresía activa en ese hogar (`codigo` = `NO_ENCONTRADO`). En `/usuarios/me` y sus subrutas, si el usuario aún no tiene ficha, el código es `FICHA_NO_CREADA`. */
         NoEncontrado: {
             headers: {
                 [name: string]: unknown;
@@ -1479,6 +1480,7 @@ export interface operations {
             };
             401: components["responses"]["NoAutenticado"];
             409: components["responses"]["Conflicto"];
+            500: components["responses"]["ErrorServidor"];
         };
     };
     actualizarPerfil: {
@@ -1504,6 +1506,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["NoAutenticado"];
+            404: components["responses"]["NoEncontrado"];
             422: components["responses"]["Validacion"];
         };
     };
@@ -1530,6 +1533,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["NoAutenticado"];
+            404: components["responses"]["NoEncontrado"];
             422: components["responses"]["Validacion"];
         };
     };
@@ -1550,6 +1554,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["NoAutenticado"];
+            404: components["responses"]["NoEncontrado"];
         };
     };
     obtenerPreferencias: {
@@ -1571,6 +1576,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["NoAutenticado"];
+            404: components["responses"]["NoEncontrado"];
         };
     };
     actualizarPreferencias: {
@@ -1596,6 +1602,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["NoAutenticado"];
+            404: components["responses"]["NoEncontrado"];
             422: components["responses"]["Validacion"];
         };
     };

@@ -2,12 +2,7 @@
 
 Solo valida la entrada y llama al servicio (api/CLAUDE.md). Las operaciones de la fase 3
 reciben la sesión de la petición (`get_session`); el servicio hace el commit.
-El servicio también puede responder 404 `FICHA_NO_CREADA` en `actualizarPerfil`,
-`guardarAvatar`, `eliminarAvatar`, `obtenerPreferencias` y `actualizarPreferencias`, aunque el
-contrato no lo declara en esas operaciones (hueco del contrato reportado; `responses=` sigue
-igual al contrato).
-
-TODO(pendiente: declarar 404 FICHA_NO_CREADA en el contrato para actualizarPerfil, guardarAvatar, eliminarAvatar, obtenerPreferencias y actualizarPreferencias, y 500 ERROR_INTERNO en eliminarCuenta)
+El servicio responde 404 `FICHA_NO_CREADA` si la persona aún no creó su ficha (contrato 0.2.7).
 """
 
 from typing import Annotated
@@ -69,7 +64,7 @@ def create_user_profile(
     operation_id="actualizarPerfil",
     summary="Editar nombre completo y teléfono (RN-IX-07)",
     response_model=UsuarioActual,
-    responses=error_responses(401, 422),
+    responses=error_responses(401, 404, 422),
 )
 def update_profile(
     user: CurrentUser, session: DbSession, payload: UsuarioActualizar
@@ -85,7 +80,7 @@ def update_profile(
     response_model=None,
     response_class=Response,
     status_code=204,
-    responses=error_responses(401, 409),
+    responses=error_responses(401, 409, 500),
 )
 def delete_account(
     user: CurrentUser,
@@ -101,7 +96,7 @@ def delete_account(
     operation_id="guardarAvatar",
     summary="Registrar la foto de perfil (RN-I-02)",
     response_model=UsuarioActual,
-    responses=error_responses(401, 422),
+    responses=error_responses(401, 404, 422),
 )
 def save_avatar(user: CurrentUser, session: DbSession, payload: AvatarGuardar) -> UsuarioActual:
     """Registrar la foto de perfil (RN-I-02)."""
@@ -115,7 +110,7 @@ def save_avatar(user: CurrentUser, session: DbSession, payload: AvatarGuardar) -
     response_model=None,
     response_class=Response,
     status_code=204,
-    responses=error_responses(401),
+    responses=error_responses(401, 404),
 )
 def delete_avatar(user: CurrentUser, session: DbSession) -> None:
     """Eliminar la foto de perfil (RN-I-02)."""
@@ -127,7 +122,7 @@ def delete_avatar(user: CurrentUser, session: DbSession) -> None:
     operation_id="obtenerPreferencias",
     summary="Interruptores de notificación y base de comparación",
     response_model=Preferencias,
-    responses=error_responses(401),
+    responses=error_responses(401, 404),
 )
 def get_preferences(user: CurrentUser, session: DbSession) -> Preferencias:
     """Interruptores de notificación y base de comparación."""
@@ -139,7 +134,7 @@ def get_preferences(user: CurrentUser, session: DbSession) -> Preferencias:
     operation_id="actualizarPreferencias",
     summary="Cambiar interruptores y base de comparación (RN-VI-04, RN-VII-01, RN-XVI-02, RN-XVI-03)",
     response_model=Preferencias,
-    responses=error_responses(401, 422),
+    responses=error_responses(401, 404, 422),
 )
 def update_preferences(
     user: CurrentUser, session: DbSession, payload: PreferenciasActualizar

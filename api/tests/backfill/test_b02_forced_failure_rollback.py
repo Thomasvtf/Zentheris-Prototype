@@ -110,10 +110,17 @@ def test_more_readings_than_720_per_zone_reverts_everything(
     assert_backfill_failed(fake, run_error(fake))
 
 
-def test_missing_profile_of_the_user_is_backfill_failed(fake: FakeDatabase) -> None:
-    """Sin ficha (23503): el contrato no declara 404 en /onboarding."""
+def test_missing_profile_of_the_user_is_404_ficha_no_creada(fake: FakeDatabase) -> None:
+    """Sin ficha (23503): 404 `FICHA_NO_CREADA` (contrato 0.2.8) y nada guardado."""
     fake.failures["insert_admin_membership"] = missing_profile_error()
-    assert_backfill_failed(fake, run_error(fake))
+    error = run_error(fake)
+    assert (error.status_code, error.codigo) == (404, CodigoError.FICHA_NO_CREADA)
+    assert error.detalles is None
+    assert error.__cause__ is None and error.__suppress_context__
+    assert SECRET not in error.mensaje and HOUSEHOLD_NAME not in error.mensaje
+    assert fake.rollbacks == 1
+    assert fake.events[-1] == "rollback"
+    fake.assert_nothing_saved()
 
 
 def test_without_any_active_personality_nothing_is_written(fake: FakeDatabase) -> None:

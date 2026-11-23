@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 # Mensajes técnicos y cortos: la app decide el texto por `codigo`.
 MEMBRESIA_ACTIVA_MESSAGE = "El usuario ya pertenece a un hogar activo."
+FICHA_NO_CREADA_MESSAGE = "El usuario aún no tiene ficha."
 BACKFILL_FAILED_MESSAGE = "No se pudo crear el hogar."
 
 
@@ -62,6 +63,7 @@ def create_household_onboarding(
     # `rollback` falla con una excepción en curso, SQLAlchemy registra su traza con la excepción
     # original encadenada, y el DETAIL de Postgres lleva ids y el nombre del hogar.
     conflict = False
+    missing_profile = False
     try:
         return _create_household(
             session, user_id, payload, zones, personality, now or datetime.now(UTC)
@@ -71,12 +73,14 @@ def create_household_onboarding(
     except ActiveMembershipExistsError:
         conflict = True
     except Exception as exc:  # noqa: BLE001 - RN-X-03: cualquier fallo revierte todo
-        # TODO(pendiente: código para el usuario sin ficha (23503 en hogar_miembros.usuario_id);
-        # el contrato no declara 404 en /onboarding, así que hoy responde BACKFILL_FALLIDO)
+        missing_profile = _is_missing_profile(exc)
         _log_failure("Onboarding fallido", exc)
     _rollback(session)
     if conflict:
         raise _active_membership_exists() from None
+    if missing_profile:
+        # La persona aún no creó su ficha: la app la lleva a crearla (contrato 0.2.8).
+        raise ApiError(404, CodigoError.FICHA_NO_CREADA, FICHA_NO_CREADA_MESSAGE) from None
     raise ApiError(500, CodigoError.BACKFILL_FALLIDO, BACKFILL_FAILED_MESSAGE) from None
 
 
@@ -180,6 +184,15 @@ def _to_hogar(row: HouseholdRow) -> Hogar:
 
 def _active_membership_exists() -> ApiError:
     return ApiError(409, CodigoError.MEMBRESIA_ACTIVA_EXISTENTE, MEMBRESIA_ACTIVA_MESSAGE)
+
+
+def _is_missing_profile(exc: Exception) -> bool:
+    """True si es el 23503 de `hogar_miembros.usuario_id`: el usuario no tiene fila en `usuarios`."""
+    orig = getattr(exc, "orig", None)
+    if getattr(orig, "pgcode", None) != "23503":
+        return False
+    constraint = getattr(getattr(orig, "diag", None), "constraint_name", None)
+    return constraint == "hogar_miembros_usuario_id_fkey"
 
 
 def _rollback(session: Session) -> None:

@@ -721,6 +721,14 @@ def assert_backfill_failed(response: httpx.Response) -> None:
     assert response.json() == BACKFILL_ERROR_BODY
 
 
+def assert_no_profile(response: httpx.Response) -> None:
+    """404 `FICHA_NO_CREADA` declarado en el contrato 0.2.8, sin rastro de la causa."""
+    assert response.status_code == 404, response.text
+    body = response.json()
+    assert body["codigo"] == "FICHA_NO_CREADA"
+    assert str(USER_ID) not in response.text and "23503" not in response.text
+
+
 # --- las 5 personalidades -------------------------------------------------------------------
 
 
@@ -1177,19 +1185,18 @@ def test_without_any_active_personality_it_is_500_and_nothing_is_created(
     assert db.snapshot() == before
 
 
-def test_user_without_profile_gets_500_and_can_retry_after_creating_it(
+def test_user_without_profile_gets_404_and_can_retry_after_creating_it(
     client: TestClient, db: Store, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Sin ficha (23503 en `hogar_miembros.usuario_id`): 500 `BACKFILL_FALLIDO` y 0 filas.
+    """Sin ficha (23503 en `hogar_miembros.usuario_id`): 404 `FICHA_NO_CREADA` y 0 filas.
 
-    El contrato no declara un 404 en `/onboarding` (pendiente en el servicio). Después de crear la ficha
-    (RN-IX-01), la misma llamada funciona.
+    Después de crear la ficha (RN-IX-01), la misma llamada funciona.
     """
     db.seed_auth_user(USER_ID)
     before = db.snapshot()
 
     with caplog.at_level(logging.INFO):
-        assert_backfill_failed(onboard(client, USER_ID))
+        assert_no_profile(onboard(client, USER_ID))
 
     assert db.snapshot() == before
     assert db.events[-2:] == ["INSERT_ADMIN_MEMBERSHIP_SQL", "rollback"]
@@ -1262,13 +1269,13 @@ def test_from_the_profile_to_the_household_and_back_to_nothing(
 def test_token_of_a_deleted_account_cannot_create_a_household(
     client: TestClient, db: Store
 ) -> None:
-    """El token sigue vigente, pero ya no hay ficha: 500 `BACKFILL_FALLIDO` y almacén intacto."""
+    """El token sigue vigente, pero ya no hay ficha: 404 `FICHA_NO_CREADA` y almacén intacto."""
     db.seed_user(USER_ID)
     assert onboard(client, USER_ID).status_code == 201
     assert call(client, "eliminarCuenta", USER_ID).status_code == 204
     before = db.snapshot()
 
-    assert_backfill_failed(onboard(client, USER_ID))
+    assert_no_profile(onboard(client, USER_ID))
 
     assert db.snapshot() == before
     assert set(db.household_rows().values()) == {0}

@@ -31,8 +31,9 @@ class OnboardingCrear(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    # TODO(pendiente: longitud máxima de nombre_hogar; el contrato no la declara)
-    nombre_hogar: Annotated[str, Field(min_length=1), AfterValidator(_reject_control_characters)]
+    nombre_hogar: Annotated[
+        str, Field(min_length=1, max_length=80), AfterValidator(_reject_control_characters)
+    ]
     tipo_vivienda: TipoVivienda
     zonas: list[TipoZona] = Field(
         min_length=3, max_length=9, json_schema_extra={"uniqueItems": True}

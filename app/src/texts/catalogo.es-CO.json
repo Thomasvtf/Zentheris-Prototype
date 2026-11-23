@@ -250,7 +250,7 @@
     },
     "membresia_activa_existente": {
       "titulo": "Ya perteneces a un hogar",
-      "cuerpo": "Para unirte a otro, primero debes salir de tu hogar actual."
+      "cuerpo": "Para crear o unirte a otro, primero debes salir de tu hogar actual."
     },
     "invitacion_expirada": {
       "titulo": "Esta invitación ya no está disponible",

@@ -247,6 +247,7 @@ export interface paths {
          *     básicas obligatorias y cualquier otra zona. Códigos en `422`: `ZONAS_NO_PERMITIDAS`,
          *     `ZONAS_BASICAS_FALTANTES`, `CANTIDAD_ZONAS_INVALIDA`, `ZONAS_DUPLICADAS`.
          *     `409` con `MEMBRESIA_ACTIVA_EXISTENTE` si el usuario ya pertenece a un hogar (RN-II-01).
+         *     `404` con `FICHA_NO_CREADA` si el usuario aún no creó su ficha (`POST /usuarios/me`).
          */
         post: operations["crearHogarOnboarding"];
         delete?: never;
@@ -1751,6 +1752,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["NoAutenticado"];
+            404: components["responses"]["NoEncontrado"];
             409: components["responses"]["Conflicto"];
             422: components["responses"]["Validacion"];
             500: components["responses"]["ErrorServidor"];

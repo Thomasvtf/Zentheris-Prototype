@@ -11,6 +11,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 # RN-I-03 y RN-XVII: membresía activa del usuario en el hogar con los 4 permisos generales.
@@ -176,3 +177,58 @@ def close_membership(session: Session, membresia_id: UUID, closed_at: datetime) 
         CLOSE_MEMBERSHIP_SQL,
         params={"membresia_id": membresia_id, "closed_at": closed_at},
     )
+
+
+# SQLSTATE de Postgres para violación de unicidad.
+_UNIQUE_VIOLATION = "23505"
+# Índice único parcial de la migración 0003 (RN-II-01: una membresía activa por usuario).
+ACTIVE_USER_INDEX = "uq_miembros_usuario_activo"
+
+# RN-X-03, RN-II-02: quien crea el hogar entra como administrador activo.
+INSERT_ADMIN_MEMBERSHIP_SQL = text(
+    """
+    insert into hogar_miembros (hogar_id, usuario_id, rol, estado, fecha_ingreso)
+    values (:hogar_id, :usuario_id, 'administrador', 'activo', :joined_at)
+    """
+)
+
+
+class ActiveMembershipExistsError(Exception):
+    """El usuario ya tiene una membresía activa (23505 de uq_miembros_usuario_activo, RN-II-01).
+
+    Caso: dos onboardings simultáneos del mismo usuario. El servicio la traduce a 409.
+    """
+
+
+def insert_admin_membership(
+    session: Session, *, hogar_id: UUID, usuario_id: UUID, joined_at: datetime
+) -> None:
+    """Crea la membresía activa del administrador del hogar nuevo (RN-X-03, RN-II-01).
+
+    ActiveMembershipExistsError si el usuario ya tiene otra membresía activa (SQLSTATE 23505 del
+    índice uq_miembros_usuario_activo). Cualquier otra IntegrityError sube tal cual (por ejemplo,
+    23503 si el usuario no tiene ficha). La transacción queda abortada. Sin commit.
+    """
+    try:
+        session.exec(
+            INSERT_ADMIN_MEMBERSHIP_SQL,
+            params={"hogar_id": hogar_id, "usuario_id": usuario_id, "joined_at": joined_at},
+        )
+    except IntegrityError as exc:
+        if _violates_active_user_index(exc):
+            # `from None`: el detalle de Postgres lleva el id del usuario (S-01).
+            raise ActiveMembershipExistsError("El usuario ya tiene un hogar activo.") from None
+        raise
+
+
+def _violates_active_user_index(exc: IntegrityError) -> bool:
+    """True si el error es el 23505 de uq_miembros_usuario_activo.
+
+    El nombre sale de `diag.constraint_name`; si el controlador no lo trae, del mensaje.
+    """
+    if getattr(exc.orig, "pgcode", None) != _UNIQUE_VIOLATION:
+        return False
+    constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    if constraint_name is not None:
+        return constraint_name == ACTIVE_USER_INDEX
+    return ACTIVE_USER_INDEX in str(exc.orig)

@@ -242,6 +242,33 @@ def test_min_properties_matches_contract(name: str) -> None:
     assert gen_schema.get("minProperties") == contract_components()[name]["minProperties"]
 
 
+# `uniqueItems` tampoco entra en `canon`: Pydantic no lo publica ni lo comprueba por su cuenta.
+UNIQUE_ITEMS_PENDING = {
+    # TODO(marcarAlertasLeidas): falta publicar `uniqueItems` al implementar la operación.
+    ("AlertasMarcar", "alerta_ids"),
+}
+
+
+@pytest.mark.parametrize(
+    ("name", "field"),
+    [
+        pytest.param(
+            name,
+            field,
+            marks=pytest.mark.skip(reason="TODO(marcarAlertasLeidas)")
+            if (name, field) in UNIQUE_ITEMS_PENDING
+            else (),
+        )
+        for name, schema in sorted(contract_components().items())
+        for field, prop in schema.get("properties", {}).items()
+        if prop.get("uniqueItems")
+    ],
+)
+def test_unique_items_matches_contract(name: str, field: str) -> None:
+    gen_schema = generated()["components"]["schemas"][name]
+    assert gen_schema["properties"][field].get("uniqueItems") is True
+
+
 def test_openapi_has_no_501_and_no_fastapi_validation_schemas() -> None:
     spec = generated()
     codes = {
@@ -255,7 +282,7 @@ SAMPLE_ID = "00000000-0000-0000-0000-000000000001"
 SAMPLE_USER_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 
 
-# Operaciones ya implementadas (fase 3 · Usuario): no responden 501.
+# Operaciones ya implementadas (fase 3 · Usuario; fase 4 · Onboarding): no responden 501.
 IMPLEMENTED_OPERATIONS = frozenset(
     {
         "obtenerUsuarioActual",
@@ -266,6 +293,7 @@ IMPLEMENTED_OPERATIONS = frozenset(
         "eliminarAvatar",
         "obtenerPreferencias",
         "actualizarPreferencias",
+        "crearHogarOnboarding",
     }
 )
 

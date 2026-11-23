@@ -21,6 +21,7 @@ from app.routers import (
 )
 
 API_PREFIX = "/api/v1"
+APP_LOG_HANDLER = "app.console"
 ROUTERS = (
     system,
     users,
@@ -58,11 +59,30 @@ def _contract_openapi(app: FastAPI) -> dict[str, Any]:
     return schema
 
 
+def _configure_logging() -> None:
+    """Deja ver los INFO de `app.*`, que uvicorn no configura; las demás librerías no cambian.
+
+    El manejador se reconoce por su nombre, así que varias llamadas no lo repiten. Mientras la
+    raíz tenga manejadores calla: el registro se propaga y ya sale por ellos.
+    """
+    # httpx escribe en INFO la URL de cada llamada a Supabase (lleva el id del usuario).
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logger = logging.getLogger("app")
+    if logger.level == logging.NOTSET:
+        logger.setLevel(logging.INFO)
+    if any(handler.get_name() == APP_LOG_HANDLER for handler in logger.handlers):
+        return
+    handler = logging.StreamHandler()
+    handler.set_name(APP_LOG_HANDLER)
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    handler.addFilter(lambda _record: not logging.getLogger().handlers)
+    logger.addHandler(handler)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Crea la aplicación con CORS, manejadores de error y routers bajo /api/v1."""
     settings = settings or get_settings()
-    # httpx escribe en INFO la URL de cada llamada a Supabase (lleva el id del usuario).
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    _configure_logging()
     app = FastAPI(
         title="Zentheris API",
         description="API de monitoreo y optimización del consumo energético",

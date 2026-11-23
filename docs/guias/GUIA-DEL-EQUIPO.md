@@ -454,15 +454,15 @@ Para ver el simulador de referencia funcionando (sirve igual en PowerShell y en 
 
 | Parte | Archivo | Qué hace |
 |---|---|---|
-| Dominio | `api/app/domain/simulator/` (hoy solo `__init__.py`) | El simulador, copiado del de referencia. Recibe el perfil como dato; no lee la base |
-| Dominio | `api/app/domain/zone_rules.py` → `validate_zones` | Valida las zonas de la vivienda y elige la personalidad (como `asignacion.py`) |
-| Datos | `api/app/data/households.py` y `api/app/data/readings.py` → `insert_readings_batch` | Leen el perfil del hogar y guardan las lecturas en lote |
-| Servicio | `api/app/services/onboarding.py` → `create_household_onboarding` | Crea el hogar y genera los 30 días, todo junto |
-| Servicio | `api/app/services/hour_recovery.py` → `fill_missing_hours` | Completa las horas que falten antes de responder |
-| Servicio | `api/app/services/scheduler.py` → `start_scheduler` | Genera la hora nueva cada hora |
-| Router | `api/app/routers/onboarding.py` | Ya está hecho: recibe `POST /onboarding` y llama al servicio |
+| Dominio | `api/app/domain/simulator/` | **Hecho (fase 4).** El simulador, copiado del de referencia. Recibe el perfil como dato; no lee la base. `generate_missing_readings` ya existe para la fase 5 |
+| Dominio | `api/app/domain/zone_rules.py` → `validate_zones`, `assign_personality` | **Hecho (fase 4).** Valida las zonas de la vivienda y elige la personalidad (como `asignacion.py`) |
+| Datos | `api/app/data/simulation_profiles.py`, `households.py`, `memberships.py` y `readings.py` → `insert_readings_batch` | **Hecho (fase 4).** Leen el perfil y guardan hogar, zonas, sensores y lecturas en lote |
+| Servicio | `api/app/services/onboarding.py` → `create_household_onboarding` | **Hecho (fase 4).** Crea el hogar y genera los 30 días, todo junto |
+| Servicio | `api/app/services/hour_recovery.py` → `fill_missing_hours` | Fase 5: completa las horas que falten antes de responder |
+| Servicio | `api/app/services/scheduler.py` → `start_scheduler` | Fase 5: genera la hora nueva cada hora |
+| Router | `api/app/routers/onboarding.py` | **Hecho (fase 4):** recibe `POST /onboarding` y llama al servicio |
 
-**Lo que todavía no existe:** toda la lógica de la tabla anterior, y la conexión a la base desde las pruebas. Las 59 pruebas de referencia todavía no están en `api/tests/`.
+**Lo que todavía no existe:** la recuperación de horas y la tarea programada (fase 5) y la conexión a una base real desde las pruebas. Las 59 pruebas de referencia ya están en `api/tests/simulator/` (K01–K09 en `api/tests/zones/`).
 
 **Paso a paso.**
 1. Corre las 59 pruebas de referencia (arriba) para ver el comportamiento esperado.

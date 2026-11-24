@@ -1,67 +1,39 @@
+/** StatusBadge (StatusBadge.md): estado = color + ícono + palabra. «Crítico», nunca «sobreconsumo». */
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle, TextStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { estadoColor, estadoBadgeBg, estadoBorderColor, estadoIcon, EstadoType } from '../utils/statusHelpers';
+import { StyleSheet, Text, View } from 'react-native';
+
+import { t } from '@/texts';
+import { radius, spacing, textStyle } from '@/theme';
+
+import { estadoTokens } from './estado';
+import type { Severidad } from './estado';
+import { Icon } from './Icon';
 
 export interface StatusBadgeProps {
-  estado?: EstadoType;
-  showIcon?: boolean;
-  iconName?: keyof typeof Ionicons.glyphMap;
-  label?: string;
-  style?: ViewStyle;
-  textStyle?: TextStyle;
+  estado: Severidad;
+  /** Cápsula con fondo y borde, o solo ícono + palabra. Por defecto cápsula. */
+  variante?: 'capsula' | 'texto';
+  /** Se apaga solo cuando el ícono ya está al lado. Por defecto `true`. */
+  icono?: boolean;
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({
-  estado = 'Normal',
-  showIcon = false,
-  iconName,
-  label,
-  style,
-  textStyle,
-}) => {
-  const color = estadoColor(estado);
-  const bgColor = estadoBadgeBg(estado);
-  const borderColor = estadoBorderColor(estado);
-  const icon = iconName || (estadoIcon(estado) as keyof typeof Ionicons.glyphMap);
-  const text = label || estado;
-
+export function StatusBadge({ estado, variante = 'capsula', icono = true }: StatusBadgeProps) {
+  const tk = estadoTokens(estado);
   return (
-    <View
-      style={[
-        styles.badge,
-        { backgroundColor: bgColor, borderColor },
-        style,
-      ]}
-    >
-      {showIcon && (
-        <Ionicons
-          name={icon}
-          size={12}
-          color={color}
-          style={{ marginRight: 4 }}
-        />
-      )}
-      <Text style={[styles.badgeText, { color }, textStyle]}>
-        {text}
-      </Text>
+    <View style={[styles.row, variante === 'capsula' && [styles.capsula, { backgroundColor: tk.bg, borderColor: tk.border }]]}>
+      {icono ? <Icon name={tk.glyph} size={16} color={tk.icon} /> : null}
+      <Text style={[styles.text, { color: tk.text }]}>{t(`estado.palabra.${estado}`)}</Text>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 14,
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing['4'], alignSelf: 'flex-start' },
+  capsula: {
+    paddingVertical: spacing['4'],
+    paddingHorizontal: spacing['8'],
+    borderRadius: radius.full,
     borderWidth: 1,
   },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
+  text: { ...textStyle('ui-s-semibold-12') },
 });
-

@@ -795,11 +795,15 @@ export function HistorialScreen({ hogarId = null, mockScenario }: HistorialScree
 
 /* ─────────────────────────────── Estilos ────────────────────────────────── */
 
+/** Alto de la cabecera en Figma (64): el token `topBar-height` vale 56, así que se compone sin
+ * tocar el token (decisión del 24/11/2026). */
+const HEADER_HEIGHT = sizes['iconButtonLg-size'] + spacing['16'];
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors['background-default'] },
   flex: { flex: 1 },
   content: {
-    paddingHorizontal: sizes['grid-margin'],
+    paddingHorizontal: spacing['16'],
     paddingTop: spacing['16'],
     paddingBottom: spacing['40'],
     gap: spacing['16'],
@@ -807,7 +811,7 @@ const styles = StyleSheet.create({
 
   // Cabecera
   header: {
-    height: sizes['topBar-height'],
+    height: HEADER_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
     borderBottomWidth: 1,

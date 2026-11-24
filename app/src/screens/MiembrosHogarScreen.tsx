@@ -17,10 +17,9 @@
  * - Colores, espacios y tipografía desde @/theme; textos con t() y plural(); fechas con el
  *   catálogo (formato.vence.dias); sin cifras sueltas.
  *
- * TODO(pendiente: componentes del sistema de diseño): src/components/ aún no tiene ActionItem,
- * BottomSheet, ConfirmDialog, PendingInvite, Chip, TextField, InlineNotice, Skeleton ni
- * ScreenHeader con las props de index.d.ts. Aquí son piezas locales de presentación para
- * moverlas a src/components/ cuando se apruebe.
+ * Button, ConfirmDialog, InlineNotice y ScreenHeader vienen de @/components.
+ * TODO(pendiente: componentes del sistema de diseño): ActionItem, BottomSheet, PendingInvite y
+ * TextField siguen aquí como piezas locales; pasan a src/components/ en otro cambio.
  * TODO(pendiente: foto): `avatar_url` es una ruta del bucket privado; sin la URL firmada de cada
  * miembro (RN-I-02) se muestran las iniciales.
  * Ruta: `src/app/miembros.tsx` (oculta en el Tabs de `_layout.tsx`); se llega desde Configuración.
@@ -29,7 +28,6 @@
  */
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   RefreshControl,
@@ -43,8 +41,18 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeftRight, Check, ChevronLeft, CircleCheck, CircleX, EllipsisVertical, LogOut, Mail, UserMinus, UserPlus, X } from 'lucide-react-native';
+import {
+  ArrowLeftRight,
+  Check,
+  CircleCheck,
+  EllipsisVertical,
+  Mail,
+  UserMinus,
+  UserPlus,
+  X,
+} from 'lucide-react-native';
 
+import { Button, ConfirmDialog, InlineNotice, ScreenHeader } from '@/components';
 import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { plural, t } from '@/texts';
 
@@ -177,41 +185,6 @@ function PermissionRow({ label, value, editable, onChange }: { label: string; va
   );
 }
 
-function Button({ label, onPress, tone = 'primary', disabled = false, busy = false, icon }: { label: string; onPress: () => void; tone?: 'primary' | 'secondary' | 'danger'; disabled?: boolean; busy?: boolean; icon?: React.ReactNode }) {
-  const isDisabled = disabled || busy;
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={isDisabled}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: isDisabled, busy }}
-      style={[styles.button, tone === 'secondary' && styles.buttonSecondary, tone === 'danger' && styles.buttonDanger, isDisabled && styles.buttonDisabled]}
-    >
-      {busy ? <ActivityIndicator color={tone === 'primary' ? colors['text-inverse'] : colors['text-primary']} /> : icon}
-      <Text style={[styles.buttonText, tone === 'primary' && styles.buttonTextPrimary, tone === 'danger' && styles.buttonTextDanger]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function InlineNotice({ titulo, descripcion, onReintentar }: { titulo: string; descripcion?: string; onReintentar?: () => void }) {
-  return (
-    <View style={styles.notice} accessibilityRole="alert">
-      <View style={styles.noticeRow}>
-        <CircleX size={16} color={colors['status-error-default']} />
-        <View style={styles.flex}>
-          <Text style={styles.noticeTitle}>{titulo}</Text>
-          {descripcion ? <Text style={styles.mutedXs}>{descripcion}</Text> : null}
-        </View>
-      </View>
-      {onReintentar ? (
-        <Pressable onPress={onReintentar} accessibilityRole="button" hitSlop={spacing['12']} style={styles.noticeAction}>
-          <Text style={styles.linkText}>{t('comun.reintentar')}</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
-
 /** Esqueleto con la forma de la lista: avatar y dos líneas por fila. */
 function MembersSkeleton() {
   return (
@@ -258,22 +231,6 @@ function ActionItem({ texto, icono, destructivo = false, onPress }: { texto: str
       {icono}
       <Text style={[styles.actionText, destructivo && { color: colors['text-error'] }]}>{texto}</Text>
     </Pressable>
-  );
-}
-
-/** Confirmación de acciones irreversibles (ConfirmDialog.md): principal arriba, cancelar abajo. */
-function ConfirmDialog({ visible, titulo, descripcion, confirmar, cancelar, destructivo, busy, onConfirm, onCancel }: { visible: boolean; titulo: string; descripcion: string; confirmar: string; cancelar: string; destructivo: boolean; busy: boolean; onConfirm: () => void; onCancel: () => void }) {
-  return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
-      <View style={styles.dialogOverlay}>
-        <View style={styles.dialogCard} accessibilityViewIsModal>
-          <Text style={styles.dialogTitle}>{titulo}</Text>
-          <Text style={styles.dialogBody}>{descripcion}</Text>
-          <Button label={confirmar} onPress={onConfirm} tone={destructivo ? 'danger' : 'primary'} busy={busy} />
-          <Button label={cancelar} onPress={onCancel} tone="secondary" disabled={busy} />
-        </View>
-      </View>
-    </Modal>
   );
 }
 
@@ -327,8 +284,12 @@ function InviteSheet({ visible, slots, busy, onInvite, onClose }: { visible: boo
                 <Text style={styles.mutedXs}>{t('invitar.enviada_cuerpo', { correo: sentTo })}</Text>
               </View>
             </View>
-            {slots > 0 ? <Button label={t('invitar.otra')} onPress={reset} tone="secondary" /> : null}
-            <Button label={t('comun.cerrar')} onPress={close} />
+            {slots > 0 ? <Button variante="secundario" bloque onClick={reset}>
+                {t('invitar.otra')}
+              </Button> : null}
+            <Button bloque onClick={close}>
+              {t('comun.cerrar')}
+            </Button>
           </View>
         ) : (
           <View style={styles.sheetBody}>
@@ -355,8 +316,14 @@ function InviteSheet({ visible, slots, busy, onInvite, onClose }: { visible: boo
               {fieldError ? <Text style={styles.fieldError}>{fieldError}</Text> : null}
             </View>
             <Text style={styles.mutedXs}>{plural('invitar.cupos', slots)}</Text>
-            {serverErrorKey ? <InlineNotice titulo={t(`${serverErrorKey}.titulo`)} descripcion={t(`${serverErrorKey}.cuerpo`)} /> : null}
-            <Button label={t('invitar.boton')} onPress={() => void submit()} busy={busy} disabled={slots === 0 || correo.trim().length === 0} />
+            {serverErrorKey ? <InlineNotice tono="error" titulo={t(`${serverErrorKey}.titulo`)} descripcion={t(`${serverErrorKey}.cuerpo`)} /> : null}
+            <Button
+              bloque
+              estado={busy ? 'cargando' : slots === 0 || correo.trim().length === 0 ? 'deshabilitado' : 'normal'}
+              onClick={() => void submit()}
+            >
+              {t('invitar.boton')}
+            </Button>
           </View>
         )}
       </View>
@@ -397,15 +364,7 @@ export function MiembrosHogarScreen({ hogarId = null, mockScenario }: MiembrosHo
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
 
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={t('a11y.volver')} style={styles.headerButton}>
-          <ChevronLeft size={24} color={colors['text-primary']} />
-        </Pressable>
-        <Text style={styles.headerTitle} accessibilityRole="header">
-          {t('miembros.encabezado')}
-        </Text>
-        <View style={styles.headerButton} />
-      </View>
+      <ScreenHeader titulo={t('miembros.encabezado')} onAtras={() => router.back()} />
 
       <ScrollView
         style={styles.flex}
@@ -422,7 +381,7 @@ export function MiembrosHogarScreen({ hogarId = null, mockScenario }: MiembrosHo
       >
         {h.state.status === 'loading' && <MembersSkeleton />}
 
-        {h.state.status === 'error' && <InlineNotice titulo={t(`${h.state.errorKey}.titulo`)} descripcion={t(`${h.state.errorKey}.cuerpo`)} onReintentar={h.retry} />}
+        {h.state.status === 'error' && <InlineNotice tono="error" titulo={t(`${h.state.errorKey}.titulo`)} descripcion={t(`${h.state.errorKey}.cuerpo`)} onReintentar={h.retry} />}
 
         {h.state.status === 'ready' && h.left && (
           <View style={styles.card}>
@@ -442,7 +401,7 @@ export function MiembrosHogarScreen({ hogarId = null, mockScenario }: MiembrosHo
           return (
             <>
               <Text style={styles.subtitle}>{t(canManage ? 'miembros.subtitulo_admin' : 'miembros.subtitulo_miembro')}</Text>
-              {h.actionErrorKey ? <InlineNotice titulo={t(`${h.actionErrorKey}.titulo`)} descripcion={t(`${h.actionErrorKey}.cuerpo`)} /> : null}
+              {h.actionErrorKey ? <InlineNotice tono="error" titulo={t(`${h.actionErrorKey}.titulo`)} descripcion={t(`${h.actionErrorKey}.cuerpo`)} /> : null}
 
               <View style={styles.card}>
                 <Text style={styles.cardTitle} accessibilityRole="header">
@@ -491,12 +450,16 @@ export function MiembrosHogarScreen({ hogarId = null, mockScenario }: MiembrosHo
 
               {canManage ? (
                 <View style={styles.actions}>
-                  <Button label={t('miembros.invitar')} onPress={() => setInviting(true)} disabled={slots === 0} icon={<UserPlus size={20} color={colors['text-inverse']} />} />
+                  <Button bloque icono="user-plus" estado={slots === 0 ? 'deshabilitado' : 'normal'} onClick={() => setInviting(true)}>
+                    {t('miembros.invitar')}
+                  </Button>
                   <Text style={styles.mutedXs}>{plural('miembros.cupos', slots)}</Text>
                 </View>
               ) : (
                 <View style={styles.actions}>
-                  <Button label={t('miembros.salir')} onPress={() => setConfirm({ kind: 'leave' })} tone="danger" icon={<LogOut size={20} color={colors['text-error']} />} />
+                  <Button variante="destructivo" bloque icono="log-out" onClick={() => setConfirm({ kind: 'leave' })}>
+                    {t('miembros.salir')}
+                  </Button>
                 </View>
               )}
 
@@ -557,17 +520,18 @@ export function MiembrosHogarScreen({ hogarId = null, mockScenario }: MiembrosHo
         ) : null}
       </ActionSheet>
 
-      <ConfirmDialog
-        visible={confirm !== null && !!dialog}
-        titulo={dialog ? t(`dialogo.${dialog.key}.titulo`, dialog.vars) : ''}
-        descripcion={dialog ? t(`dialogo.${dialog.key}.cuerpo`, dialog.vars) : ''}
-        confirmar={dialog ? t(`dialogo.${dialog.key}.confirmar`) : ''}
-        cancelar={dialog ? t(`dialogo.${dialog.key}.cancelar`) : ''}
-        destructivo={dialog ? dialog.destructivo : false}
-        busy={h.busy}
-        onConfirm={() => void runConfirm()}
-        onCancel={() => setConfirm(null)}
-      />
+      {confirm !== null && dialog && (
+        <ConfirmDialog
+          tono={dialog.destructivo ? 'destructivo' : 'normal'}
+          titulo={t(`dialogo.${dialog.key}.titulo`, dialog.vars)}
+          descripcion={t(`dialogo.${dialog.key}.cuerpo`, dialog.vars)}
+          confirmar={t(`dialogo.${dialog.key}.confirmar`)}
+          cancelar={t(`dialogo.${dialog.key}.cancelar`)}
+          ocupado={h.busy}
+          onConfirmar={() => void runConfirm()}
+          onCancelar={() => setConfirm(null)}
+        />
+      )}
 
       {h.toastKey ? (
         <Pressable style={styles.toast} onPress={h.dismissToast} accessibilityRole="alert" accessibilityLiveRegion="polite">
@@ -583,27 +547,12 @@ export function MiembrosHogarScreen({ hogarId = null, mockScenario }: MiembrosHo
 
 const AVATAR = spacing['40'];
 
-/** Alto de la cabecera en Figma (64): el token `topBar-height` vale 56, así que se compone sin
- * tocar el token (decisión del 24/11/2026). */
-const HEADER_HEIGHT = sizes['iconButtonLg-size'] + spacing['16'];
-
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors['background-default'] },
   flex: { flex: 1, minWidth: 0 },
   content: { paddingHorizontal: spacing['16'], paddingTop: spacing['16'], paddingBottom: spacing['40'], gap: spacing['16'] },
 
   // Cabecera (ScreenHeader.md)
-  header: {
-    height: HEADER_HEIGHT,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing['4'],
-    borderBottomWidth: 1,
-    borderBottomColor: colors['border-subtle'],
-  },
-  headerButton: { width: TOUCH, height: TOUCH, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { ...textStyle('display-l-24'), color: colors['text-primary'] },
   subtitle: { ...textStyle('body-s-regular'), color: colors['text-muted'] },
 
   // Card base
@@ -635,29 +584,8 @@ const styles = StyleSheet.create({
 
   // Botones
   actions: { gap: spacing['8'] },
-  button: {
-    minHeight: sizes['button-height'],
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing['8'],
-    paddingHorizontal: spacing['16'],
-    borderRadius: radius.lg,
-    backgroundColor: colors['accent-primary'],
-  },
-  buttonSecondary: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors['border-medium'] },
-  buttonDanger: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors['status-error-border'] },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { ...textStyle('ui-m-semibold'), color: colors['text-primary'] },
-  buttonTextPrimary: { color: colors['text-inverse'] },
-  buttonTextDanger: { color: colors['text-error'] },
 
   // InlineNotice
-  notice: { backgroundColor: colors['status-error-bg'], borderColor: colors['status-error-border'], borderWidth: 1, borderRadius: radius.md, padding: spacing['12'], gap: spacing['8'] },
-  noticeRow: { flexDirection: 'row', gap: spacing['8'] },
-  noticeTitle: { ...textStyle('ui-s-semibold'), color: colors['status-error-text'] },
-  noticeAction: { alignSelf: 'flex-end', minHeight: spacing['48'], justifyContent: 'center' },
-  linkText: { ...textStyle('ui-s-semibold-12'), color: colors['text-accent'] },
   successRow: { flexDirection: 'row', alignItems: 'center', gap: spacing['12'] },
 
   // Hoja inferior y diálogo
@@ -677,10 +605,6 @@ const styles = StyleSheet.create({
   sheetBody: { gap: spacing['12'] },
   actionItem: { minHeight: TOUCH, flexDirection: 'row', alignItems: 'center', gap: spacing['12'] },
   actionText: { ...textStyle('body-m-regular'), color: colors['text-primary'] },
-  dialogOverlay: { flex: 1, backgroundColor: colors['background-overlay'], justifyContent: 'center', paddingHorizontal: spacing['24'] },
-  dialogCard: { backgroundColor: colors['background-surfaceAlt'], borderColor: colors['border-subtle'], borderWidth: 1, borderRadius: radius.lg, padding: spacing['24'], gap: spacing['12'] },
-  dialogTitle: { ...textStyle('display-m'), color: colors['text-primary'] },
-  dialogBody: { ...textStyle('body-s-regular'), color: colors['text-muted'] },
 
   // Formulario de invitación
   field: { gap: spacing['4'] },

@@ -470,6 +470,10 @@ export function EditarPerfilScreen() {
 
 const AVATAR_SIZE = spacing[64] + spacing[24] + spacing[8];
 
+/** Alto de la cabecera en Figma (64): el token `topBar-height` vale 56, así que se compone sin
+ * tocar el token (decisión del 24/11/2026). */
+const HEADER_HEIGHT = sizes['iconButtonLg-size'] + spacing['16'];
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -480,8 +484,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing[16],
-    paddingTop: spacing[12],
-    paddingBottom: spacing[8],
+    height: HEADER_HEIGHT,
+    borderBottomWidth: 1,
+    borderBottomColor: colors['border-subtle'],
   },
   headerBtn: {
     width: sizes['iconButton-size'],

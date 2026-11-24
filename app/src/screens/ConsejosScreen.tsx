@@ -15,20 +15,30 @@
  * - El contrato no trae ahorro en kWh/COP, categorías de filtro ni «descartar»; no se muestran.
  * - Colores, espacios y tipografía desde @/theme; textos con t().
  *
- * TODO(pendiente: componentes del sistema de diseño): src/components/ aún no tiene TipCard,
- * TipList, PriorityTag, StateMessage, InlineNotice, Skeleton ni ScreenHeader con las props de
- * index.d.ts. Aquí son piezas locales de presentación para moverlas a src/components/ cuando
- * se apruebe.
+ * - InlineNotice, ScreenHeader y useSkeletonPulse vienen de @/components.
+ * TODO(pendiente: componentes del sistema de diseño): TipCard, TipList y PriorityTag siguen aquí
+ * como piezas locales; pasan a src/components/ con las props de index.d.ts en otro cambio.
  * TODO(pendiente: casilla): TipCard.md dice que la casilla aún no está diseñada; esta usa
  * `border-medium` sin marcar y `accent-primary` marcada, con área táctil de 44 pt.
  */
-import React, { useEffect, useState } from 'react';
-import { AccessibilityInfo, Animated, Pressable, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import {
+  Animated,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Check, CircleCheck, CircleX } from 'lucide-react-native';
+import { Check, CircleCheck } from 'lucide-react-native';
 
 import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
+
+import { InlineNotice, ScreenHeader, useSkeletonPulse } from '@/components';
 
 import { hasPendingTips, useConsejosData } from './useConsejosData';
 import type { ConsejosMockScenario, Tip, TipPriority } from './useConsejosData';
@@ -118,51 +128,6 @@ function AllClearCard() {
   );
 }
 
-function InlineNotice({ titulo, descripcion, onReintentar }: { titulo: string; descripcion?: string; onReintentar?: () => void }) {
-  return (
-    <View style={styles.notice} accessibilityRole="alert">
-      <View style={styles.noticeRow}>
-        <CircleX size={16} color={colors['status-error-default']} />
-        <View style={styles.flex}>
-          <Text style={styles.noticeTitle}>{titulo}</Text>
-          {descripcion ? <Text style={styles.stateBody}>{descripcion}</Text> : null}
-        </View>
-      </View>
-      {onReintentar ? (
-        <Pressable onPress={onReintentar} accessibilityRole="button" hitSlop={spacing['12']} style={styles.noticeAction}>
-          <Text style={styles.linkText}>{t('comun.reintentar')}</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
-
-/** Pulso suave; se detiene con «reducir movimiento» (ficha Skeleton). */
-function useSkeletonPulse() {
-  const [opacity] = useState(() => new Animated.Value(1));
-  useEffect(() => {
-    let loop: Animated.CompositeAnimation | null = null;
-    let cancelled = false;
-    AccessibilityInfo.isReduceMotionEnabled()
-      .then((reduce) => {
-        if (cancelled || reduce) return;
-        loop = Animated.loop(
-          Animated.sequence([
-            Animated.timing(opacity, { toValue: 0.5, duration: 700, useNativeDriver: true }),
-            Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
-          ]),
-        );
-        loop.start();
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-      loop?.stop();
-    };
-  }, [opacity]);
-  return opacity;
-}
-
 /** Esqueleto con la forma de un consejo: casilla, título, descripción y etiqueta. */
 function TipSkeleton() {
   const opacity = useSkeletonPulse();
@@ -193,11 +158,7 @@ export function ConsejosScreen({ hogarId = null, mockScenario }: ConsejosScreenP
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
-      <View style={styles.header}>
-        <Text style={styles.headerTitle} accessibilityRole="header">
-          {t('consejos.encabezado')}
-        </Text>
-      </View>
+      <ScreenHeader titulo={t('consejos.encabezado')} onAtras={false} />
 
       <ScrollView
         style={styles.flex}
@@ -216,12 +177,12 @@ export function ConsejosScreen({ hogarId = null, mockScenario }: ConsejosScreenP
           Array.from({ length: SKELETON_CARDS }, (_, i) => <TipSkeleton key={i} />)}
 
         {state.status === 'error' && (
-          <InlineNotice titulo={t(`${state.errorKey}.titulo`)} descripcion={t(`${state.errorKey}.cuerpo`)} onReintentar={retry} />
+          <InlineNotice tono="error" titulo={t(`${state.errorKey}.titulo`)} descripcion={t(`${state.errorKey}.cuerpo`)} onReintentar={retry} />
         )}
 
         {state.status === 'ready' && (
           <>
-            {actionErrorKey ? <InlineNotice titulo={t(`${actionErrorKey}.titulo`)} descripcion={t(`${actionErrorKey}.cuerpo`)} /> : null}
+            {actionErrorKey ? <InlineNotice tono="error" titulo={t(`${actionErrorKey}.titulo`)} descripcion={t(`${actionErrorKey}.cuerpo`)} /> : null}
             {!hasPendingTips(state.tips) && <AllClearCard />}
             {state.tips.map((tip) => (
               <TipCard key={tip.id} tip={tip} saving={savingIds.includes(tip.id)} onToggle={() => toggle(tip.id)} />
@@ -235,10 +196,6 @@ export function ConsejosScreen({ hogarId = null, mockScenario }: ConsejosScreenP
 
 /* ─────────────────────────────── Estilos ────────────────────────────────── */
 
-/** Alto de la cabecera en Figma (64): el token `topBar-height` vale 56, así que se compone sin
- * tocar el token (decisión del 24/11/2026). */
-const HEADER_HEIGHT = sizes['iconButtonLg-size'] + spacing['16'];
-
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors['background-default'] },
   flex: { flex: 1 },
@@ -248,16 +205,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing['40'],
     gap: spacing['12'],
   },
-
-  // Cabecera (ScreenHeader.md)
-  header: {
-    height: HEADER_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: colors['border-subtle'],
-  },
-  headerTitle: { ...textStyle('display-l-24'), color: colors['text-primary'] },
 
   // TipCard
   tipCard: {
@@ -316,20 +263,6 @@ const styles = StyleSheet.create({
   },
   stateTitle: { ...textStyle('body-s-medium'), color: colors['text-primary'] },
   stateBody: { ...textStyle('body-xs-regular'), color: colors['text-muted'] },
-
-  // InlineNotice
-  notice: {
-    backgroundColor: colors['status-error-bg'],
-    borderColor: colors['status-error-border'],
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing['12'],
-    gap: spacing['8'],
-  },
-  noticeRow: { flexDirection: 'row', gap: spacing['8'] },
-  noticeTitle: { ...textStyle('ui-s-semibold'), color: colors['status-error-text'] },
-  noticeAction: { alignSelf: 'flex-end', minHeight: spacing['48'], justifyContent: 'center' },
-  linkText: { ...textStyle('ui-s-semibold-12'), color: colors['text-accent'] },
 
   // Skeleton
   skeletonBlock: { backgroundColor: colors['background-elevated'], borderRadius: radius.xs },

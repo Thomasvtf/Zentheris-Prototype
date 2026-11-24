@@ -7,7 +7,7 @@ import { t } from '@/texts';
 import { SinceSheet } from '../ConfigurarTarifaScreen';
 
 // La configuración de Jest no transforma este paquete ESM; se sustituye por vistas vacías.
-jest.mock('@expo/vector-icons', () => {
+jest.mock('lucide-react-native', () => {
   const { View } = jest.requireActual<typeof import('react-native')>('react-native');
   return new Proxy({}, { get: () => View });
 });

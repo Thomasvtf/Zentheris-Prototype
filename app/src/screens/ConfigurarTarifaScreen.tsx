@@ -21,7 +21,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Calendar, ChevronDown, ChevronLeft, CircleAlert, CircleCheck, CircleHelp, CircleX, Info } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 import { createTariff, getTariff } from '@/api/goalsTariff';
@@ -137,16 +137,16 @@ function Notice({
 }) {
   const palette =
     tone === 'error'
-      ? { bg: colors['status-error-bg'], border: colors['status-error-border'], icon: 'alert-circle-outline' }
+      ? { bg: colors['status-error-bg'], border: colors['status-error-border'], icon: CircleAlert }
       : tone === 'success'
-        ? { bg: colors['status-success-bg'], border: colors['status-success-border'], icon: 'checkmark-circle-outline' }
-        : { bg: colors['background-surfaceAlt'], border: colors['border-medium'], icon: 'information-circle-outline' };
+        ? { bg: colors['status-success-bg'], border: colors['status-success-border'], icon: CircleCheck }
+        : { bg: colors['background-surfaceAlt'], border: colors['border-medium'], icon: Info };
   return (
     <View
       style={[styles.notice, { backgroundColor: palette.bg, borderColor: palette.border }]}
       accessibilityRole="alert"
     >
-      <Ionicons name={palette.icon as never} size={20} color={colors['text-muted']} />
+      <palette.icon size={20} color={colors['text-muted']} />
       <View style={styles.noticeTexts}>
         <Text style={styles.noticeTitle}>{title}</Text>
         {body ? <Text style={styles.noticeBody}>{body}</Text> : null}
@@ -185,7 +185,7 @@ function SheetFrame({
               accessibilityRole="button"
               accessibilityLabel={t('comun.cerrar')}
             >
-              <Ionicons name="close" size={24} color={colors['text-muted']} />
+              <CircleX size={24} color={colors['text-muted']} />
             </TouchableOpacity>
           </View>
           {support ? <Text style={styles.modalSupport}>{support}</Text> : null}
@@ -228,7 +228,7 @@ function SelectSheet({
               accessibilityState={{ selected: active }}
             >
               <Text style={[styles.modalItemText, active && styles.modalItemTextActive]}>{option.label}</Text>
-              {active && <Ionicons name="checkmark" size={18} color={colors['text-accent']} />}
+              {active && <CircleCheck size={18} color={colors['text-accent']} />}
             </TouchableOpacity>
           );
         })}
@@ -425,7 +425,7 @@ export function ConfigurarTarifaScreen({ hogarId = null }: ConfigurarTarifaScree
           accessibilityRole="button"
           accessibilityLabel={t('a11y.volver')}
         >
-          <Ionicons name="chevron-back" size={24} color={colors['text-primary']} />
+          <ChevronLeft size={24} color={colors['text-primary']} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('tarifa.encabezado')}</Text>
         <View style={styles.headerBtn} />
@@ -530,7 +530,7 @@ export function ConfigurarTarifaScreen({ hogarId = null }: ConfigurarTarifaScree
                   <Text style={operator ? styles.selectInputText : styles.placeholderText}>
                     {operator ?? t('tarifa.operador_ph')}
                   </Text>
-                  <Ionicons name="chevron-down" size={20} color={colors['text-muted']} />
+                  <ChevronDown size={20} color={colors['text-muted']} />
                 </TouchableOpacity>
 
                 <Text style={[styles.fieldLabel, styles.fieldSpaced]}>{t('tarifa.precio')}</Text>
@@ -562,8 +562,7 @@ export function ConfigurarTarifaScreen({ hogarId = null }: ConfigurarTarifaScree
                   accessibilityRole="button"
                 >
                   <View style={styles.selectLeftGroup}>
-                    <Ionicons
-                      name="calendar-outline"
+                    <Calendar
                       size={19}
                       color={colors['text-muted']}
                       style={styles.selectIcon}
@@ -572,7 +571,7 @@ export function ConfigurarTarifaScreen({ hogarId = null }: ConfigurarTarifaScree
                       {since ? monthYearLabel(since) : t('tarifa.vigencia_ph')}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-down" size={20} color={colors['text-muted']} />
+                  <ChevronDown size={20} color={colors['text-muted']} />
                 </TouchableOpacity>
                 {fieldErrors.vigencia ? (
                   <Text style={styles.fieldError}>{fieldErrors.vigencia}</Text>
@@ -597,8 +596,7 @@ export function ConfigurarTarifaScreen({ hogarId = null }: ConfigurarTarifaScree
                 ) : null}
 
                 <View style={styles.avisoCard}>
-                  <Ionicons
-                    name="help-circle-outline"
+                  <CircleHelp
                     size={18}
                     color={colors['text-muted']}
                     style={styles.avisoIcon}

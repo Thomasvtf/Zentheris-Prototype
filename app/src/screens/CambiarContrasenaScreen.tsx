@@ -23,7 +23,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { ChevronLeft, Circle, CircleCheck, CircleX, Eye, EyeOff, Shield } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 import { toErrorTextKey } from '@/api/errors';
@@ -148,11 +148,11 @@ function PasswordField({
           accessibilityRole="button"
           accessibilityLabel={t(visible ? 'a11y.ocultar_contrasena' : 'a11y.mostrar_contrasena')}
         >
-          <Ionicons
-            name={visible ? 'eye-outline' : 'eye-off-outline'}
-            size={20}
-            color={disabled ? colors['text-disabled'] : colors['text-muted']}
-          />
+          {visible ? (
+            <Eye size={20} color={disabled ? colors['text-disabled'] : colors['text-muted']} />
+          ) : (
+            <EyeOff size={20} color={disabled ? colors['text-disabled'] : colors['text-muted']} />
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -162,11 +162,11 @@ function PasswordField({
 function FieldMessage({ children, tone }: { children: string; tone: 'error' | 'success' }) {
   return (
     <View style={styles.messageRow} accessibilityRole="alert">
-      <Ionicons
-        name={tone === 'error' ? 'close-circle-outline' : 'checkmark-circle-outline'}
-        size={16}
-        color={tone === 'error' ? colors['text-error'] : colors['text-success']}
-      />
+      {tone === 'error' ? (
+        <CircleX size={16} color={colors['text-error']} />
+      ) : (
+        <CircleCheck size={16} color={colors['text-success']} />
+      )}
       <Text
         style={[styles.messageText, { color: tone === 'error' ? colors['text-error'] : colors['text-success'] }]}
       >
@@ -184,11 +184,11 @@ function Requirement({ text, met }: { text: string; met: boolean }) {
       accessibilityLabel={text}
       accessibilityState={{ checked: met }}
     >
-      <Ionicons
-        name={met ? 'checkmark-circle' : 'ellipse-outline'}
-        size={14}
-        color={met ? colors['accent-primary'] : colors['text-disabled']}
-      />
+      {met ? (
+        <CircleCheck size={14} color={colors['accent-primary']} />
+      ) : (
+        <Circle size={14} color={colors['text-disabled']} />
+      )}
       <Text style={[styles.reqChipText, met && styles.reqChipTextSatisfied]}>{text}</Text>
     </View>
   );
@@ -242,7 +242,7 @@ export function CambiarContrasenaScreen() {
           accessibilityRole="button"
           accessibilityLabel={t('a11y.volver')}
         >
-          <Ionicons name="chevron-back" size={24} color={colors['text-primary']} />
+          <ChevronLeft size={24} color={colors['text-primary']} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('contrasena.encabezado')}</Text>
         <View style={styles.headerBtn} />
@@ -256,7 +256,7 @@ export function CambiarContrasenaScreen() {
       >
         <View style={styles.bannerCard}>
           <View style={styles.bannerIconBox}>
-            <Ionicons name="shield-outline" size={24} color={colors['text-accent']} />
+            <Shield size={24} color={colors['text-accent']} />
           </View>
           <View style={styles.bannerTextContainer}>
             <Text style={styles.bannerTitle}>{t('contrasena.titulo')}</Text>

@@ -23,7 +23,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Bell, ChartLine, ChevronRight, CircleAlert, Cpu, Footprints, Leaf, Lightbulb, LogOut, Mail, Shield, Target, Trash2, User, Users, Zap } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 
@@ -233,7 +233,7 @@ function NavRow({ onPress, ...props }: RowProps & { onPress: () => void }) {
     >
       <RowBody
         {...props}
-        right={<Ionicons name="chevron-forward" size={18} color={colors['text-muted']} />}
+        right={<ChevronRight size={18} color={colors['text-muted']} />}
       />
     </TouchableOpacity>
   );
@@ -370,7 +370,7 @@ export function ConfiguracionScreen() {
         {state.status === 'error' && (
           <View>
             <View style={styles.errorBox} accessibilityRole="alert">
-              <Ionicons name="alert-circle-outline" size={20} color={colors['text-error']} />
+              <CircleAlert size={20} color={colors['text-error']} />
               <View style={styles.messageTexts}>
                 <Text style={styles.messageTitle}>{t(`${state.errorKey}.titulo`)}</Text>
                 <Text style={styles.messageBody}>{t(`${state.errorKey}.cuerpo`)}</Text>
@@ -408,7 +408,7 @@ export function ConfiguracionScreen() {
 
             {actionErrorKey && (
               <View style={styles.errorBox} accessibilityRole="alert">
-                <Ionicons name="alert-circle-outline" size={20} color={colors['text-error']} />
+                <CircleAlert size={20} color={colors['text-error']} />
                 <View style={styles.messageTexts}>
                   <Text style={styles.messageTitle}>{t(`${actionErrorKey}.titulo`)}</Text>
                   <Text style={styles.messageBody}>{t(`${actionErrorKey}.cuerpo`)}</Text>
@@ -418,21 +418,21 @@ export function ConfiguracionScreen() {
 
             <Section title={t('config.sec_cuenta')}>
               <NavRow
-                icon={<Ionicons name="person-outline" size={20} color={ICON_COLOR} />}
+                icon={<User size={20} color={ICON_COLOR} />}
                 title={t('config.perfil_t')}
                 subtitle={t('config.perfil_d')}
                 onPress={() => router.push('/editar-perfil')}
               />
               <Divider />
               <NavRow
-                icon={<Ionicons name="shield-outline" size={20} color={ICON_COLOR} />}
+                icon={<Shield size={20} color={ICON_COLOR} />}
                 title={t('config.contrasena_t')}
                 subtitle={t('config.contrasena_d')}
                 onPress={() => router.push('/cambiar-contrasena')}
               />
               <Divider />
               <NavRow
-                icon={<Ionicons name="mail-outline" size={20} color={ICON_COLOR} />}
+                icon={<Mail size={20} color={ICON_COLOR} />}
                 title={t('config.correo_t')}
                 subtitle={t('config.correo_d')}
                 onPress={() => router.push('/gestionar-correo')}
@@ -441,7 +441,7 @@ export function ConfiguracionScreen() {
 
             <Section title={t('config.sec_notificaciones')}>
               <SwitchRow
-                icon={<Ionicons name="notifications-outline" size={20} color={ICON_COLOR} />}
+                icon={<Bell size={20} color={ICON_COLOR} />}
                 title={t('config.alertas_t')}
                 subtitle={t('config.alertas_d')}
                 value={prefs.notif_consumo}
@@ -449,7 +449,7 @@ export function ConfiguracionScreen() {
               />
               <Divider />
               <SwitchRow
-                icon={<Ionicons name="bulb-outline" size={20} color={ICON_COLOR} />}
+                icon={<Lightbulb size={20} color={ICON_COLOR} />}
                 title={t('config.consejos_t')}
                 subtitle={t('config.consejos_d')}
                 value={prefs.notif_consejos}
@@ -459,7 +459,7 @@ export function ConfiguracionScreen() {
 
             <Section title={t('config.sec_energia')}>
               <SwitchRow
-                icon={<Ionicons name="analytics-outline" size={20} color={ICON_COLOR} />}
+                icon={<ChartLine size={20} color={ICON_COLOR} />}
                 title={t('config.meta_consumo_t')}
                 subtitle={t('config.meta_consumo_d')}
                 value={prefs.base_comparacion === 'meta'}
@@ -469,21 +469,21 @@ export function ConfiguracionScreen() {
               />
               <Divider />
               <NavRow
-                icon={<Ionicons name="locate-outline" size={20} color={ICON_COLOR} />}
+                icon={<Target size={20} color={ICON_COLOR} />}
                 title={t('config.meta_t')}
                 subtitle={t('config.meta_d')}
                 onPress={() => router.push('/establecer-meta')}
               />
               <Divider />
               <NavRow
-                icon={<Ionicons name="flash-outline" size={20} color={ICON_COLOR} />}
+                icon={<Zap size={20} color={ICON_COLOR} />}
                 title={t('config.tarifa_t')}
                 subtitle={t('config.tarifa_d')}
                 onPress={() => router.push('/configurar-tarifa')}
               />
               <Divider />
               <NavRow
-                icon={<Ionicons name="hardware-chip-outline" size={20} color={ICON_COLOR} />}
+                icon={<Cpu size={20} color={ICON_COLOR} />}
                 title={t('config.fuentes_t')}
                 subtitle={t('config.fuentes_d')}
                 onPress={() => router.push('/fuentes-datos')}
@@ -492,7 +492,7 @@ export function ConfiguracionScreen() {
 
             <Section title={t('config.sec_familia')}>
               <NavRow
-                icon={<Ionicons name="people-outline" size={20} color={ICON_COLOR} />}
+                icon={<Users size={20} color={ICON_COLOR} />}
                 title={isAdmin ? t('config.miembros_t') : t('config.miembros_t_lectura')}
                 subtitle={isAdmin ? t('config.miembros_d') : t('config.miembros_d_lectura')}
                 onPress={() => router.push('/miembros')}
@@ -501,13 +501,13 @@ export function ConfiguracionScreen() {
 
             <Section title={t('config.sec_transicion')}>
               <SoonRow
-                icon={<Ionicons name="leaf-outline" size={20} color={ICON_COLOR} />}
+                icon={<Leaf size={20} color={ICON_COLOR} />}
                 title={t('config.hogar_t')}
                 subtitle={t('config.hogar_d')}
               />
               <Divider />
               <SoonRow
-                icon={<MaterialCommunityIcons name="foot-print" size={20} color={ICON_COLOR} />}
+                icon={<Footprints size={20} color={ICON_COLOR} />}
                 title={t('config.huella_t')}
                 subtitle={t('config.huella_d')}
               />
@@ -517,7 +517,7 @@ export function ConfiguracionScreen() {
               <View style={styles.rowItem}>
                 <RowBody
                   danger
-                  icon={<Ionicons name="log-out-outline" size={20} color={colors['text-error']} />}
+                  icon={<LogOut size={20} color={colors['text-error']} />}
                   title={t('config.salir_t')}
                   subtitle={t('config.salir_d')}
                   right={
@@ -541,7 +541,7 @@ export function ConfiguracionScreen() {
               <View style={styles.rowItem}>
                 <RowBody
                   danger
-                  icon={<Ionicons name="trash-outline" size={20} color={colors['text-error']} />}
+                  icon={<Trash2 size={20} color={colors['text-error']} />}
                   title={t('config.eliminar_t')}
                   subtitle={t('config.eliminar_d')}
                   right={

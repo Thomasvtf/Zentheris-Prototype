@@ -20,7 +20,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { ChevronLeft, CircleAlert, CircleCheck, CircleX, Mail, User } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 import { MOCK_EMAIL, USE_MOCKS } from '@/api/devMocks';
@@ -155,7 +155,7 @@ function EmailField({ label, value, onChangeText, placeholder, readOnly = false,
       </View>
       {error ? (
         <View style={styles.messageRow} accessibilityRole="alert">
-          <Ionicons name="close-circle-outline" size={16} color={colors['text-error']} />
+          <CircleX size={16} color={colors['text-error']} />
           <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : null}
@@ -213,7 +213,7 @@ export function GestionarCorreoScreen() {
           accessibilityRole="button"
           accessibilityLabel={t('a11y.volver')}
         >
-          <Ionicons name="chevron-back" size={24} color={colors['text-primary']} />
+          <ChevronLeft size={24} color={colors['text-primary']} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('correo.encabezado')}</Text>
         <View style={styles.headerBtn} />
@@ -235,7 +235,7 @@ export function GestionarCorreoScreen() {
         {state.status === 'error' && (
           <View>
             <View style={styles.errorBox} accessibilityRole="alert">
-              <Ionicons name="alert-circle-outline" size={20} color={colors['text-error']} />
+              <CircleAlert size={20} color={colors['text-error']} />
               <View style={styles.errorTexts}>
                 <Text style={styles.errorTitle}>{t(`${state.errorKey}.titulo`)}</Text>
                 <Text style={styles.errorBody}>{t(`${state.errorKey}.cuerpo`)}</Text>
@@ -255,7 +255,7 @@ export function GestionarCorreoScreen() {
         {state.status === 'ready' && send.status === 'sent' && (
           <View style={styles.formCard}>
             <View style={styles.sentHeader}>
-              <Ionicons name="mail-outline" size={24} color={colors['text-accent']} />
+              <Mail size={24} color={colors['text-accent']} />
               <Text style={styles.sentTitle}>{t('auth.revisa_correo.titulo')}</Text>
             </View>
             <Text style={styles.sentBody}>
@@ -264,7 +264,7 @@ export function GestionarCorreoScreen() {
             <Text style={styles.sentHint}>{t('auth.revisa_correo.no_llego')}</Text>
             {resent && (
               <View style={styles.messageRow} accessibilityRole="alert">
-                <Ionicons name="checkmark-circle-outline" size={16} color={colors['text-success']} />
+                <CircleCheck size={16} color={colors['text-success']} />
                 <Text style={styles.successText}>{t('auth.revisa_correo.reenviado')}</Text>
               </View>
             )}
@@ -293,7 +293,7 @@ export function GestionarCorreoScreen() {
           <>
             <View style={styles.bannerCard}>
               <View style={styles.bannerIconBox}>
-                <Ionicons name="person-outline" size={22} color={colors['text-accent']} />
+                <User size={22} color={colors['text-accent']} />
               </View>
               <View style={styles.bannerTextContainer}>
                 <Text style={styles.bannerTitle}>{t('correo.titulo')}</Text>
@@ -332,7 +332,7 @@ export function GestionarCorreoScreen() {
 
               {send.status === 'error' && (
                 <View style={styles.errorBox} accessibilityRole="alert">
-                  <Ionicons name="alert-circle-outline" size={20} color={colors['text-error']} />
+                  <CircleAlert size={20} color={colors['text-error']} />
                   <View style={styles.errorTexts}>
                     <Text style={styles.errorTitle}>{t(`${send.errorKey}.titulo`)}</Text>
                     <Text style={styles.errorBody}>{t(`${send.errorKey}.cuerpo`)}</Text>

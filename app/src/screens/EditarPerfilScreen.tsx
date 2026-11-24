@@ -21,7 +21,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Image as ImageIcon, Pencil, Trash2 } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 
@@ -220,7 +220,7 @@ export function EditarPerfilScreen() {
           accessibilityRole="button"
           accessibilityLabel={t('a11y.volver')}
         >
-          <Ionicons name="chevron-back" size={24} color={colors['text-primary']} />
+          <ChevronLeft size={24} color={colors['text-primary']} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('perfil.encabezado')}</Text>
         <View style={styles.headerBtn} />
@@ -243,7 +243,7 @@ export function EditarPerfilScreen() {
         {state.status === 'error' && (
           <View>
             <View style={styles.errorBox} accessibilityRole="alert">
-              <Ionicons name="alert-circle-outline" size={20} color={colors['text-error']} />
+              <CircleAlert size={20} color={colors['text-error']} />
               <View style={styles.messageTexts}>
                 <Text style={styles.messageTitle}>{t(`${state.errorKey}.titulo`)}</Text>
                 <Text style={styles.messageBody}>{t(`${state.errorKey}.cuerpo`)}</Text>
@@ -283,7 +283,7 @@ export function EditarPerfilScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={t('a11y.cambiar_foto')}
                 >
-                  <Ionicons name="pencil" size={15} color={colors['text-inverse']} />
+                  <Pencil size={15} color={colors['text-inverse']} />
                 </TouchableOpacity>
               </View>
               <Text style={styles.avatarName}>{user.nombre_completo}</Text>
@@ -292,13 +292,13 @@ export function EditarPerfilScreen() {
 
             {action.status === 'done' && (
               <View style={styles.successBox} accessibilityRole="alert">
-                <Ionicons name="checkmark-circle-outline" size={18} color={colors['text-success']} />
+                <CircleCheck size={18} color={colors['text-success']} />
                 <Text style={styles.successText}>{action.message}</Text>
               </View>
             )}
             {action.status === 'error' && (
               <View style={styles.errorBox} accessibilityRole="alert">
-                <Ionicons name="alert-circle-outline" size={20} color={colors['text-error']} />
+                <CircleAlert size={20} color={colors['text-error']} />
                 <View style={styles.messageTexts}>
                   <Text style={styles.messageTitle}>{t(`${action.errorKey}.titulo`)}</Text>
                   <Text style={styles.messageBody}>{t(`${action.errorKey}.cuerpo`)}</Text>
@@ -400,13 +400,13 @@ export function EditarPerfilScreen() {
                   accessibilityRole="button"
                 >
                   <View style={styles.iconBox}>
-                    <Ionicons name="create-outline" size={20} color={colors['text-accent']} />
+                    <Pencil size={20} color={colors['text-accent']} />
                   </View>
                   <View style={styles.actionTextContainer}>
                     <Text style={styles.actionTitle}>{t('perfil.editar')}</Text>
                     <Text style={styles.actionSubtitle}>{t('perfil.editar_d')}</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={colors['text-muted']} />
+                  <ChevronRight size={18} color={colors['text-muted']} />
                 </TouchableOpacity>
               </View>
             )}
@@ -439,7 +439,7 @@ export function EditarPerfilScreen() {
               accessibilityRole="button"
               accessibilityState={{ disabled: true }}
             >
-              <Ionicons name="images-outline" size={20} color={colors['text-disabled']} />
+              <ImageIcon size={20} color={colors['text-disabled']} />
               <Text style={styles.sheetOptionDisabledText}>{t('perfil.foto_galeria')}</Text>
             </TouchableOpacity>
 
@@ -449,7 +449,7 @@ export function EditarPerfilScreen() {
                 onPress={handleRemovePhoto}
                 accessibilityRole="button"
               >
-                <Ionicons name="trash-outline" size={20} color={colors['text-error']} />
+                <Trash2 size={20} color={colors['text-error']} />
                 <Text style={styles.sheetOptionDangerText}>{t('perfil.foto_eliminar')}</Text>
               </TouchableOpacity>
             ) : null}

@@ -19,7 +19,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { ChevronLeft, CircleAlert, CircleCheck, Info, Minus, Plus } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 import { createGoal, getGoal } from '@/api/goalsTariff';
@@ -111,16 +111,16 @@ function Notice({
 }) {
   const palette =
     tone === 'error'
-      ? { bg: colors['status-error-bg'], border: colors['status-error-border'], icon: 'alert-circle-outline' }
+      ? { bg: colors['status-error-bg'], border: colors['status-error-border'], icon: CircleAlert }
       : tone === 'success'
-        ? { bg: colors['status-success-bg'], border: colors['status-success-border'], icon: 'checkmark-circle-outline' }
-        : { bg: colors['background-surfaceAlt'], border: colors['border-medium'], icon: 'information-circle-outline' };
+        ? { bg: colors['status-success-bg'], border: colors['status-success-border'], icon: CircleCheck }
+        : { bg: colors['background-surfaceAlt'], border: colors['border-medium'], icon: Info };
   return (
     <View
       style={[styles.notice, { backgroundColor: palette.bg, borderColor: palette.border }]}
       accessibilityRole="alert"
     >
-      <Ionicons name={palette.icon as never} size={20} color={colors['text-muted']} />
+      <palette.icon size={20} color={colors['text-muted']} />
       <View style={styles.noticeTexts}>
         <Text style={styles.noticeTitle}>{title}</Text>
         {body ? <Text style={styles.noticeBody}>{body}</Text> : null}
@@ -210,7 +210,7 @@ export function EstablecerMetaScreen({ hogarId = null }: EstablecerMetaScreenPro
           accessibilityRole="button"
           accessibilityLabel={t('a11y.volver')}
         >
-          <Ionicons name="chevron-back" size={24} color={colors['text-primary']} />
+          <ChevronLeft size={24} color={colors['text-primary']} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('meta.encabezado')}</Text>
         <View style={styles.headerBtn} />
@@ -291,7 +291,7 @@ export function EstablecerMetaScreen({ hogarId = null }: EstablecerMetaScreenPro
                   accessibilityRole="button"
                   accessibilityLabel={t('a11y.meta_menos')}
                 >
-                  <Ionicons name="remove" size={24} color={colors['text-primary']} />
+                  <Minus size={24} color={colors['text-primary']} />
                 </TouchableOpacity>
 
                 <Text style={styles.counterValue}>
@@ -307,7 +307,7 @@ export function EstablecerMetaScreen({ hogarId = null }: EstablecerMetaScreenPro
                   accessibilityRole="button"
                   accessibilityLabel={t('a11y.meta_mas')}
                 >
-                  <Ionicons name="add" size={24} color={colors['text-primary']} />
+                  <Plus size={24} color={colors['text-primary']} />
                 </TouchableOpacity>
               </View>
 

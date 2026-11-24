@@ -18,7 +18,26 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import {
+  Bath,
+  Bed,
+  Car,
+  ChevronLeft,
+  CircleAlert,
+  CircleCheck,
+  CirclePause,
+  CookingPot,
+  DoorClosed,
+  Fence,
+  Info,
+  Loader,
+  MapPin,
+  Monitor,
+  Sofa,
+  WashingMachine,
+  Zap,
+} from 'lucide-react-native';
+import type { LucideIcon } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 import { getDataSources } from '@/api/consumption';
@@ -96,35 +115,35 @@ function intervalLabel(hora: DataSources['hora']): string {
   return `${hourLabel(hora.inicio)}–${hourLabel(hora.fin)}`;
 }
 
-const ZONE_ICONS: Record<string, { lib: 'ion' | 'mci'; name: string }> = {
-  Cocina: { lib: 'mci', name: 'fridge-outline' },
-  Dormitorio: { lib: 'ion', name: 'bed-outline' },
-  Oficina: { lib: 'ion', name: 'desktop-outline' },
-  Sala: { lib: 'mci', name: 'sofa-outline' },
-};
+/** Íconos aprobados de las 9 zonas (DC-14), por tipo de zona. */
+const ZONE_ICONS = {
+  bano: Bath,
+  cocina: CookingPot,
+  cuarto_servicio: DoorClosed,
+  dormitorio: Bed,
+  garaje: Car,
+  lavanderia: WashingMachine,
+  oficina: Monitor,
+  sala: Sofa,
+  terraza: Fence,
+} satisfies Record<string, LucideIcon>;
+const ZONE_TYPES = Object.keys(ZONE_ICONS) as (keyof typeof ZONE_ICONS)[];
 
+/** El contrato trae `zona_nombre` (texto del catálogo), no el tipo: se busca el tipo por su nombre. */
 function ZoneIcon({ zona }: { zona: string }) {
-  const icon = ZONE_ICONS[zona] ?? { lib: 'ion', name: 'location-outline' };
-  return icon.lib === 'mci' ? (
-    <MaterialCommunityIcons name={icon.name as never} size={22} color={colors['text-muted']} />
-  ) : (
-    <Ionicons name={icon.name as never} size={22} color={colors['text-muted']} />
-  );
+  const tipo = ZONE_TYPES.find((z) => t(`zona.${z}`) === zona);
+  const Icono = tipo ? ZONE_ICONS[tipo] : MapPin;
+  return <Icono size={22} color={colors['text-muted']} />;
 }
 
 /** Estado = ícono + palabra (nunca solo color). */
 function SourceStatus({ estado }: { estado: SourceState }) {
   const active = estado === 'activo';
-  const icon =
-    estado === 'activo'
-      ? 'checkmark-circle-outline'
-      : estado === 'pausado'
-        ? 'pause-circle-outline'
-        : 'sparkles-outline';
+  const Icono = estado === 'activo' ? CircleCheck : estado === 'pausado' ? CirclePause : Loader;
   const color = active ? colors['text-accent'] : colors['text-muted'];
   return (
     <View style={styles.statusRow}>
-      <Ionicons name={icon} size={15} color={color} />
+      <Icono size={15} color={color} />
       <Text style={[styles.statusText, { color }]}>{t(`fuentes.estado_${estado}`)}</Text>
     </View>
   );
@@ -173,7 +192,7 @@ function SkeletonRows() {
 function ErrorNotice({ errorKey, onRetry }: { errorKey: string; onRetry: () => void }) {
   return (
     <View style={styles.errorBox} accessibilityRole="alert">
-      <Ionicons name="alert-circle-outline" size={22} color={colors['status-error-text']} />
+      <CircleAlert size={22} color={colors['status-error-text']} />
       <View style={styles.errorTexts}>
         <Text style={styles.errorTitle}>{t(`${errorKey}.titulo`)}</Text>
         <Text style={styles.errorBody}>{t(`${errorKey}.cuerpo`)}</Text>
@@ -212,7 +231,7 @@ export function FuentesDatosScreen({ hogarId = null }: FuentesDatosScreenProps) 
           accessibilityRole="button"
           accessibilityLabel={t('a11y.volver')}
         >
-          <Ionicons name="chevron-back" size={24} color={colors['text-primary']} />
+          <ChevronLeft size={24} color={colors['text-primary']} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('fuentes.encabezado')}</Text>
         <View style={styles.headerBtn} />
@@ -224,8 +243,7 @@ export function FuentesDatosScreen({ hogarId = null }: FuentesDatosScreenProps) 
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.infoBanner}>
-          <Ionicons
-            name="information-circle-outline"
+          <Info
             size={22}
             color={colors['text-accent']}
             style={styles.infoIcon}
@@ -249,7 +267,7 @@ export function FuentesDatosScreen({ hogarId = null }: FuentesDatosScreenProps) 
 
             <Text style={styles.sectionTitle}>{t('fuentes.principal')}</Text>
             <SourceRow
-              icon={<Ionicons name="flash-outline" size={22} color={colors['text-accent']} />}
+              icon={<Zap size={22} color={colors['text-accent']} />}
               nombre={state.data.fuente_principal.nombre}
               detalle={t('fuentes.principal_suma')}
               potenciaKw={state.data.fuente_principal.potencia_kw}

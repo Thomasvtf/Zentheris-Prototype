@@ -462,7 +462,8 @@ function ZonesSection({ data, unit }: { data: ZonesConsumption; unit: Unit }) {
             ? pairs(zones).map(([a, b]) => (
                 <View key={a.zona_id} style={styles.zonesRow}>
                   <ZoneCard zone={a} unit={unit} compact />
-                  {b ? <ZoneCard zone={b} unit={unit} compact /> : <View style={styles.flex} />}
+                  {/* Sin par, la última caja ocupa todo el ancho de la fila (sin hueco vacío). */}
+                  {b ? <ZoneCard zone={b} unit={unit} compact /> : null}
                 </View>
               ))
             : zones.map((zone) => <ZoneCard key={zone.zona_id} zone={zone} unit={unit} compact={false} />)}

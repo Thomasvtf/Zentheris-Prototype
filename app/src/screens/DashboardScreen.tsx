@@ -904,7 +904,12 @@ const styles = StyleSheet.create({
   chipText: { ...textStyle('ui-s-semibold') },
 
   // Zonas
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing['12'],
+  },
   sectionTitle: { ...textStyle('display-m'), color: colors['text-primary'] },
   zonesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing['12'] },
   zoneLong: { marginBottom: spacing['12'] },

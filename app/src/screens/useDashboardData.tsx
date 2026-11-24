@@ -365,8 +365,11 @@ export function useDashboardData(hogarId: string | null, options: UseDashboardDa
   const source = options.source ?? (useMocks ? createMockSource(scenario) : apiSource);
   const effectiveHogarId = hogarId ?? (useMocks ? (MOCK_HOGAR_ID ?? MOCK_ID(1)) : null);
 
+  // La fuente más reciente se guarda fuera del render; el efecto de carga la lee al correr.
   const sourceRef = useRef(source);
-  sourceRef.current = source;
+  useEffect(() => {
+    sourceRef.current = source;
+  });
 
   const [state, setState] = useState<DashboardState>({ status: 'loading' });
   const [refreshing, setRefreshing] = useState(false);
@@ -374,10 +377,8 @@ export function useDashboardData(hogarId: string | null, options: UseDashboardDa
   const silentRef = useRef(false);
 
   useEffect(() => {
-    if (!effectiveHogarId) {
-      setState({ status: 'error', errorKey: 'error.app.no_encontrado' });
-      return;
-    }
+    // Sin hogar no hay nada que pedir; el error se deriva abajo, sin setState aquí.
+    if (!effectiveHogarId) return;
     let cancelled = false;
     if (!silentRef.current) setState({ status: 'loading' });
     loadDashboard(sourceRef.current, effectiveHogarId)
@@ -407,5 +408,9 @@ export function useDashboardData(hogarId: string | null, options: UseDashboardDa
     setAttempt((n) => n + 1);
   }, []);
 
-  return { state, retry, refresh, refreshing };
+  const visibleState: DashboardState = effectiveHogarId
+    ? state
+    : { status: 'error', errorKey: 'error.app.no_encontrado' };
+
+  return { state: visibleState, retry, refresh, refreshing };
 }

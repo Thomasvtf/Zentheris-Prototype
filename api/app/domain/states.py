@@ -7,6 +7,8 @@ Puro: sin FastAPI, sin SQL, sin archivos y sin reloj. Los umbrales llegan ya le�
   se redondean a 6 decimales antes de comparar y los límites son inclusivos (RN-XI-07).
 - 1b: referencias (promedio de la misma hora en los 30 días completos anteriores, mínimo 7 días
   con dato) y evaluación de las tres operaciones de consumo (RN-XI-01 a RN-XI-06, RN-XI-09).
+- Comparación entre periodos, pico y proyección viven en `app.domain.history` (fase 7, una sola
+  implementación); `history` importa de aquí, nunca al revés.
 
 Convenciones:
 - Una serie horaria es `{inicio de hora (datetime con zona, cualquiera): kWh de esa hora}`; la
@@ -151,7 +153,8 @@ def var_pct(value: float | None, reference: float | None) -> float | None:
     return round((value / reference - 1.0) * 100.0, PCT_DECIMALS)
 
 
-def _classify(pct: float, band: BandThresholds) -> State:
+def classify(pct: float, band: BandThresholds) -> State:
+    """Banda de un % ya redondeado; límites inferiores inclusivos (RN-XI-07)."""
     if pct >= band.critical_from_pct:
         return "critico"
     if pct >= band.elevated_from_pct:
@@ -178,7 +181,7 @@ def relative_state(
         excess = value - reference if excess_kwh is None else excess_kwh
         if excess < band.min_excess_kwh:
             return "normal"
-    return _classify(pct, band)
+    return classify(pct, band)
 
 
 def cumulative_goal_state(
@@ -189,7 +192,7 @@ def cumulative_goal_state(
         return "sin_datos", None
     limit = monthly_goal_kwh / days_in_month
     pct = round(cumulative_kwh / limit * 100.0, PCT_DECIMALS)
-    return _classify(pct, band), pct
+    return classify(pct, band), pct
 
 
 def goal_hour_reference(
@@ -202,49 +205,6 @@ def goal_hour_reference(
     return monthly_goal_kwh / days_in_month * hourly_averages[hour] / total
 
 
-# TODO(fase 7): history.py tiene esqueletos con el mismo propósito (compare_periods, detect_peak,
-# project_period); la fase 7 debe dejar una sola implementación. Aplica a period_comparison,
-# is_peak, peak_state, project_period y project_cost.
-def period_comparison(
-    current_kwh: float, previous_kwh: float | None, thresholds: PeriodComparisonThresholds
-) -> tuple[str, State]:
-    """(variante del mensaje, estado). Sin periodo anterior: ("sin_anterior", "sin_referencia")."""
-    if previous_kwh is None:
-        return "sin_anterior", "sin_referencia"
-    if previous_kwh <= 0:
-        return "sin_referencia", "sin_referencia"
-    pct = var_pct(current_kwh, previous_kwh)
-    if pct < thresholds.lower_if_below_pct:
-        variant = "menor"
-    elif pct < thresholds.similar_if_below_pct:
-        variant = "similar"
-    elif pct < thresholds.much_higher_from_pct:
-        variant = "mayor"
-    else:
-        variant = "muy_mayor"
-    return variant, thresholds.states[variant]
-
-
-def is_peak(value: float | None, average: float | None, min_pct: float) -> bool:
-    """Pico: supera su promedio en al menos `min_pct` % (RN-XIII-03, DC-31)."""
-    pct = var_pct(value, average)
-    return pct is not None and pct >= min_pct
-
-
-def peak_state(
-    value: float,
-    average: float,
-    period: Literal["dia", "semana", "mes"],
-    thresholds: StateThresholds,
-) -> State:
-    """Estado del pico: bloque de consumo actual en Día; de día completo en Semana y Mes."""
-    pct = var_pct(value, average)
-    if pct is None:
-        raise ValueError("el pico exige un valor y un promedio mayor que cero")
-    band = thresholds.current if period == "dia" else thresholds.full_day
-    return _classify(pct, band)
-
-
 def hour_variation(
     current: float | None, previous: float | None, equal_abs_pct: float
 ) -> Literal["mas", "menos", "igual", "sin_dato"]:
@@ -255,33 +215,6 @@ def hour_variation(
     if abs(pct) < equal_abs_pct:
         return "igual"
     return "mas" if pct > 0 else "menos"
-
-
-def project_period(
-    cumulative_kwh: float,
-    remaining_hour_averages_today: Sequence[float],
-    remaining_full_days: int,
-    daily_average_30d: float,
-) -> float:
-    """RN-XIII-05: lo que llevas + lo que sueles consumir en lo que falta del periodo."""
-    return (
-        cumulative_kwh
-        + sum(remaining_hour_averages_today)
-        + remaining_full_days * daily_average_30d
-    )
-
-
-def project_cost(
-    cumulative_cost_cop: float,
-    projected_kwh: float,
-    cumulative_kwh: float,
-    price_per_kwh: float,
-    fixed_charge: float | None = None,
-    is_month: bool = False,
-) -> float:
-    """Proyección en COP: lo que falta al precio vigente; el cargo fijo solo en Mes."""
-    extra = (projected_kwh - cumulative_kwh) * price_per_kwh
-    return cumulative_cost_cop + extra + ((fixed_charge or 0) if is_month else 0)
 
 
 # ------------------------------------------------------------------ 1b · tiempo y series
@@ -303,12 +236,12 @@ def reference_window_start(hour_start: datetime, window_days: int) -> datetime:
     return datetime(first.year, first.month, first.day, tzinfo=TIMEZONE)
 
 
-def _by_index(series: HourlySeries) -> dict[int, float]:
+def by_index(series: HourlySeries) -> dict[int, float]:
     """Serie indexada por hora absoluta de Bogotá (ordinal × 24 + hora)."""
     return {hour_index(moment): value for moment, value in series.items()}
 
 
-def _totals_by_index(zones: Sequence[Mapping[int, float]]) -> dict[int, float]:
+def totals_by_index(zones: Sequence[Mapping[int, float]]) -> dict[int, float]:
     """Suma por hora solo donde TODAS las zonas tienen lectura; sin zonas, vacío."""
     if not zones:
         return {}
@@ -318,7 +251,7 @@ def _totals_by_index(zones: Sequence[Mapping[int, float]]) -> dict[int, float]:
 
 def _household_totals(readings_by_zone: Mapping[UUID, HourlySeries]) -> dict[int, float]:
     """Total del hogar por índice horario (única implementación)."""
-    return _totals_by_index([_by_index(series) for series in readings_by_zone.values()])
+    return totals_by_index([by_index(series) for series in readings_by_zone.values()])
 
 
 def household_hourly_totals(readings_by_zone: Mapping[UUID, HourlySeries]) -> dict[datetime, float]:
@@ -328,9 +261,10 @@ def household_hourly_totals(readings_by_zone: Mapping[UUID, HourlySeries]) -> di
     return {hour_from_index(index): value for index, value in totals.items()}
 
 
-def _same_hour_average(
+def same_hour_average_by_index(
     series: Mapping[int, float], day: int, hour: int, window_days: int
 ) -> tuple[float | None, int]:
+    """`same_hour_average` sobre una serie ya indexada (`by_index`); `day` = ordinal Bogotá."""
     values = [
         series[ordinal * HOURS_PER_DAY + hour]
         for ordinal in range(day - window_days, day)
@@ -339,9 +273,10 @@ def _same_hour_average(
     return (statistics.mean(values) if values else None), len(values)
 
 
-def _cumulative_average(
+def cumulative_average_by_index(
     series: Mapping[int, float], day: int, hour: int, window_days: int
 ) -> tuple[float | None, int]:
+    """`cumulative_average` sobre una serie ya indexada (`by_index`); `day` = ordinal Bogotá."""
     sums = []
     for ordinal in range(day - window_days, day):
         indexes = [ordinal * HOURS_PER_DAY + h for h in range(hour + 1)]
@@ -357,7 +292,7 @@ def same_hour_average(
     fecha Bogotá de `hour_start`, ignorando días sin dato (DC-28). Media None si 0 días."""
     index = hour_index(hour_start)
     day, hour = divmod(index, HOURS_PER_DAY)
-    return _same_hour_average(_by_index(series), day, hour, window_days)
+    return same_hour_average_by_index(by_index(series), day, hour, window_days)
 
 
 def cumulative_average(
@@ -367,15 +302,24 @@ def cumulative_average(
     `window_days` fechas anteriores, solo días con TODAS esas horas (RN-XI-04)."""
     index = hour_index(hour_start)
     day, hour = divmod(index, HOURS_PER_DAY)
-    return _cumulative_average(_by_index(series), day, hour, window_days)
+    return cumulative_average_by_index(by_index(series), day, hour, window_days)
 
 
-def _valid(reference: float | None, days: int, thresholds: StateThresholds) -> float | None:
+def valid(reference: float | None, days: int, thresholds: StateThresholds) -> float | None:
     """La referencia solo se publica con el mínimo de días con dato."""
     return reference if days >= thresholds.min_days_with_data else None
 
 
-def _days_in_month(day: date) -> int:
+def cost(kwh: float | None, price: float | None) -> float | None:
+    """kWh × precio por kWh (RN-V-01), sin cargo fijo (RN-V-02); None si falta cualquiera de los
+    dos (RN-XI-08: sin tarifa vigente no hay costo; `None` es sin dato, nunca cero)."""
+    if kwh is None or price is None:
+        return None
+    return kwh * price
+
+
+def days_in_month(day: date) -> int:
+    """Días del mes de `day`."""
     return calendar.monthrange(day.year, day.month)[1]
 
 
@@ -430,13 +374,13 @@ def _goal_hour_reference_for(
     averages: list[float] = []
     min_days = thresholds.window_days
     for h in range(HOURS_PER_DAY):
-        average, days = _same_hour_average(totals, day, h, thresholds.window_days)
+        average, days = same_hour_average_by_index(totals, day, h, thresholds.window_days)
         min_days = min(min_days, days)
         if average is None or days < thresholds.min_days_with_data:
             return None, min_days
         averages.append(average)
-    days_in_month = _days_in_month(date.fromordinal(day))
-    return goal_hour_reference(goal.monthly_kwh, days_in_month, averages, hour), min_days
+    month_days = days_in_month(date.fromordinal(day))
+    return goal_hour_reference(goal.monthly_kwh, month_days, averages, hour), min_days
 
 
 def evaluate_current(
@@ -456,8 +400,8 @@ def evaluate_current(
     power = totals.get(index)
     if goal is None:
         reference_type: ReferenceType = "promedio"
-        average, days = _same_hour_average(totals, day, hour, thresholds.window_days)
-        reference = _valid(average, days, thresholds)
+        average, days = same_hour_average_by_index(totals, day, hour, thresholds.window_days)
+        reference = valid(average, days, thresholds)
     else:
         reference_type = "meta"
         reference, days = _goal_hour_reference_for(totals, day, hour, goal, thresholds)
@@ -494,7 +438,7 @@ def evaluate_today(
     day, hour = divmod(last, HOURS_PER_DAY)
     reference_type: ReferenceType = "meta" if goal is not None else "promedio"
     prefix = f"acumulado.{reference_type}"
-    limit = goal.monthly_kwh / _days_in_month(today) if goal is not None else None
+    limit = goal.monthly_kwh / days_in_month(today) if goal is not None else None
     if day != today.toordinal():
         return TodayEvaluation(
             0.0, reference_type, limit, goal is not None, "sin_datos", f"{prefix}.sin_datos"
@@ -506,11 +450,11 @@ def evaluate_today(
     if goal is not None:
         reference = limit
         state, _ = cumulative_goal_state(
-            energy, goal.monthly_kwh, _days_in_month(today), thresholds.cumulative_goal
+            energy, goal.monthly_kwh, days_in_month(today), thresholds.cumulative_goal
         )
     else:
-        average, days = _cumulative_average(totals, day, hour, thresholds.window_days)
-        reference = _valid(average, days, thresholds)
+        average, days = cumulative_average_by_index(totals, day, hour, thresholds.window_days)
+        reference = valid(average, days, thresholds)
         state = relative_state(
             energy,
             reference,
@@ -604,9 +548,9 @@ def evaluate_zones(
     cuenta (zona inactiva o sensor pausado) no se evalúa: todo None y estados `sin_datos`, sin
     calcular nada con sus lecturas.
     """
-    series = {zona_id: _by_index(values) for zona_id, values in readings_by_zone.items()}
+    series = {zona_id: by_index(values) for zona_id, values in readings_by_zone.items()}
     counting = [series.get(zona_id, {}) for zona_id in counting_zone_ids]
-    totals = _totals_by_index(counting)
+    totals = totals_by_index(counting)
     index = hour_index(hour_start)
     day, hour = divmod(index, HOURS_PER_DAY)
     total = totals.get(index)
@@ -617,8 +561,8 @@ def evaluate_zones(
             continue
         power = zone_series.get(index)
         share, share_state = _share(power, total, zone_series, totals, day, hour, thresholds)
-        average, days = _same_hour_average(zone_series, day, hour, thresholds.window_days)
-        reference = _valid(average, days, thresholds)
+        average, days = same_hour_average_by_index(zone_series, day, hour, thresholds.window_days)
+        reference = valid(average, days, thresholds)
         zone_state = relative_state(
             power,
             reference,

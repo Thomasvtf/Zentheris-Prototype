@@ -1,6 +1,6 @@
 """Referencias y evaluación de las 3 operaciones de consumo (RN-XI-01 a RN-XI-06, DC-28).
 
-`app.domain.states` (sección 1b de la hoja de interfaces de la fase 6). Las referencias salen de
+`app.domain.states` (evaluación de la fase 6). Las referencias salen de
 los promedios reales de las 5 personalidades (`tests/helpers/personalities.py`): referencia de
 una zona a una hora = `zone_kwh_for_hour(zona, hora)`; «normal» = referencia; «elevado» = +45 %;
 «crítico» = +0,8 kWh. Las series generadas con el simulador del repo comprueban el caso real.

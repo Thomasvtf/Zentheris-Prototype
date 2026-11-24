@@ -18,7 +18,9 @@ RN-I-02, RN-VII-01, RN-VI-04, RN-XVI-02, RN-XVI-03; y `crearHogarOnboarding` (fa
 RN-X-03, RN-X-04, RN-IV-01, RN-IV-07, RN-II-01, RN-II-03; errores DC-16; y las 3 consultas de
 consumo de la fase 6 (`obtenerConsumoActual`, `obtenerConsumoZonas`, `obtenerConsumoZona`):
 RN-XI-01, RN-XI-03 a RN-XI-08, RN-XVII-01, RN-IV-05, DC-34, con el servicio real sobre datos en
-memoria construidos con los promedios de las personalidades.
+memoria construidos con los promedios de las personalidades; y `obtenerHistorial` (fase 7):
+RN-XIII-01 a RN-XIII-06, RN-XVII-02, RN-I-03, RN-IV-05, DC-29 a DC-31, DC-34 (v0.2.9:
+`PuntoSerie.zonas` solo con el filtro General, en el orden de `participacion_zonas`).
 Las demás: TODO(C-01).
 """
 
@@ -27,6 +29,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 import pytest
@@ -104,11 +107,14 @@ PHASE_OPERATIONS = frozenset(
 CONSUMPTION_OPERATIONS = frozenset(
     {"obtenerConsumoActual", "obtenerConsumoZonas", "obtenerConsumoZona"}
 )
-# Operaciones con C-01 real: las de la fase 3, el onboarding, la salud (sin autenticación) y las
-# consultas de consumo de la fase 6.
-COVERED_OPERATIONS = (
-    PHASE_OPERATIONS | CONSUMPTION_OPERATIONS | {"obtenerSalud", "crearHogarOnboarding"}
-)
+HISTORY_OPERATION = "obtenerHistorial"
+# Operaciones con C-01 real: las de la fase 3, el onboarding, la salud (sin autenticación), las
+# consultas de consumo de la fase 6 y el historial de la fase 7.
+COVERED_OPERATIONS = PHASE_OPERATIONS | CONSUMPTION_OPERATIONS | {
+    "obtenerSalud",
+    "crearHogarOnboarding",
+    HISTORY_OPERATION,
+}
 # Rangos del contrato que no se pueden provocar: `/salud` no tiene parámetros ni cuerpo, así que
 # ninguna petición a esa operación da un 4XX propio.
 UNREACHABLE_RANGES = frozenset({("obtenerSalud", "4XX")})
@@ -867,7 +873,7 @@ def test_cases_cover_every_declared_response_of_the_phase() -> None:
         for code in OPERATIONS[operation_id][2]["responses"]
         if (operation_id, str(code)) not in UNREACHABLE_RANGES | COVERED_BY_OWN_TEST
     }
-    cases = CASES + ONBOARDING_CASES + CONSUMPTION_CASES
+    cases = CASES + ONBOARDING_CASES + CONSUMPTION_CASES + HISTORY_CASES
     covered = {(case.operation_id, case.status) for case in cases}
     assert covered == declared
     assert len({(c.operation_id, c.name) for c in cases}) == len(cases)
@@ -1099,6 +1105,7 @@ CONSUMPTION_DATA_FUNCTIONS = (
     (users_data, "get_preferences"),
     (goals_data, "get_active_goal"),
     (tariffs_data, "get_current_tariff"),
+    (tariffs_data, "list_tariffs_between"),
     (hour_recovery, "fill_missing_hours"),
 )
 
@@ -1121,18 +1128,19 @@ class ConsumptionWorld:
     personality: str = DEFAULT_PERSONALITY
     zone_ids: dict[str, UUID] = field(default_factory=dict)  # tipo -> id
     foreign_zone_id: UUID | None = None
+    days: int = 31  # días de lecturas antes de la hora evaluada
     guard_sessions: list[object] = field(default_factory=list)
     data_sessions: list[object] = field(default_factory=list)
 
     def build_household(self, personality: str) -> None:
-        """Zonas del hogar de referencia de la personalidad y 31 días de lecturas promedio."""
+        """Zonas del hogar de referencia de la personalidad y `days` días de lecturas promedio."""
         averages = load_personalities()[personality]
         self.personality = personality
         for zona_id in self.zone_ids.values():
             self.db.readings.pop(zona_id, None)
         self.db.zones.pop(HOGAR_ID, None)
         self.zone_ids.clear()
-        first = HOUR_START - timedelta(days=31)
+        first = HOUR_START - timedelta(days=self.days)
         for tipo in REFERENCE_HOUSEHOLDS[personality][1]:
             zona_id = self.db.add_zone(HOGAR_ID, tipo, zone_name(tipo))
             self.zone_ids[tipo] = zona_id
@@ -1270,6 +1278,8 @@ class ConsumptionCase:
     codigo: str | None = None
     hogar_id: str | None = None  # por defecto, el hogar de la prueba
     zona_id: str | None = None  # por defecto, la primera zona del hogar (`foreign` = otro hogar)
+    # Parámetros de consulta; en `zona_id`, `first` = primera zona y `foreign` = zona de otro hogar.
+    query: tuple[tuple[str, str], ...] = ()
 
 
 def _consumption_cases_for(operation_id: str) -> tuple[ConsumptionCase, ...]:
@@ -1319,12 +1329,23 @@ CONSUMPTION_CASES: tuple[ConsumptionCase, ...] = (
 GUARD_STOPS = frozenset({"sin-token", "sin-permiso", "sin-membresia", "hogar-ajeno"})
 
 
+def _zone_placeholder(value: str, world: ConsumptionWorld) -> str:
+    return {"first": str(world.first_zone_id), "foreign": str(world.foreign_zone_id)}.get(
+        value, value
+    )
+
+
 def consumption_url(case: ConsumptionCase, world: ConsumptionWorld) -> str:
     _method, path, _op = OPERATIONS[case.operation_id]
-    zona_id = case.zona_id or str(world.first_zone_id)
-    if zona_id == "foreign":
-        zona_id = str(world.foreign_zone_id)
-    return API_PREFIX + path.format(hogar_id=case.hogar_id or str(HOGAR_ID), zona_id=zona_id)
+    zona_id = _zone_placeholder(case.zona_id or "first", world)
+    url = API_PREFIX + path.format(hogar_id=case.hogar_id or str(HOGAR_ID), zona_id=zona_id)
+    if case.query:
+        pairs = [
+            (name, _zone_placeholder(value, world) if name == "zona_id" else value)
+            for name, value in case.query
+        ]
+        url += "?" + urlencode(pairs)
+    return url
 
 
 def send_consumption(client: TestClient, case: ConsumptionCase, world: ConsumptionWorld) -> Any:
@@ -1546,6 +1567,301 @@ def test_failed_hour_recovery_answers_200_with_stored_data(
     assert consumption.session.commits == 0
     if failure is recovery_lock_fails:
         assert consumption.session.rollbacks == 1  # la recuperación revirtió lo suyo
+    assert hour_recovery.RECOVERY_SKIPPED_MESSAGE in caplog.messages
+    assert not [r for r in caplog.records if INTERNAL_DETAIL in r.getMessage()]
+
+
+# --- historial (fase 7) -------------------------------------------------------------------
+# `obtenerHistorial` con el servicio real sobre el mismo mundo en memoria, con 56 días de lecturas
+# para cubrir el tramo anterior de Mes (desde el día 1 del mes anterior, DC-29) y las ventanas de
+# referencia. FIXED_NOW es lunes 23/11/2026 15:20: Día = 15 horas, Semana = 1 día, Mes = 23 días.
+
+PERIODS = ("dia", "semana", "mes")
+HISTORY_DAYS = 56
+FIXED_CHARGE = 12_000.0  # COP de cargo fijo mensual de la tarifa de prueba
+HISTORY_ERROR_CODES = frozenset(
+    {"NO_AUTENTICADO", "SIN_PERMISO_VER_HISTORIAL", "NO_ENCONTRADO", "VALIDACION"}
+)
+_LOCAL_NOW = FIXED_NOW.astimezone(TIMEZONE)
+EXPECTED_POINTS = {
+    "dia": _LOCAL_NOW.hour,
+    "semana": _LOCAL_NOW.weekday() + 1,
+    "mes": _LOCAL_NOW.day,
+}
+
+
+@pytest.fixture
+def history_world(consumption: ConsumptionWorld) -> ConsumptionWorld:
+    consumption.days = HISTORY_DAYS
+    consumption.build_household(DEFAULT_PERSONALITY)
+    return consumption
+
+
+def without_history_permission(world: ConsumptionWorld) -> None:
+    world.memberships[:] = [
+        make_membership_row(USER_ID, HOGAR_ID, rol="miembro", ver_historial=False)
+    ]
+
+
+def with_fixed_charge(world: ConsumptionWorld) -> None:
+    world.db.tariffs.clear()
+    world.db.add_tariff(HOGAR_ID, PRICE_KWH, date(2026, 1, 1), cargo_fijo=FIXED_CHARGE)
+
+
+def history_query(periodo: str, zona: str | None = None) -> tuple[tuple[str, str], ...]:
+    return (("periodo", periodo),) if zona is None else (("periodo", periodo), ("zona_id", zona))
+
+
+def _history_cases() -> tuple[ConsumptionCase, ...]:
+    def case(name: str, status: int, **kw: Any) -> ConsumptionCase:
+        kw.setdefault("query", history_query("dia"))
+        return ConsumptionCase(name, HISTORY_OPERATION, status, **kw)
+
+    cases: list[ConsumptionCase] = []
+    for periodo in PERIODS:
+        for name in PERSONALITY_ORDER:
+            short = name.split()[1]
+            setup = with_personality(name)
+            cases.append(case(f"{periodo}-general-{short}", 200, setup=setup,
+                              query=history_query(periodo)))
+            cases.append(case(f"{periodo}-zona-{short}", 200, setup=setup,
+                              query=history_query(periodo, "first")))
+        for scope, zona in (("general", None), ("zona", "first")):
+            query = history_query(periodo, zona)
+            cases.append(case(f"{periodo}-{scope}-sin-tarifa", 200, setup=without_tariff,
+                              query=query))
+            cases.append(case(f"{periodo}-{scope}-cargo-fijo", 200, setup=with_fixed_charge,
+                              query=query))
+    cases += [
+        case("sin-referencia", 200, setup=without_recent_history, query=history_query("mes")),
+        case("sensor-pausado-general", 200, setup=with_paused_first_zone),
+        case("sensor-pausado-zona", 200, setup=with_paused_first_zone,
+             query=history_query("dia", "first")),
+        case("admin-sin-permisos", 200, setup=as_admin_without_permissions),
+        case("sin-token", 401, authenticated=False, codigo="NO_AUTENTICADO"),
+        case("sin-permiso", 403, setup=without_history_permission,
+             codigo="SIN_PERMISO_VER_HISTORIAL"),
+        case("sin-membresia", 404, setup=without_membership, codigo="NO_ENCONTRADO"),
+        case("hogar-ajeno", 404, hogar_id=str(OTHER_HOUSEHOLD_ID), codigo="NO_ENCONTRADO"),
+        case("zona-de-otro-hogar", 404, query=history_query("dia", "foreign"),
+             codigo="NO_ENCONTRADO"),
+        case("zona-inexistente", 404,
+             query=history_query("dia", "00000000-0000-4000-8000-000000000000"),
+             codigo="NO_ENCONTRADO"),
+        case("periodo-invalido", 422, query=history_query("anio"), codigo="VALIDACION"),
+        case("periodo-ausente", 422, query=(), codigo="VALIDACION"),
+        case("zona-no-uuid", 422, query=history_query("dia", "no-es-un-uuid"),
+             codigo="VALIDACION"),
+        case("hogar-no-uuid", 422, hogar_id="no-es-un-uuid", codigo="VALIDACION"),
+    ]
+    return tuple(cases)
+
+
+HISTORY_CASES: tuple[ConsumptionCase, ...] = _history_cases()
+# Casos que la guardia corta antes del servicio o que no pasan la validación de la entrada.
+HISTORY_NOT_REACHING_SERVICE = GUARD_STOPS | {
+    "periodo-invalido",
+    "periodo-ausente",
+    "zona-no-uuid",
+    "hogar-no-uuid",
+}
+
+
+def alphabetical_zone_ids(world: ConsumptionWorld) -> list[str]:
+    """Zonas que cuentan, por nombre visible (RN-XII-03) y, a igual nombre, por id."""
+    zones = [
+        z for z in world.db.zones[HOGAR_ID] if z.estado == "activa" and z.sensor_estado == "activo"
+    ]
+    return [str(z.id) for z in sorted(zones, key=lambda z: (zone_name(z.tipo), str(z.id)))]
+
+
+def assert_history_shape(
+    body: dict[str, Any], world: ConsumptionWorld, periodo: str, zona_id: str | None
+) -> None:
+    """Forma del historial: periodo, granularidad, número de puntos y (v0.2.9) `zonas` por punto
+    solo con General, con los mismos zona_id y en el mismo orden que `participacion_zonas`."""
+    assert body["periodo"] == periodo
+    assert body["granularidad"] == ("hora" if periodo == "dia" else "dia")
+    assert body["zona_id"] == zona_id
+    assert datetime.fromisoformat(body["fin"]) == HOUR_END
+    assert len(body["serie"]) == EXPECTED_POINTS[periodo]
+    if zona_id is not None:
+        assert body["participacion_zonas"] is None
+        assert all(point["zonas"] is None for point in body["serie"])
+        return
+    order = [share["zona_id"] for share in body["participacion_zonas"]]
+    assert order == alphabetical_zone_ids(world)
+    for point in body["serie"]:
+        assert [z["zona_id"] for z in point["zonas"]] == order
+        energies = [z["energia_kwh"] for z in point["zonas"]]
+        if None in energies:
+            assert point["energia_kwh"] is None  # una zona sin lectura deja el punto sin dato
+        else:
+            assert point["energia_kwh"] == pytest.approx(sum(energies))
+
+
+def get_history(
+    client: TestClient, world: ConsumptionWorld, periodo: str, zona: str | None = None
+) -> dict[str, Any]:
+    case = ConsumptionCase("x", HISTORY_OPERATION, 200, query=history_query(periodo, zona))
+    response = send_consumption(client, case, world)
+    assert response.status_code == 200, response.text
+    assert_matches_contract(HISTORY_OPERATION, response)
+    return response.json()
+
+
+def _requested(case: ConsumptionCase, world: ConsumptionWorld) -> tuple[str, str | None]:
+    query = dict(case.query)
+    zona = query.get("zona_id")
+    return query["periodo"], None if zona is None else _zone_placeholder(zona, world)
+
+
+@pytest.mark.parametrize("case", HISTORY_CASES, ids=lambda c: f"{c.status}-{c.name}")
+def test_history_response_matches_contract_schema(
+    case: ConsumptionCase, client: TestClient, history_world: ConsumptionWorld
+) -> None:
+    world = history_world
+    if case.setup is not None:
+        case.setup(world)
+    response = send_consumption(client, case, world)
+    assert response.status_code == case.status, response.text
+    assert_matches_contract(HISTORY_OPERATION, response)
+    assert all(s is world.session for s in world.guard_sessions)
+    assert all(s is world.session for s in world.data_sessions)
+    assert world.session.commits == 0  # solo lectura
+    if case.status == 200:
+        periodo, zona_id = _requested(case, world)
+        assert_history_shape(response.json(), world, periodo, zona_id)
+        assert world.guard_sessions == [world.session]
+        assert world.db.names()[0] == "recovery"  # recuperación primero (RN-IV-05, DC-34)
+        assert world.db.calls[0][2] == FIXED_NOW
+        return
+    assert response.json()["codigo"] == case.codigo
+    assert (response.headers.get("WWW-Authenticate") == "Bearer") == (case.status == 401)
+    if case.name in HISTORY_NOT_REACHING_SERVICE:
+        assert world.db.calls == []  # no llegó al servicio
+    if case.name in {"zona-de-otro-hogar", "zona-inexistente"}:
+        assert "readings" not in world.db.names()  # 404 antes de leer lecturas
+
+
+def test_history_cases_cover_every_code_of_the_operation() -> None:
+    codes = {c.codigo for c in HISTORY_CASES} - {None}
+    assert codes == HISTORY_ERROR_CODES
+
+
+@pytest.mark.parametrize("zona", [None, "first"], ids=["general", "zona"])
+@pytest.mark.parametrize("periodo", PERIODS)
+def test_history_router_passes_guard_session_and_query_to_service(
+    periodo: str,
+    zona: str | None,
+    client: TestClient,
+    history_world: ConsumptionWorld,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """La MISMA sesión llega a la guardia y al servicio, con el usuario del token, el hogar de la
+    ruta, el periodo y la zona de la consulta, y sin `now` (lo decide el servicio)."""
+    received: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    real = consumption_service.get_history
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        received.append((args, kwargs))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(consumption_service, "get_history", spy)
+    get_history(client, history_world, periodo, zona)
+    ((args, kwargs),) = received
+    assert kwargs == {}
+    zona_id = None if zona is None else history_world.first_zone_id
+    assert args == (history_world.session, USER_ID, HOGAR_ID, periodo, zona_id)
+    assert args[0] is history_world.session
+    assert history_world.guard_sessions == [history_world.session]
+
+
+@pytest.mark.parametrize("zona", [None, "first"], ids=["general", "zona"])
+@pytest.mark.parametrize("periodo", PERIODS)
+def test_history_without_tariff_has_null_costs(
+    periodo: str, zona: str | None, client: TestClient, history_world: ConsumptionWorld
+) -> None:
+    """RN-XI-08, RN-XIII-05: sin tarifa, `tarifa_vigente = false` y todos los COP null."""
+    without_tariff(history_world)
+    body = get_history(client, history_world, periodo, zona)
+    assert body["tarifa_vigente"] is False
+    assert body["total_kwh"] > 0
+    assert all(p["energia_kwh"] is not None and p["costo_cop"] is None for p in body["serie"])
+    assert body["costo"]["costo_cop"] is None
+    assert body["costo"]["proyeccion_cierre_cop"] is None
+    assert body["costo"]["incluye_cargo_fijo"] is False
+
+
+@pytest.mark.parametrize("zona", [None, "first"], ids=["general", "zona"])
+@pytest.mark.parametrize("periodo", PERIODS)
+def test_history_with_tariff_and_fixed_charge(
+    periodo: str, zona: str | None, client: TestClient, history_world: ConsumptionWorld
+) -> None:
+    """RN-XIII-05, RN-V-01, RN-V-02, DC-30: cada punto al precio de su fecha; el cargo fijo solo
+    entra en la proyección de Mes con el filtro General."""
+    with_fixed_charge(history_world)
+    body = get_history(client, history_world, periodo, zona)
+    general = zona is None
+    assert body["tarifa_vigente"] is True
+    assert body["comparacion"]["anterior_kwh"] is not None  # los datos cubren el tramo anterior
+    for point in body["serie"]:
+        assert point["costo_cop"] == pytest.approx(point["energia_kwh"] * PRICE_KWH)
+    cost = body["costo"]
+    assert cost["costo_cop"] == pytest.approx(body["total_kwh"] * PRICE_KWH)
+    assert cost["incluye_cargo_fijo"] is (periodo == "mes" and general)
+    assert cost["proyeccion_cierre_cop"] is not None
+    floor = cost["costo_cop"] + (FIXED_CHARGE if cost["incluye_cargo_fijo"] else 0.0)
+    assert cost["proyeccion_cierre_cop"] >= floor
+
+
+@pytest.mark.parametrize("periodo", PERIODS)
+def test_history_general_shares_add_up_to_100(
+    periodo: str, client: TestClient, history_world: ConsumptionWorld
+) -> None:
+    """RN-XIII-04: la participación del filtro General suma 100, su energía suma el total y el
+    nombre de cada zona es el visible de su tipo (RN-XII-03)."""
+    body = get_history(client, history_world, periodo)
+    shares = body["participacion_zonas"]
+    assert sum(s["participacion_pct"] for s in shares) == pytest.approx(100.0)
+    assert sum(s["energia_kwh"] for s in shares) == pytest.approx(body["total_kwh"])
+    tipos = {str(zona_id): tipo for tipo, zona_id in history_world.zone_ids.items()}
+    assert all(s["nombre"] == zone_name(tipos[s["zona_id"]]) for s in shares)
+
+
+@pytest.mark.parametrize(
+    "failure", [recovery_raises, recovery_lock_fails], ids=["error", "candado"]
+)
+@pytest.mark.parametrize("zona", [None, "first"], ids=["general", "zona"])
+def test_history_failed_hour_recovery_answers_200_with_stored_data(
+    zona: str | None,
+    failure: Callable[[ConsumptionWorld, pytest.MonkeyPatch], None],
+    client: TestClient,
+    history_world: ConsumptionWorld,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """RN-IV-05, DC-34: si la recuperación falla, 200 (no 500) con lo guardado; la hora que no se
+    pudo completar sale sin dato (null, nunca 0). Sin detalles internos en la respuesta."""
+    world = history_world
+    without_evaluated_hour(world)  # la hora que la recuperación habría generado
+    failure(world, monkeypatch)
+    with caplog.at_level("WARNING", logger=hour_recovery.__name__):
+        body = get_history(client, world, "dia", zona)
+    last = body["serie"][-1]
+    assert datetime.fromisoformat(last["inicio"]) == HOUR_START
+    assert last["energia_kwh"] is None
+    assert last["costo_cop"] is None
+    assert body["costo"]["costo_cop"] is None  # periodo incompleto: sin costo parcial
+    if zona is None:
+        (missing,) = [z for z in last["zonas"] if z["zona_id"] == str(world.first_zone_id)]
+        assert missing["energia_kwh"] is None
+    assert INTERNAL_DETAIL not in str(body)
+    assert world.data_sessions, "la recuperación no se llamó"
+    assert all(s is world.session for s in world.data_sessions)
+    assert world.session.commits == 0
+    if failure is recovery_lock_fails:
+        assert world.session.rollbacks == 1
     assert hour_recovery.RECOVERY_SKIPPED_MESSAGE in caplog.messages
     assert not [r for r in caplog.records if INTERNAL_DETAIL in r.getMessage()]
 

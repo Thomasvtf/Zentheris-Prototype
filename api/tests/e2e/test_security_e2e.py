@@ -10,12 +10,13 @@ Cuando los guardias dejan pasar, responde el esqueleto del servicio: 501 `TODO(<
 Eso prueba que el guardia no bloquea, no que la operación devuelva 200: el 200 de P-06 y los
 valores ocultos de P-07 se prueban cuando cada servicio exista.
 
-Operaciones ya implementadas (`IMPLEMENTED_OPERATIONS`, fase 6: las 3 de consumo actual): con
-la guardia superada responden 200 con un cuerpo válido según el contrato. Para que lleguen al
-servicio sin base, `call_api` instala los dobles de `app.data` de
-`tests/services/consumption_fakes.py` (un hogar con una zona y sin lecturas; la recuperación de
-horas es un espía) y los umbrales de `make_test_settings()`. La prueba sigue siendo de la
-guardia: el contenido de la respuesta se prueba en `test_consumption_e2e.py`.
+Operaciones ya implementadas (`IMPLEMENTED_OPERATIONS`, fase 6: las 3 de consumo actual; fase
+7: `obtenerHistorial`): con la guardia superada responden 200 con un cuerpo válido según el
+contrato. Para que lleguen al servicio sin base, `call_api` instala los dobles de `app.data` de
+`tests/services/consumption_fakes.py` (un hogar con una zona, sin lecturas ni tarifas; incluye
+`tariffs_data.list_tariffs_between`; la recuperación de horas es un espía) y los umbrales de
+`make_test_settings()`. La prueba sigue siendo de la guardia: el contenido de la respuesta se
+prueba en `test_consumption_e2e.py` y `test_history_e2e.py`.
 
 Los 401 llevan `codigo` = `NO_AUTENTICADO` (con `WWW-Authenticate: Bearer`) y el 404 sin
 membresía `NO_ENCONTRADO`; ambos cuerpos validan contra el esquema `Error` del contrato.
@@ -196,7 +197,7 @@ FOREIGN_PRIVATE_KEY = ec.generate_private_key(ec.SECP256R1())
 
 # Operaciones con servicio real: la guardia superada da 200 (no el 501 del esqueleto).
 IMPLEMENTED_OPERATIONS: frozenset[str] = frozenset(
-    {"obtenerConsumoActual", "obtenerConsumoZonas", "obtenerConsumoZona"}
+    {"obtenerConsumoActual", "obtenerConsumoZonas", "obtenerConsumoZona", "obtenerHistorial"}
 )
 
 ERROR_BODY_KEYS = {"codigo", "mensaje", "detalles"}
@@ -348,7 +349,7 @@ def call_api(e2e_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> CallApi
 
 
 def install_implemented_operation_data(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Dobles de `app.data` para las operaciones de consumo (fase 6), sin base ni `.env`.
+    """Dobles de `app.data` para las operaciones de consumo (fases 6 y 7), sin base ni `.env`.
 
     `HOGAR_ID` tiene una zona activa (la de `OTHER_PATH_IDS["zona_id"]`, así el detalle no da
     404) sin lecturas: la respuesta es 200 con «sin datos». La recuperación es un espía.

@@ -1,19 +1,55 @@
+/**
+ * Barra inferior (BottomNav.md; Figma `Navegacion/Barra-inferior` 4083:3427).
+ *
+ * - Cinco secciones con íconos de Lucide: house, clock (DC-13), layout-grid, lightbulb y settings.
+ * - Alto `bottomNav-height` (64) más el área segura inferior; fondo `background-surface` y borde
+ *   superior `border-subtle`.
+ * - Inactiva: ícono 24 y etiqueta en `text-muted`. Activa: contenedor 48 × 28 `accent-soft` con
+ *   `radius.sm`, ícono `accent-primary` y etiqueta `text-accent`. Etiquetas `body-xs-medium-10`.
+ * - Las subpantallas de Configuración y el catálogo de componentes no son pestañas (`href: null`)
+ *   y ocultan la barra, como en Figma A7.2 a A9.6.
+ *
+ * TODO(pendiente: sesión 10): al crear los grupos (auth), (onboarding) y (tabs), las pestañas pasan a
+ * `(tabs)/_layout.tsx` y las subpantallas a un Stack encima (GUIA-2 §Navegación).
+ */
+import React from 'react';
+import { StyleSheet, View } from 'react-native';
 import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Clock, House, LayoutGrid, Lightbulb, Settings } from 'lucide-react-native';
+import type { LucideIcon } from 'lucide-react-native';
 
-// Importa los SVGs exportados de Figma
-import IconoPanel from '../../assets/icons/home.svg';
-import IconoPanelActivo from '../../assets/icons/home_active.svg';
-import IconoHistorial from '../../assets/icons/historial.svg';
-import IconoHistorialActivo from '../../assets/icons/historial_active.svg';
-import IconoZonas from '../../assets/icons/zonas.svg';
-import IconoZonasActivo from '../../assets/icons/zonas_active.svg';
-import IconoConsejos from '../../assets/icons/consejos.svg';
-import IconoConsejosActivo from '../../assets/icons/consejos_active.svg';
-import IconoConfiguracion from '../../assets/icons/configuracion.svg';
-import IconoConfiguracionActivo from '../../assets/icons/configuracion_active.svg';
+import { colors, fontFamilyFor, radius, sizes, typography } from '@/theme';
+import { t } from '@/texts';
+
+const ICON_SIZE = 24;
+const LABEL = typography['body-xs-medium-10'];
+
+/** Ícono de la pestaña; la activa va dentro del contenedor `accent-soft` de 48 × 28. */
+function NavIcon({ icono: Icono, focused }: { icono: LucideIcon; focused: boolean }) {
+  return (
+    <View style={[styles.iconBox, focused && styles.iconBoxActive]}>
+      <Icono size={ICON_SIZE} color={focused ? colors['accent-primary'] : colors['text-muted']} />
+    </View>
+  );
+}
+
+/** Opciones de una pestaña visible: etiqueta del catálogo e ícono. */
+function tab(labelKey: string, icono: LucideIcon) {
+  const title = t(labelKey);
+  return {
+    title,
+    tabBarAccessibilityLabel: title,
+    tabBarIcon: ({ focused }: { focused: boolean }) => <NavIcon icono={icono} focused={focused} />,
+  };
+}
+
+/** Rutas que no son pestañas: no aparecen en la barra y la ocultan. */
+const HIDDEN = { href: null, tabBarStyle: { display: 'none' as const } };
 
 export default function Layout() {
+  const insets = useSafeAreaInsets();
   return (
     <>
       <StatusBar style="light" />
@@ -22,121 +58,47 @@ export default function Layout() {
         screenOptions={{
           headerShown: false,
           tabBarLabelPosition: 'below-icon',
+          tabBarActiveTintColor: colors['text-accent'],
+          tabBarInactiveTintColor: colors['text-muted'],
           tabBarStyle: {
-            backgroundColor: '#162B25',
-            borderTopColor: '#FFFFFF14',
-            height: 70,
-            paddingBottom: 8,
-            paddingTop: 8,
+            backgroundColor: colors['background-surface'],
+            borderTopColor: colors['border-subtle'],
+            height: sizes['bottomNav-height'] + insets.bottom,
+            paddingBottom: insets.bottom,
           },
-          tabBarActiveTintColor: '#00E676',
-          tabBarInactiveTintColor: '#64748B',
           tabBarLabelStyle: {
-            fontSize: 11,
-            fontWeight: '500',
-            marginTop: 2,
+            fontFamily: fontFamilyFor(LABEL.family, LABEL.fontWeight),
+            fontSize: LABEL.fontSize,
+            lineHeight: LABEL.lineHeight,
           },
         }}
       >
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Principal',
-            tabBarIcon: ({ focused }) => focused ? (
-              <IconoPanelActivo width={50} height={50}/>
-            ) : (
-              <IconoPanel width={20} height={20}/>
-            ),
-          }}
-        />
-        <Tabs.Screen name="catalogo-componentes" options={{ href: null }} />
-        <Tabs.Screen
-          name="historial"
-          options={{
-            title: 'Historial',
-            tabBarIcon: ({ focused }) => focused ? (
-              <IconoHistorialActivo width={50 } height={50}  />
-            ) : (
-              <IconoHistorial width={20} height={20}  />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="zonas"
-          options={{
-            title: 'Zonas',
-            tabBarIcon: ({ focused }) => focused ? (
-              <IconoZonasActivo width={50} height={50}  />
-            ) : (
-              <IconoZonas width={20} height={20}  />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="consejos"
-          options={{
-            title: 'Consejos',
-            tabBarIcon: ({ focused }) => focused ? (
-              <IconoConsejosActivo width={50} height={50}  />
-            ) : (
-              <IconoConsejos width={20} height={20}  />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="configuracion"
-          options={{
-            title: 'Configuración',
-            tabBarIcon: ({ focused }) => focused ? (
-              <IconoConfiguracionActivo width={50} height={50}  />
-            ) : (
-              <IconoConfiguracion width={20} height={20}  />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="editar-perfil"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="cambiar-contrasena"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="gestionar-correo"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="establecer-meta"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="configurar-tarifa"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="fuentes-datos"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="miembros"
-          options={{
-            href: null,
-          }}
-        />
+        <Tabs.Screen name="index" options={tab('nav.principal', House)} />
+        <Tabs.Screen name="historial" options={tab('nav.historial', Clock)} />
+        <Tabs.Screen name="zonas" options={tab('nav.zonas', LayoutGrid)} />
+        <Tabs.Screen name="consejos" options={tab('nav.consejos', Lightbulb)} />
+        <Tabs.Screen name="configuracion" options={tab('nav.configuracion', Settings)} />
+
+        <Tabs.Screen name="catalogo-componentes" options={HIDDEN} />
+        <Tabs.Screen name="editar-perfil" options={HIDDEN} />
+        <Tabs.Screen name="cambiar-contrasena" options={HIDDEN} />
+        <Tabs.Screen name="gestionar-correo" options={HIDDEN} />
+        <Tabs.Screen name="establecer-meta" options={HIDDEN} />
+        <Tabs.Screen name="configurar-tarifa" options={HIDDEN} />
+        <Tabs.Screen name="fuentes-datos" options={HIDDEN} />
+        <Tabs.Screen name="miembros" options={HIDDEN} />
       </Tabs>
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  iconBox: {
+    width: sizes['iconButtonLg-size'],
+    height: ICON_SIZE + 4,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconBoxActive: { backgroundColor: colors['accent-soft'] },
+});

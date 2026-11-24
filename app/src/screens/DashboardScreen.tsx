@@ -8,16 +8,14 @@
  * - Estado = color + ícono + palabra. Rojo y amarillo solo para severidad.
  * - Colores, espacios, radios y tipografía desde @/theme; textos con t(); cifras con @/format.
  *
- * TODO(pendiente: componentes del sistema de diseño): src/components/ aún no tiene
- * StatusBadge, ProgressBar, Chip, Skeleton, StateMessage, InlineNotice, ScreenHeader,
- * ConsumptionGauge ni ConsumptionRing con las props de docs/diseno/componentes/index.d.ts.
- * Aquí se implementan como piezas locales de presentación con esas mismas props, para
- * moverlas a src/components/ cuando se apruebe ese cambio.
+ * - StatusBadge, ProgressBar, Chip, Skeleton, StateMessage, InlineNotice y ScreenHeader vienen
+ *   de @/components.
+ *
+ * TODO(pendiente: componentes del sistema de diseño): ConsumptionGauge y ConsumptionRing siguen
+ * aquí como piezas locales; pasan a src/components/ con las props de index.d.ts en otro cambio.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  AccessibilityInfo,
-  Animated,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -31,35 +29,46 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import {
   Bath,
   Bed,
-  Bell,
   Car,
-  CircleAlert,
-  CircleCheck,
-  CircleX,
-  Clock,
-  Coins,
   CookingPot,
   DoorClosed,
   Donut,
   Fence,
   Gauge as GaugeIcon,
-  Info,
   LayoutGrid,
   List,
   Monitor,
-  Shield,
   Sofa,
   TrendingDown,
   TrendingUp,
-  TriangleAlert,
   WashingMachine,
   Zap,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 
-import { bogotaHour, DECIMALES, formatCOP, formatNumber, formatPercent, hourLabel, intervalLabel } from '@/format';
+import {
+  bogotaHour,
+  DECIMALES,
+  formatCOP,
+  formatNumber,
+  formatPercent,
+  hourLabel,
+  intervalLabel,
+} from '@/format';
 import { colors, radius, sizes, spacing, textStyle } from '@/theme';
-import { plural, t } from '@/texts';
+import { t } from '@/texts';
+
+import {
+  Chip,
+  estadoTokens,
+  Icon,
+  InlineNotice,
+  ProgressBar,
+  ScreenHeader,
+  Skeleton,
+  StateMessage,
+  StatusBadge,
+} from '@/components';
 
 import { useDashboardData } from './useDashboardData';
 import type {
@@ -104,52 +113,6 @@ function valueParts(kw: number | null, costCop: number | null, unit: Unit, energ
     : { value: formatNumber(kw, DECIMALES.kW), unit: t('comun.kw') };
 }
 
-/** Colores de severidad desde los tokens; los estados sin severidad van en neutro. */
-function stateTokens(estado: ConsumptionState) {
-  switch (estado) {
-    case 'normal':
-      return {
-        bg: colors['status-success-bg'],
-        border: colors['status-success-border'],
-        text: colors['status-success-text'],
-        icon: colors['status-success-default'],
-        chart: colors['chart-series1'],
-        word: colors['text-accentSoft'],
-        Glyph: CircleCheck,
-      };
-    case 'elevado':
-      return {
-        bg: colors['status-warning-bg'],
-        border: colors['status-warning-border'],
-        text: colors['status-warning-text'],
-        icon: colors['status-warning-default'],
-        chart: colors['chart-series3'],
-        word: colors['text-warning'],
-        Glyph: TriangleAlert,
-      };
-    case 'critico':
-      return {
-        bg: colors['status-error-bg'],
-        border: colors['status-error-border'],
-        text: colors['text-error'],
-        icon: colors['status-error-default'],
-        chart: colors['chart-series4'],
-        word: colors['text-error'],
-        Glyph: CircleAlert,
-      };
-    default:
-      return {
-        bg: colors['background-surfaceAlt'],
-        border: colors['border-subtle'],
-        text: colors['text-muted'],
-        icon: colors['text-muted'],
-        chart: colors['neutral-700'],
-        word: colors['text-muted'],
-        Glyph: estado === 'sin_datos' ? Clock : Info,
-      };
-  }
-}
-
 /** Ficha ConsumptionGauge: proporcion = min(potencia_kw ÷ (referencia_kw × 1,6), 1). */
 function gaugeProportion(actual: CurrentConsumption['actual']): number {
   const { potencia_kw: kw, referencia_kw: ref, estado } = actual;
@@ -176,72 +139,17 @@ const ZONE_ICONS: Record<ZoneConsumptionItem['tipo'], LucideIcon> = {
 
 /* ─────────────────────── Piezas de presentación ─────────────────────────── */
 
-function StatusBadge({ estado, icono = true }: { estado: Severity; icono?: boolean }) {
-  const tk = stateTokens(estado);
-  return (
-    <View style={[styles.badge, { backgroundColor: tk.bg, borderColor: tk.border }]}>
-      {icono && <tk.Glyph size={16} color={tk.icon} />}
-      <Text style={[styles.badgeText, { color: tk.text }]}>{t(`estado.palabra.${estado}`)}</Text>
-    </View>
-  );
-}
-
 /** Bloque de estado de la card (fondo y borde por severidad; neutro sin severidad). */
 function StateBlock({ estado, titulo, cuerpo }: { estado: ConsumptionState; titulo: string; cuerpo?: string }) {
-  const tk = stateTokens(estado);
+  const tk = estadoTokens(estado);
   return (
     <View style={[styles.stateBlock, { backgroundColor: tk.bg, borderColor: tk.border }]}>
-      <tk.Glyph size={16} color={tk.icon} />
+      <Icon name={tk.glyph} size={16} color={tk.icon} />
       <View style={styles.flex}>
         <Text style={[styles.stateBlockTitle, { color: tk.text }]}>{titulo}</Text>
         {cuerpo ? <Text style={styles.mutedXs}>{cuerpo}</Text> : null}
       </View>
     </View>
-  );
-}
-
-function ProgressBar({ porcentaje, estado, etiqueta, valorTexto }: { porcentaje: number; estado: Severity | 'neutro'; etiqueta: string; valorTexto: string }) {
-  const clamped = Math.max(0, Math.min(100, porcentaje));
-  const fill =
-    estado === 'normal'
-      ? colors['status-success-default']
-      : estado === 'elevado'
-        ? colors['status-warning-default']
-        : estado === 'critico'
-          ? colors['status-error-default']
-          : colors['chart-series1'];
-  return (
-    <View
-      accessible
-      accessibilityRole="progressbar"
-      accessibilityLabel={`${etiqueta}, ${valorTexto}`}
-      accessibilityValue={{ min: 0, max: 100, now: Math.round(clamped) }}
-    >
-      <View style={styles.progressRow}>
-        <Text style={[styles.mutedXs, styles.flex]} numberOfLines={1}>
-          {etiqueta}
-        </Text>
-        <Text style={styles.progressValue}>{valorTexto}</Text>
-      </View>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${clamped}%`, backgroundColor: fill }]} />
-      </View>
-    </View>
-  );
-}
-
-function Chip({ activo, icono: Icono, onPress, children }: { activo: boolean; icono: LucideIcon; onPress: () => void; children: string }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="radio"
-      accessibilityState={{ checked: activo }}
-      hitSlop={spacing['8']}
-      style={[styles.chip, activo && styles.chipActive]}
-    >
-      <Icono size={20} color={activo ? colors['text-accent'] : colors['text-muted']} />
-      <Text style={[styles.chipText, { color: activo ? colors['text-accent'] : colors['text-muted'] }]}>{children}</Text>
-    </Pressable>
   );
 }
 
@@ -256,104 +164,6 @@ function ViewToggle({ activo, icono: Icono, label, onPress }: { activo: boolean;
     >
       <Icono size={20} color={activo ? colors['accent-primary'] : colors['text-muted']} />
     </Pressable>
-  );
-}
-
-function ScreenHeader({ campana, noLeidas, onCampana }: { campana: boolean; noLeidas: number | null; onCampana?: () => void }) {
-  const unread = noLeidas ?? 0;
-  return (
-    <View style={styles.header}>
-      <View style={styles.headerSide} />
-      <Text style={styles.headerTitle} accessibilityRole="header">
-        {t('panel.encabezado')}
-      </Text>
-      <View style={styles.headerSide}>
-        {campana && (
-          <Pressable
-            onPress={onCampana}
-            accessibilityRole="button"
-            accessibilityLabel={plural('a11y.campana_no_leidas', unread)}
-            style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}
-          >
-            <Bell size={24} color={colors['text-muted']} />
-            {unread > 0 && <View style={styles.unreadDot} />}
-          </Pressable>
-        )}
-      </View>
-    </View>
-  );
-}
-
-function StateMessage({ icono: Icono, titulo, descripcion }: { icono: LucideIcon; titulo: string; descripcion?: string }) {
-  return (
-    <View style={[styles.card, styles.stateMessage]}>
-      <Icono size={32} color={colors['text-muted']} />
-      <Text style={styles.stateMessageTitle}>{titulo}</Text>
-      {descripcion ? <Text style={[styles.mutedXs, styles.center]}>{descripcion}</Text> : null}
-    </View>
-  );
-}
-
-function InlineNotice({ titulo, descripcion, onReintentar }: { titulo: string; descripcion?: string; onReintentar: () => void }) {
-  return (
-    <View style={styles.notice} accessibilityRole="alert">
-      <View style={styles.noticeRow}>
-        <CircleX size={16} color={colors['status-error-default']} />
-        <View style={styles.flex}>
-          <Text style={[styles.stateBlockTitle, { color: colors['status-error-text'] }]}>{titulo}</Text>
-          {descripcion ? <Text style={styles.mutedXs}>{descripcion}</Text> : null}
-        </View>
-      </View>
-      <Pressable onPress={onReintentar} accessibilityRole="button" hitSlop={spacing['12']} style={styles.noticeAction}>
-        <Text style={styles.linkText}>{t('comun.reintentar')}</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-/** Pulso suave; se detiene con «reducir movimiento» (ficha Skeleton). */
-function useSkeletonPulse() {
-  const [opacity] = useState(() => new Animated.Value(1));
-  useEffect(() => {
-    let loop: Animated.CompositeAnimation | null = null;
-    let cancelled = false;
-    AccessibilityInfo.isReduceMotionEnabled()
-      .then((reduce) => {
-        if (cancelled || reduce) return;
-        loop = Animated.loop(
-          Animated.sequence([
-            Animated.timing(opacity, { toValue: 0.5, duration: 700, useNativeDriver: true }),
-            Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
-          ]),
-        );
-        loop.start();
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-      loop?.stop();
-    };
-  }, [opacity]);
-  return opacity;
-}
-
-function Skeleton({ tamano = 'estandar' }: { tamano?: 'estandar' | 'compacta' }) {
-  const opacity = useSkeletonPulse();
-  const compact = tamano === 'compacta';
-  return (
-    <Animated.View style={[styles.card, { opacity }]} accessible accessibilityLabel={t('comun.cargando')}>
-      <View style={styles.cardHeaderRow}>
-        <View style={[styles.skeletonBlock, styles.skeletonIcon]} />
-        <View style={[styles.skeletonBlock, styles.skeletonLine, styles.flex]} />
-      </View>
-      <View style={[styles.skeletonBlock, styles.skeletonValue]} />
-      {!compact && (
-        <>
-          <View style={[styles.skeletonBlock, styles.skeletonLine]} />
-          <View style={[styles.skeletonBlock, styles.skeletonStateBlock]} />
-        </>
-      )}
-    </Animated.View>
   );
 }
 
@@ -389,7 +199,7 @@ const GAUGE_STROKE = Math.round(GAUGE_SIZE * 0.16);
 
 /** Ficha ConsumptionGauge: semicírculo que se llena de izquierda a derecha. */
 function ConsumptionGauge({ valor, unidad, estado, proporcion, leyenda }: ConsumptionChartProps) {
-  const tk = stateTokens(estado);
+  const tk = estadoTokens(estado);
   const r = (GAUGE_SIZE - GAUGE_STROKE) / 2;
   const cx = GAUGE_SIZE / 2;
   const cy = r + GAUGE_STROKE / 2;
@@ -403,7 +213,7 @@ function ConsumptionGauge({ valor, unidad, estado, proporcion, leyenda }: Consum
         {proporcion > 0 && (
           <Path
             d={arc}
-            stroke={tk.chart}
+            stroke={tk.fill}
             strokeWidth={GAUGE_STROKE}
             fill="none"
             strokeDasharray={`${length * proporcion} ${length}`}
@@ -424,7 +234,7 @@ const RING_STROKE = Math.round(RING_SIZE * 0.12);
 
 /** Ficha ConsumptionRing: anillo de un solo valor que empieza a las 12 en sentido horario. */
 function ConsumptionRing({ valor, unidad, estado, proporcion, leyenda }: ConsumptionChartProps) {
-  const tk = stateTokens(estado);
+  const tk = estadoTokens(estado);
   const r = (RING_SIZE - RING_STROKE) / 2;
   const c = RING_SIZE / 2;
   const circumference = 2 * Math.PI * r;
@@ -439,7 +249,7 @@ function ConsumptionRing({ valor, unidad, estado, proporcion, leyenda }: Consump
               cx={c}
               cy={c}
               r={r}
-              stroke={tk.chart}
+              stroke={tk.fill}
               strokeWidth={RING_STROKE}
               fill="none"
               strokeDasharray={`${circumference * proporcion} ${circumference}`}
@@ -538,11 +348,11 @@ function ChartCard({ data, unit, onUnit }: { data: CurrentConsumption; unit: Uni
       </View>
       {view === 'gauge' ? <ConsumptionGauge {...chartProps} /> : <ConsumptionRing {...chartProps} />}
       <View style={styles.chipRow} accessibilityRole="radiogroup">
-        <Chip activo={unit === 'kW'} icono={Zap} onPress={() => onUnit('kW')}>
+        <Chip activo={unit === 'kW'} icono="zap" onClick={() => onUnit('kW')}>
           {t('comun.kw')}
         </Chip>
         {data.tarifa_vigente && (
-          <Chip activo={unit === 'COP'} icono={Coins} onPress={() => onUnit('COP')}>
+          <Chip activo={unit === 'COP'} icono="coins" onClick={() => onUnit('COP')}>
             {t('comun.cop')}
           </Chip>
         )}
@@ -569,7 +379,6 @@ function TodayCard({ data, unit }: { data: CurrentConsumption; unit: Unit }) {
           porcentaje={pct}
           estado={severity}
           etiqueta={t(today.muestra_limite ? 'panel.progreso_meta' : 'panel.progreso_promedio')}
-          valorTexto={formatPercent(pct)}
         />
       )}
       {today.muestra_limite && (
@@ -592,10 +401,10 @@ function TodayCard({ data, unit }: { data: CurrentConsumption; unit: Unit }) {
 
 function ZoneStateWord({ estado }: { estado: ConsumptionState }) {
   if (isSeverity(estado)) return <StatusBadge estado={estado} />;
-  const tk = stateTokens(estado);
+  const tk = estadoTokens(estado);
   return (
     <View style={styles.neutralState}>
-      <tk.Glyph size={16} color={tk.icon} />
+      <Icon name={tk.glyph} size={16} color={tk.icon} />
       <Text style={[styles.badgeText, { color: tk.text }]}>{t(`estado.palabra.${estado}`)}</Text>
     </View>
   );
@@ -605,7 +414,7 @@ function ZoneCard({ zone, unit, compact }: { zone: ZoneConsumptionItem; unit: Un
   const Icono = ZONE_ICONS[zone.tipo];
   const name = t(`zona.${zone.tipo}`);
   const parts = valueParts(zone.potencia_kw, zone.costo_cop, unit);
-  const tk = stateTokens(zone.estado_participacion);
+  const tk = estadoTokens(zone.estado_participacion);
   const severity = isSeverity(zone.estado_participacion) ? zone.estado_participacion : 'neutro';
   return (
     <View style={[styles.card, compact ? styles.zoneCompact : styles.zoneLong]}>
@@ -616,17 +425,16 @@ function ZoneCard({ zone, unit, compact }: { zone: ZoneConsumptionItem; unit: Un
         <Text style={[styles.cardTitle, styles.flex]} numberOfLines={1}>
           {name}
         </Text>
-        {compact ? <tk.Glyph size={16} color={tk.icon} /> : <ZoneStateWord estado={zone.estado_participacion} />}
+        {compact ? <Icon name={tk.glyph} size={16} color={tk.icon} /> : <ZoneStateWord estado={zone.estado_participacion} />}
       </View>
       <View style={styles.metricRow}>
         <Text style={compact ? styles.zoneValueCompact : styles.zoneValue}>{parts.value}</Text>
         {parts.unit ? <Text style={styles.metricUnit}>{parts.unit}</Text> : null}
       </View>
       <ProgressBar
-        porcentaje={zone.participacion_pct ?? 0}
+        porcentaje={zone.participacion_pct}
         estado={severity}
         etiqueta={t(`estado.palabra.${zone.estado_participacion}`)}
-        valorTexto={formatPercent(zone.participacion_pct)}
       />
     </View>
   );
@@ -651,7 +459,7 @@ function ZonesSection({ data, unit }: { data: ZonesConsumption; unit: Unit }) {
         </View>
       </View>
       {zones.length === 0 ? (
-        <StateMessage icono={Clock} titulo={t('estado.zona_participacion.sin_datos.titulo')} descripcion={t('estado.zona_participacion.sin_datos.cuerpo')} />
+        <StateMessage tipo="sin_datos" titulo={t('estado.zona_participacion.sin_datos.titulo')} descripcion={t('estado.zona_participacion.sin_datos.cuerpo')} />
       ) : (
         <View style={view === 'compacta' ? styles.zonesGrid : undefined}>
           {zones.map((zone) => (
@@ -673,7 +481,7 @@ function DashboardContent({ data }: { data: DashboardData }) {
   if (!data.canSeeConsumption || !data.current || !data.zones) {
     return (
       <StateMessage
-        icono={Shield}
+        tipo="sin_permiso"
         titulo={t('error.sin_permiso_ver_consumo.titulo')}
         descripcion={t('error.sin_permiso_ver_consumo.cuerpo')}
       />
@@ -705,7 +513,13 @@ export function DashboardScreen({ hogarId = null, onOpenAlerts, mockScenario }: 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
-      <ScreenHeader campana={ready?.canReceiveAlerts ?? false} noLeidas={ready?.unreadAlerts ?? null} onCampana={onOpenAlerts} />
+      <ScreenHeader
+        titulo={t('panel.encabezado')}
+        onAtras={false}
+        campana={ready?.canReceiveAlerts ?? false}
+        noLeidas={ready?.unreadAlerts ?? 0}
+        onCampana={onOpenAlerts}
+      />
       <ScrollView
         style={styles.flex}
         contentContainerStyle={styles.content}
@@ -731,7 +545,7 @@ export function DashboardScreen({ hogarId = null, onOpenAlerts, mockScenario }: 
         )}
 
         {state.status === 'error' && (
-          <InlineNotice titulo={t(`${state.errorKey}.titulo`)} descripcion={t(`${state.errorKey}.cuerpo`)} onReintentar={retry} />
+          <InlineNotice tono="error" titulo={t(`${state.errorKey}.titulo`)} descripcion={t(`${state.errorKey}.cuerpo`)} onReintentar={retry} />
         )}
 
         {ready && <DashboardContent data={ready} />}
@@ -742,14 +556,9 @@ export function DashboardScreen({ hogarId = null, onOpenAlerts, mockScenario }: 
 
 /* ─────────────────────────────── Estilos ────────────────────────────────── */
 
-/** Alto de la cabecera en Figma (64): el token `topBar-height` vale 56, así que se compone sin
- * tocar el token (decisión del 24/11/2026). */
-const HEADER_HEIGHT = sizes['iconButtonLg-size'] + spacing['16'];
-
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors['background-default'] },
   flex: { flex: 1 },
-  center: { textAlign: 'center' },
   content: {
     paddingHorizontal: spacing['16'],
     paddingBottom: spacing['40'],
@@ -757,33 +566,6 @@ const styles = StyleSheet.create({
   },
 
   // Cabecera (ScreenHeader)
-  header: {
-    height: HEADER_HEIGHT,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing['4'],
-    borderBottomWidth: 1,
-    borderBottomColor: colors['border-subtle'],
-  },
-  headerSide: { width: sizes['iconButtonLg-size'], alignItems: 'center' },
-  headerTitle: { ...textStyle('display-l-24'), color: colors['text-primary'], flex: 1, textAlign: 'center' },
-  headerButton: {
-    width: sizes['iconButtonLg-size'],
-    height: sizes['iconButtonLg-size'],
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerButtonPressed: { backgroundColor: colors['state-active-bg'] },
-  unreadDot: {
-    position: 'absolute',
-    top: spacing['12'],
-    right: spacing['12'],
-    width: spacing['8'],
-    height: spacing['8'],
-    borderRadius: radius.full,
-    backgroundColor: colors['accent-primary'],
-  },
   greeting: { ...textStyle('body-m-regular'), color: colors['text-muted'], textAlign: 'center', marginTop: spacing['16'] },
 
   // Card base
@@ -815,15 +597,6 @@ const styles = StyleSheet.create({
   trendRow: { flexDirection: 'row', alignItems: 'center', gap: spacing['4'] },
 
   // StatusBadge y bloque de estado
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['4'],
-    paddingVertical: spacing['4'],
-    paddingHorizontal: spacing['8'],
-    borderRadius: radius.full,
-    borderWidth: 1,
-  },
   badgeText: { ...textStyle('ui-s-semibold-12') },
   neutralState: { flexDirection: 'row', alignItems: 'center', gap: spacing['4'] },
   stateBlock: {
@@ -834,12 +607,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   stateBlockTitle: { ...textStyle('ui-s-semibold') },
-
-  // ProgressBar
-  progressRow: { flexDirection: 'row', alignItems: 'center', gap: spacing['8'], marginBottom: spacing['4'] },
-  progressValue: { ...textStyle('data-s'), color: colors['text-primary'] },
-  progressTrack: { height: 6, borderRadius: radius.full, backgroundColor: colors['border-medium'], overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: radius.full },
 
   // Límite
   limitBox: { gap: spacing['4'] },
@@ -866,18 +633,6 @@ const styles = StyleSheet.create({
   },
   iconButtonActive: { backgroundColor: colors['accent-soft'] },
   chipRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing['8'] },
-  chip: {
-    minHeight: 34,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['4'],
-    paddingHorizontal: spacing['16'],
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors['border-medium'],
-  },
-  chipActive: { backgroundColor: colors['accent-soft'], borderColor: colors['border-accent'] },
-  chipText: { ...textStyle('ui-s-semibold') },
 
   // Zonas
   sectionHeader: {
@@ -901,26 +656,4 @@ const styles = StyleSheet.create({
   zoneValue: { ...textStyle('data-l'), color: colors['text-primary'] },
   zoneValueCompact: { ...textStyle('data-m'), color: colors['text-primary'] },
 
-  // StateMessage e InlineNotice
-  stateMessage: { alignItems: 'center' },
-  stateMessageTitle: { ...textStyle('body-s-medium'), color: colors['text-primary'], textAlign: 'center' },
-  notice: {
-    backgroundColor: colors['status-error-bg'],
-    borderColor: colors['status-error-border'],
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing['12'],
-    gap: spacing['8'],
-    marginTop: spacing['16'],
-  },
-  noticeRow: { flexDirection: 'row', gap: spacing['8'] },
-  noticeAction: { alignSelf: 'flex-end', minHeight: spacing['48'], justifyContent: 'center' },
-  linkText: { ...textStyle('ui-s-semibold-12'), color: colors['text-accent'] },
-
-  // Skeleton
-  skeletonBlock: { backgroundColor: colors['background-elevated'], borderRadius: radius.xs },
-  skeletonIcon: { width: spacing['40'], height: spacing['40'] },
-  skeletonLine: { height: spacing['12'] },
-  skeletonValue: { height: spacing['32'], width: '50%' },
-  skeletonStateBlock: { height: spacing['48'] },
 });

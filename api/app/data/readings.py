@@ -1,7 +1,7 @@
-"""Lecturas de consumo: inserción por lotes y huecos por sensor para recuperar horas.
+"""Lecturas de consumo: inserción por lotes, huecos por sensor y series horarias por zona.
 
-RN-IV-01, RN-IV-05, RN-X-03, DC-33, DC-34. Sentencias constantes con parámetros con nombre;
-sin commit.
+RN-IV-01, RN-IV-05, RN-X-03, RN-XI-01, RN-XI-05, DC-33, DC-34. Sentencias constantes con
+parámetros con nombre; sin commit.
 """
 
 from collections.abc import Mapping, Sequence
@@ -12,6 +12,8 @@ from uuid import UUID
 
 from sqlalchemy import text
 from sqlmodel import Session
+
+from app.data._convert import as_uuid
 
 # DC-33: todas las filas en UNA sentencia (nunca fila por fila). RN-IV-05: la restricción única
 # (sensor_id, fecha_hora) descarta las horas que ya existían.
@@ -89,8 +91,11 @@ def lock_household_recovery(session: Session, hogar_id: UUID) -> None:
 # Si la serie empieza después de :until, tampoco. En ambos casos array_agg devuelve NULL (se
 # convierte a lista vacía).
 #
-# TODO(pendiente: ¿un sensor pausado o una zona inactiva generan lecturas? ¿se rellena el
-# periodo pausado al reactivar? En el MVP no hay operación que cambie esos estados)
+# Decidido el 23/11/2026 (Nicolás): los sensores 'pausado' y las zonas 'inactiva' NO reciben
+# lecturas nuevas; por eso solo se buscan huecos de sensores 'activo' en zonas 'activa'. La misma
+# regla en Python es app.domain.zone_rules.counts_for_total.
+# TODO(pendiente: ¿al reactivar un sensor o una zona se rellena el periodo en que estuvo
+# pausado? En el MVP no hay operación que cambie esos estados)
 SENSOR_GAPS_SQL = text(
     """
     select s.id as sensor_id,
@@ -165,8 +170,83 @@ def _to_sensor_gap_row(row: Mapping[str, Any]) -> SensorGapRow:
     sensor_id = row["sensor_id"]
     missing_hours: Sequence[datetime] | None = row["missing_hours"]
     return SensorGapRow(
-        sensor_id=sensor_id if isinstance(sensor_id, UUID) else UUID(str(sensor_id)),
+        sensor_id=as_uuid(sensor_id),
         zona_tipo=row["zona_tipo"],
         first_hour=row["first_hour"],
         missing_hours=list(missing_hours or ()),
+    )
+
+
+# RN-XI-01, RN-XI-05, DC-28, R-01: kWh por zona y hora entre :start y :end (ambos inclusive), solo
+# de zonas de :hogar_id. Una zona pedida que no es del hogar no produce filas.
+#
+# Índice: el único lecturas_una_por_sensor_y_hora (sensor_id, fecha_hora). Las zonas salen por
+# ix_zonas_hogar, cada una da su sensor por el único sensores_zona.zona_id y, por sensor, se lee
+# un rango de fecha_hora en ese índice (sin recorrer el historial). Costo por consulta: la ventana
+# del promedio (30 días anteriores + el día de la hora evaluada, ~31 días × 24 h = ~744 filas)
+# por hasta 9 zonas → ~6.700 filas como máximo.
+HOURLY_READINGS_SQL = text(
+    """
+    select z.id as zona_id,
+           l.fecha_hora,
+           l.consumo_kwh
+      from lecturas l
+      join sensores_zona s on s.id = l.sensor_id
+      join zonas z on z.id = s.zona_id
+     where z.hogar_id = :hogar_id
+       and z.id = any(cast(:zona_ids as uuid[]))
+       and l.fecha_hora between :start and :end
+     order by z.id, l.fecha_hora
+    """
+)
+
+
+@dataclass(frozen=True)
+class HourlyReadingRow:
+    """kWh de una zona en la hora [fecha_hora, fecha_hora + 1 h) (RN-IV-03, RN-XI-01)."""
+
+    zona_id: UUID
+    fecha_hora: datetime
+    consumo_kwh: float
+
+
+def get_hourly_readings(
+    session: Session,
+    hogar_id: UUID,
+    zona_ids: Sequence[UUID],
+    start: datetime,
+    end: datetime,
+) -> list[HourlyReadingRow]:
+    """Lecturas horarias de las zonas pedidas de `hogar_id` en [start, end] (RN-XI-01, RN-XI-05).
+
+    Filtra siempre por `hogar_id` (R-01): una zona de otro hogar no devuelve filas. Orden por zona
+    y hora. `consumo_kwh` (numeric) llega como float; las horas, como las entrega el driver (con
+    zona horaria). ValueError si `start` o `end` no tienen zona horaria o si `start > end` (sin
+    SQL). `zona_ids` vacío → lista vacía sin SQL. Sin commit.
+    """
+    if start.utcoffset() is None or end.utcoffset() is None:
+        raise ValueError("`start` y `end` deben llevar zona horaria.")
+    if start > end:
+        raise ValueError("`start` no puede ser posterior a `end`.")
+    if not zona_ids:
+        return []
+    result = session.exec(
+        HOURLY_READINGS_SQL,
+        params={
+            "hogar_id": hogar_id,
+            "zona_ids": [str(zona_id) for zona_id in zona_ids],
+            "start": start,
+            "end": end,
+        },
+    )
+    return [_to_hourly_reading_row(row) for row in result.mappings().all()]
+
+
+def _to_hourly_reading_row(row: Mapping[str, Any]) -> HourlyReadingRow:
+    """Convierte la fila: id a UUID y NUMERIC (Decimal) a float."""
+    zona_id = row["zona_id"]
+    return HourlyReadingRow(
+        zona_id=as_uuid(zona_id),
+        fecha_hora=row["fecha_hora"],
+        consumo_kwh=float(row["consumo_kwh"]),
     )

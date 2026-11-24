@@ -10,6 +10,13 @@ Cuando los guardias dejan pasar, responde el esqueleto del servicio: 501 `TODO(<
 Eso prueba que el guardia no bloquea, no que la operación devuelva 200: el 200 de P-06 y los
 valores ocultos de P-07 se prueban cuando cada servicio exista.
 
+Operaciones ya implementadas (`IMPLEMENTED_OPERATIONS`, fase 6: las 3 de consumo actual): con
+la guardia superada responden 200 con un cuerpo válido según el contrato. Para que lleguen al
+servicio sin base, `call_api` instala los dobles de `app.data` de
+`tests/services/consumption_fakes.py` (un hogar con una zona y sin lecturas; la recuperación de
+horas es un espía) y los umbrales de `make_test_settings()`. La prueba sigue siendo de la
+guardia: el contenido de la respuesta se prueba en `test_consumption_e2e.py`.
+
 Los 401 llevan `codigo` = `NO_AUTENTICADO` (con `WWW-Authenticate: Bearer`) y el 404 sin
 membresía `NO_ENCONTRADO`; ambos cuerpos validan contra el esquema `Error` del contrato.
 
@@ -18,6 +25,7 @@ Matriz: docs/pruebas/matriz-pruebas-backend-v1.md (P-01…P-06).
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -34,6 +42,9 @@ from app.config import get_settings
 from app.data.memberships import ActiveMembershipRow
 from app.errors import NOT_FOUND_MESSAGE, UNAUTHORIZED_MESSAGE
 from app.main import API_PREFIX, create_app
+from app.services import consumption as consumption_service
+from app.services import thresholds as thresholds_service
+from tests.contract.test_c01_responses_match_schema import assert_matches_contract
 from tests.helpers.auth import (
     TEST_KEY_ID,
     auth_header,
@@ -44,6 +55,7 @@ from tests.helpers.auth import (
     make_token,
     override_db_session,
 )
+from tests.services.consumption_fakes import install_fake_consumption_database
 
 # --- Contrato -------------------------------------------------------------------------------
 
@@ -182,6 +194,11 @@ OTHER_PATH_IDS: dict[str, UUID] = {
 # Clave EC que el JWKS de prueba NO publica: firma tokens «de otra clave».
 FOREIGN_PRIVATE_KEY = ec.generate_private_key(ec.SECP256R1())
 
+# Operaciones con servicio real: la guardia superada da 200 (no el 501 del esqueleto).
+IMPLEMENTED_OPERATIONS: frozenset[str] = frozenset(
+    {"obtenerConsumoActual", "obtenerConsumoZonas", "obtenerConsumoZona"}
+)
+
 ERROR_BODY_KEYS = {"codigo", "mensaje", "detalles"}
 UNAUTHORIZED_BODY = {
     "codigo": "NO_AUTENTICADO",
@@ -306,6 +323,8 @@ def call_api(e2e_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> CallApi
         include_required_query: bool = True,
     ) -> httpx.Response:
         install_fake_memberships(monkeypatch, rows)
+        if op_id in IMPLEMENTED_OPERATIONS:
+            install_implemented_operation_data(monkeypatch)
         op = OPERATIONS[op_id]
         values = {
             name: str(hogar) if name == "hogar_id" else str(OTHER_PATH_IDS[name])
@@ -328,6 +347,22 @@ def call_api(e2e_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> CallApi
     return _call
 
 
+def install_implemented_operation_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dobles de `app.data` para las operaciones de consumo (fase 6), sin base ni `.env`.
+
+    `HOGAR_ID` tiene una zona activa (la de `OTHER_PATH_IDS["zona_id"]`, así el detalle no da
+    404) sin lecturas: la respuesta es 200 con «sin datos». La recuperación es un espía.
+    """
+    fake = install_fake_consumption_database(monkeypatch)
+    fake.add_zone(HOGAR_ID, "cocina", "Cocina", zona_id=OTHER_PATH_IDS["zona_id"])
+    monkeypatch.setattr(thresholds_service, "get_settings", make_test_settings)
+    # Caché propia de la prueba (la de producción no queda con estos umbrales), en el nombre
+    # que llama el servicio de consumo.
+    fresh = cache(thresholds_service.get_thresholds.__wrapped__)
+    monkeypatch.setattr(thresholds_service, "get_thresholds", fresh)
+    monkeypatch.setattr(consumption_service, "get_thresholds", fresh)
+
+
 def member(hogar_id: UUID = HOGAR_ID, **permissions: bool) -> ActiveMembershipRow:
     return make_membership_row(USER_ID, hogar_id, rol="miembro", **permissions)
 
@@ -341,7 +376,11 @@ ALL_FALSE = dict.fromkeys(PERMISSIONS, False)
 
 
 def assert_passes_guards(response: httpx.Response, op_id: str) -> None:
-    """Los guardias dejaron pasar: responde el esqueleto del servicio (501)."""
+    """Los guardias dejaron pasar: 200 válido si el servicio existe; si no, su esqueleto (501)."""
+    if op_id in IMPLEMENTED_OPERATIONS:
+        assert response.status_code == 200, (op_id, response.status_code, response.text)
+        assert_matches_contract(op_id, response)
+        return
     assert response.status_code == 501, (op_id, response.status_code, response.text)
     assert response.json() == {"detail": f"TODO({op_id})"}
 
@@ -463,8 +502,9 @@ def test_p04_member_without_modify_goals_gets_403(call_api: CallApi, op_id: str)
 def test_member_with_only_the_required_permission_passes(call_api: CallApi, op_id: str) -> None:
     """P-02/P-03/P-04/RN-XVII-03 (caso positivo) · Miembro con SOLO el permiso que pide.
 
-    Esperado: pasa el guardia (501 del servicio). Para `crearMeta`, cierra P-04: con el
-    permiso, un miembro sí llega al servicio. Regla: RN-XVII-01…04.
+    Esperado: pasa el guardia (200 si el servicio existe, si no 501 del esqueleto). Para
+    `crearMeta`, cierra P-04: con el permiso, un miembro sí llega al servicio.
+    Regla: RN-XVII-01…04.
     """
     permission, _ = PERMISSION_OPERATIONS[op_id]
     rows = [member(**{**ALL_FALSE, permission: True})]
@@ -504,8 +544,9 @@ def test_p05_member_with_all_permissions_gets_403_on_admin_operations(
 def test_p06_admin_without_permissions_passes_every_guard(call_api: CallApi, op_id: str) -> None:
     """P-06 · Administrador con los 4 permisos del hogar en False.
 
-    Esperado: pasa los guardias de todas las operaciones con hogar (501 del servicio), nunca
-    403 ni 404. El 200 de la matriz queda para cuando exista cada servicio. Regla: RN-XVII-05.
+    Esperado: pasa los guardias de todas las operaciones con hogar, nunca 403 ni 404: 200 en
+    las ya implementadas (`IMPLEMENTED_OPERATIONS`, el 200 de la matriz); 501 del esqueleto en
+    las demás, cuyo 200 queda para cuando exista su servicio. Regla: RN-XVII-05.
     """
     assert_passes_guards(call_api(op_id, rows=[admin(**ALL_FALSE)]), op_id)
 

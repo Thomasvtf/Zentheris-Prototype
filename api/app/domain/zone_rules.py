@@ -133,3 +133,17 @@ def resolve_active_personality(name: str, active: Mapping[str, bool]) -> str:
     if active.get(FALLBACK_PERSONALITY) is True:
         return FALLBACK_PERSONALITY
     raise LookupError("ni la personalidad asignada ni el respaldo están activos")
+
+
+# Estados de zona y de sensor que suman al total del hogar (RN-XI-05; decisión del 23/11/2026:
+# los sensores pausados y las zonas inactivas no reciben lecturas nuevas).
+_COUNTING_ZONE_STATE = "activa"
+_COUNTING_SENSOR_STATE = "activo"
+
+
+def counts_for_total(zone_estado: str, sensor_estado: str | None) -> bool:
+    """True solo si la zona está `activa` y su sensor `activo` («zonas que cuentan»).
+
+    Zona `inactiva`, sensor `pausado` o zona sin sensor (`None`): no suma al total del hogar.
+    """
+    return zone_estado == _COUNTING_ZONE_STATE and sensor_estado == _COUNTING_SENSOR_STATE

@@ -14,6 +14,8 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlmodel import Session
 
+from app.data._convert import as_uuid
+
 # Columnas NUMERIC que el simulador usa como float.
 NUMERIC_FIELDS = (
     "base_cocina_kwh_dia",
@@ -118,7 +120,7 @@ def _to_simulation_profile_row(row: Mapping[str, Any]) -> SimulationProfileRow:
         params[field] = json.loads(value) if isinstance(value, str) else value
     profile_id = row["id"]
     return SimulationProfileRow(
-        id=profile_id if isinstance(profile_id, UUID) else UUID(str(profile_id)),
+        id=as_uuid(profile_id),
         nombre=params["nombre"],
         activo=params["activo"],
         params=params,

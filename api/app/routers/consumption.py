@@ -54,7 +54,7 @@ def get_current_consumption(
 @router.get(
     "/hogares/{hogar_id}/consumo/zonas",
     operation_id="obtenerConsumoZonas",
-    summary="Participación y estado de cada zona en la última hora completa (RN-XI-05, RN-XII-05, RN-XII-06)",
+    summary="Participación y estado de las zonas que cuentan en la última hora completa (RN-XI-05, RN-XII-05, RN-XII-06)",
     response_model=ConsumoZonas,
     responses=error_responses(401, 403, 404),
 )

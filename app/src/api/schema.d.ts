@@ -555,8 +555,9 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Participación y estado de cada zona en la última hora completa (RN-XI-05, RN-XII-05, RN-XII-06)
-         * @description Usado en el Panel y en Zonas. Orden alfabético por nombre. Requiere
+         * Participación y estado de las zonas que cuentan en la última hora completa (RN-XI-05, RN-XII-05, RN-XII-06)
+         * @description Usado en el Panel y en Zonas. Lista solo las zonas que cuentan para el total (zona activa
+         *     con sensor activo). Orden alfabético por nombre. Requiere
          *     `permiso_ver_consumo_actual` o ser administrador.
          */
         get: operations["obtenerConsumoZonas"];
@@ -581,7 +582,9 @@ export interface paths {
         /**
          * Zona individual (RN-XI-05, RN-XI-06, RN-XII-07)
          * @description El estado de consumo se compara siempre contra el promedio histórico de la zona en la
-         *     misma hora del día, nunca contra la meta. Requiere `permiso_ver_consumo_actual` o ser administrador.
+         *     misma hora del día, nunca contra la meta. Una zona del hogar que no cuenta para el total
+         *     (inactiva o con el sensor pausado) responde `200` con los valores en `null` y los estados en
+         *     `sin_datos`. Requiere `permiso_ver_consumo_actual` o ser administrador.
          */
         get: operations["obtenerConsumoZona"];
         put?: never;
@@ -1116,6 +1119,12 @@ export interface components {
             costo_cop: number | null;
             /** @description Pico más alto del periodo. La app lo marca con la etiqueta «Pico» y el rojo claro `chart/peak`, sin componentes ni palabras de estado (RN-XIII-03, D17). */
             es_pico_maximo: boolean;
+            /** @description Solo con el filtro General (gráfico de área apilada por zona, v0.2.9); `null` con filtro por zona. Una entrada por cada zona de `participacion_zonas`, en el mismo orden. `energia_kwh` null = esa zona no tiene lectura en ese punto. Si alguna zona es null, el `energia_kwh` del punto también es null. */
+            zonas: {
+                /** Format: uuid */
+                zona_id: string;
+                energia_kwh: number | null;
+            }[] | null;
         };
         Historial: {
             /** @enum {string} */

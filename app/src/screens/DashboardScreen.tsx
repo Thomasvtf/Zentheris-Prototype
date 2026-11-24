@@ -27,6 +27,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 import {
+  Activity,
   Bath,
   Bed,
   Car,
@@ -195,7 +196,7 @@ function chartA11y(valor: number | null, unidad: Unit, estado: ConsumptionState,
 }
 
 const GAUGE_SIZE = 240;
-const GAUGE_STROKE = Math.round(GAUGE_SIZE * 0.16);
+const GAUGE_STROKE = Math.round(GAUGE_SIZE * 0.18);
 
 /** Ficha ConsumptionGauge: semicírculo que se llena de izquierda a derecha. */
 function ConsumptionGauge({ valor, unidad, estado, proporcion, leyenda }: ConsumptionChartProps) {
@@ -372,7 +373,7 @@ function TodayCard({ data, unit }: { data: CurrentConsumption; unit: Unit }) {
 
   return (
     <View style={styles.card}>
-      <CardHeader icono={Zap} titulo={t('panel.acumulado', { hora: hourLabel(data.hora.fin) })} estado={today.estado} />
+      <CardHeader icono={Activity} titulo={t('panel.acumulado', { hora: hourLabel(data.hora.fin) })} estado={today.estado} />
       <Metric value={parts.value} unit={parts.unit} />
       {pct !== null && (
         <ProgressBar
@@ -399,15 +400,11 @@ function TodayCard({ data, unit }: { data: CurrentConsumption; unit: Unit }) {
 
 /* ─────────────────────────────── Zonas ──────────────────────────────────── */
 
-function ZoneStateWord({ estado }: { estado: ConsumptionState }) {
-  if (isSeverity(estado)) return <StatusBadge estado={estado} />;
-  const tk = estadoTokens(estado);
-  return (
-    <View style={styles.neutralState}>
-      <Icon name={tk.glyph} size={16} color={tk.icon} />
-      <Text style={[styles.badgeText, { color: tk.text }]}>{t(`estado.palabra.${estado}`)}</Text>
-    </View>
-  );
+/** Agrupa de a dos para la cuadrícula compacta (filas con su propio espacio entre columnas). */
+function pairs<T>(items: T[]): [T, T | undefined][] {
+  const out: [T, T | undefined][] = [];
+  for (let i = 0; i < items.length; i += 2) out.push([items[i], items[i + 1]]);
+  return out;
 }
 
 function ZoneCard({ zone, unit, compact }: { zone: ZoneConsumptionItem; unit: Unit; compact: boolean }) {
@@ -417,15 +414,14 @@ function ZoneCard({ zone, unit, compact }: { zone: ZoneConsumptionItem; unit: Un
   const tk = estadoTokens(zone.estado_participacion);
   const severity = isSeverity(zone.estado_participacion) ? zone.estado_participacion : 'neutro';
   return (
-    <View style={[styles.card, compact ? styles.zoneCompact : styles.zoneLong]}>
+    <View style={[styles.card, styles.zoneCard, compact && styles.flex]}>
       <View style={styles.cardHeaderRow}>
-        <View style={compact ? styles.zoneIconSmall : styles.cardIcon}>
-          <Icono size={compact ? 16 : 24} color={colors['text-primary']} />
-        </View>
+        <Icono size={20} color={colors['text-primary']} />
         <Text style={[styles.cardTitle, styles.flex]} numberOfLines={1}>
           {name}
         </Text>
-        {compact ? <Icon name={tk.glyph} size={16} color={tk.icon} /> : <ZoneStateWord estado={zone.estado_participacion} />}
+        {/* La palabra del estado va bajo la cifra (ProgressBar); aquí solo su ícono. */}
+        <Icon name={tk.glyph} size={16} color={tk.icon} />
       </View>
       <View style={styles.metricRow}>
         <Text style={compact ? styles.zoneValueCompact : styles.zoneValue}>{parts.value}</Text>
@@ -454,17 +450,22 @@ function ZonesSection({ data, unit }: { data: ZonesConsumption; unit: Unit }) {
           {t('panel.zonas')}
         </Text>
         <View style={styles.toggleRow}>
-          <ViewToggle activo={view === 'larga'} icono={List} label={t('a11y.vista_larga')} onPress={() => setView('larga')} />
           <ViewToggle activo={view === 'compacta'} icono={LayoutGrid} label={t('a11y.vista_compacta')} onPress={() => setView('compacta')} />
+          <ViewToggle activo={view === 'larga'} icono={List} label={t('a11y.vista_larga')} onPress={() => setView('larga')} />
         </View>
       </View>
       {zones.length === 0 ? (
         <StateMessage tipo="sin_datos" titulo={t('estado.zona_participacion.sin_datos.titulo')} descripcion={t('estado.zona_participacion.sin_datos.cuerpo')} />
       ) : (
-        <View style={view === 'compacta' ? styles.zonesGrid : undefined}>
-          {zones.map((zone) => (
-            <ZoneCard key={zone.zona_id} zone={zone} unit={unit} compact={view === 'compacta'} />
-          ))}
+        <View style={styles.zonesList}>
+          {view === 'compacta'
+            ? pairs(zones).map(([a, b]) => (
+                <View key={a.zona_id} style={styles.zonesRow}>
+                  <ZoneCard zone={a} unit={unit} compact />
+                  {b ? <ZoneCard zone={b} unit={unit} compact /> : <View style={styles.flex} />}
+                </View>
+              ))
+            : zones.map((zone) => <ZoneCard key={zone.zona_id} zone={zone} unit={unit} compact={false} />)}
         </View>
       )}
     </View>
@@ -489,8 +490,19 @@ function DashboardContent({ data }: { data: DashboardData }) {
   }
   return (
     <>
-      <CurrentCard data={data.current} unit={unit} />
-      <ChartCard data={data.current} unit={unit} onUnit={setUnitChoice} />
+      {data.current.actual.estado === 'sin_datos' ? (
+        <StateMessage
+          tipo="sin_datos"
+          icono="loader"
+          titulo={t('estado.consumo_actual.sin_datos.titulo')}
+          descripcion={t('estado.consumo_actual.sin_datos.cuerpo')}
+        />
+      ) : (
+        <>
+          <CurrentCard data={data.current} unit={unit} />
+          <ChartCard data={data.current} unit={unit} onUnit={setUnitChoice} />
+        </>
+      )}
       <TodayCard data={data.current} unit={unit} />
       <ZonesSection data={data.zones} unit={unit} />
     </>
@@ -566,7 +578,7 @@ const styles = StyleSheet.create({
   },
 
   // Cabecera (ScreenHeader)
-  greeting: { ...textStyle('body-m-regular'), color: colors['text-muted'], textAlign: 'center', marginTop: spacing['16'] },
+  greeting: { ...textStyle('body-m-regular'), color: colors['text-primary'], textAlign: 'center', marginTop: spacing['16'] },
 
   // Card base
   card: {
@@ -597,8 +609,6 @@ const styles = StyleSheet.create({
   trendRow: { flexDirection: 'row', alignItems: 'center', gap: spacing['4'] },
 
   // StatusBadge y bloque de estado
-  badgeText: { ...textStyle('ui-s-semibold-12') },
-  neutralState: { flexDirection: 'row', alignItems: 'center', gap: spacing['4'] },
   stateBlock: {
     flexDirection: 'row',
     gap: spacing['8'],
@@ -642,17 +652,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing['16'],
   },
   sectionTitle: { ...textStyle('display-m'), color: colors['text-primary'] },
-  zonesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing['12'] },
-  zoneLong: { marginBottom: spacing['12'] },
-  zoneCompact: { flexBasis: '47%', flexGrow: 1, padding: spacing['12'], gap: spacing['8'] },
-  zoneIconSmall: {
-    width: spacing['32'],
-    height: spacing['32'],
-    borderRadius: radius.sm,
-    backgroundColor: colors['background-elevated'],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  zonesList: { gap: spacing['12'] },
+  zonesRow: { flexDirection: 'row', gap: spacing['8'] },
+  zoneCard: { gap: spacing['8'] },
   zoneValue: { ...textStyle('data-l'), color: colors['text-primary'] },
   zoneValueCompact: { ...textStyle('data-m'), color: colors['text-primary'] },
 

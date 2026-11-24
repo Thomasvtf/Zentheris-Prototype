@@ -11,7 +11,8 @@
  */
 import { plural, t } from '@/texts';
 
-const BOGOTA_OFFSET_MS = -5 * 60 * 60 * 1000;
+import { BOGOTA_OFFSET_MS, pad2 } from './bogota';
+
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -19,10 +20,6 @@ const DAY = 24 * HOUR;
 /** Número de día calendario en Bogotá (días desde 1970-01-01, hora local). */
 function bogotaDayNumber(date: Date): number {
   return Math.floor((date.getTime() + BOGOTA_OFFSET_MS) / DAY);
-}
-
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
 }
 
 /** Texto relativo de `fecha` respecto de `ahora` (por defecto, el momento actual). */

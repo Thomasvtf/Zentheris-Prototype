@@ -16,7 +16,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TextStyle,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -29,7 +28,7 @@ import { deleteAvatar, getCurrentUser, updateProfile } from '@/api/users';
 import { toErrorTextKey } from '@/api/errors';
 import type { SuccessBody } from '@/api/client';
 import { getSupabase } from '@/state/supabase';
-import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
 
 import { INPUT_LIMITS, sanitizeName, sanitizePhone } from './inputFilters';
@@ -133,14 +132,6 @@ function useEditProfileData() {
   return { state, action, avatarUri: shownAvatarUri, reload, saveProfile, removePhoto, clearAction };
 }
 
-function textStyle(name: keyof typeof typography): TextStyle {
-  const style = typography[name];
-  return {
-    fontFamily: fontFamilyFor(style.family, style.fontWeight),
-    fontSize: style.fontSize,
-    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
-  };
-}
 
 /** Iniciales para el avatar sin foto: primera letra de las dos primeras palabras. */
 function initialsOf(fullName: string): string {

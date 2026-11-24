@@ -14,7 +14,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextStyle,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -25,8 +24,8 @@ import { useRouter } from 'expo-router';
 import { createGoal, getGoal } from '@/api/goalsTariff';
 import { toErrorTextKey } from '@/api/errors';
 import type { SuccessBody } from '@/api/client';
-import { DECIMALES, formatNumber } from '@/format';
-import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { bogotaMonth, DECIMALES, formatNumber } from '@/format';
+import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
 
 type GoalView = SuccessBody<'/hogares/{hogar_id}/meta', 'get'>;
@@ -40,7 +39,6 @@ type GoalState =
 const GOAL_TYPES: GoalType[] = ['ahorro', 'eficiencia', 'presupuesto'];
 /** Paso de los botones − y + en kWh por mes. */
 const STEP_KWH = 10;
-const BOGOTA_OFFSET_MS = -5 * 60 * 60 * 1000;
 
 /**
  * Hook de datos de la pantalla (cargando, error y datos).
@@ -80,25 +78,6 @@ function useGoalData(hogarId: string | null) {
   return { state: visibleState, reload };
 }
 
-function textStyle(name: keyof typeof typography): TextStyle {
-  const style = typography[name];
-  return {
-    fontFamily: fontFamilyFor(style.family, style.fontWeight),
-    fontSize: style.fontSize,
-    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
-  };
-}
-
-/** Mes en curso (hora de Bogotá): número de mes «01»–«12» y días que tiene. */
-function currentMonthInfo(now: Date = new Date()): { mm: string; days: number } {
-  const local = new Date(now.getTime() + BOGOTA_OFFSET_MS);
-  const year = local.getUTCFullYear();
-  const month = local.getUTCMonth() + 1;
-  return {
-    mm: String(month).padStart(2, '0'),
-    days: new Date(Date.UTC(year, month, 0)).getUTCDate(),
-  };
-}
 
 function Notice({
   tone,
@@ -137,7 +116,7 @@ export interface EstablecerMetaScreenProps {
 export function EstablecerMetaScreen({ hogarId = null }: EstablecerMetaScreenProps) {
   const router = useRouter();
   const { state, reload } = useGoalData(hogarId);
-  const { mm, days } = currentMonthInfo();
+  const { mm, dias: days } = bogotaMonth();
 
   const [goalKwh, setGoalKwh] = useState(0);
   const [goalType, setGoalType] = useState<GoalType>('ahorro');

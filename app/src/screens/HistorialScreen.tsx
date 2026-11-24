@@ -38,7 +38,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextStyle,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -76,8 +75,8 @@ import type { SeriesDatum, XLabel } from '@/components/charts/SeriesChart';
 import { CHART_HEIGHT, xLabelIndexes } from '@/components/charts/chartGeometry';
 import { groupZones, ZoneDonutChart } from '@/components/charts/ZoneDonutChart';
 import type { DonutZone, ZoneDonutChartProps } from '@/components/charts/ZoneDonutChart';
-import { DECIMALES, formatCOP, formatNumber, formatPercent } from '@/format';
-import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { DECIMALES, formatCOP, formatNumber, formatPercent, hourLabel, pad2, toBogota } from '@/format';
+import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
 
 import { isEmptyHistory, isMissingLastHour, useHistorialData } from './useHistorialData';
@@ -100,35 +99,16 @@ type ChartUnit = 'energia' | 'COP';
 
 const PERIODS: Period[] = ['dia', 'semana', 'mes'];
 
-function textStyle(name: keyof typeof typography): TextStyle {
-  const style = typography[name];
-  return {
-    fontFamily: fontFamilyFor(style.family, style.fontWeight),
-    fontSize: style.fontSize,
-    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
-  };
-}
 
 function isSeverity(estado: ConsumptionState): estado is Severity {
   return estado === 'normal' || estado === 'elevado' || estado === 'critico';
 }
 
 /* Fechas en hora de Bogotá (UTC−5, sin horario de verano), con plantillas del catálogo. */
-const BOGOTA_OFFSET_MS = -5 * 60 * 60 * 1000;
 const DAY_KEYS = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'] as const;
 
-function local(iso: string, shiftMs = 0): Date {
-  return new Date(new Date(iso).getTime() + BOGOTA_OFFSET_MS + shiftMs);
-}
-
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-/** «14:00». */
-function hourLabel(iso: string): string {
-  return `${pad2(local(iso).getUTCHours())}:00`;
-}
+/** Instante ISO con los campos UTC en hora de Bogotá (ver @/format). */
+const local = toBogota;
 
 /** «15/07» (formato.tiempo.fecha). */
 function dateLabel(iso: string, shiftMs = 0): string {

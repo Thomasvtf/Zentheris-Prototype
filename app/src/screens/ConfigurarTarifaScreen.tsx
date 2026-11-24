@@ -16,7 +16,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TextStyle,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -27,8 +26,8 @@ import { useRouter } from 'expo-router';
 import { createTariff, getTariff } from '@/api/goalsTariff';
 import { toErrorTextKey } from '@/api/errors';
 import type { SuccessBody } from '@/api/client';
-import { formatCOP, formatNumber } from '@/format';
-import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { formatCOP, formatNumber, toBogota } from '@/format';
+import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
 
 import { INPUT_LIMITS, sanitizeCop, sanitizeDecimal } from './inputFilters';
@@ -42,7 +41,6 @@ type TariffState =
 
 const OPERATOR_IDS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const;
 const MONTH_KEYS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'] as const;
-const BOGOTA_OFFSET_MS = -5 * 60 * 60 * 1000;
 const MAX_MONTHS = 12;
 
 /**
@@ -83,14 +81,6 @@ function useTariffData(hogarId: string | null) {
   return { state: visibleState, reload };
 }
 
-function textStyle(name: keyof typeof typography): TextStyle {
-  const style = typography[name];
-  return {
-    fontFamily: fontFamilyFor(style.family, style.fontWeight),
-    fontSize: style.fontSize,
-    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
-  };
-}
 
 /** «2026-09» o «2026-09-01» → «septiembre de 2026» (catálogo formato.mes_anio). */
 function monthYearLabel(value: string): string {
@@ -100,7 +90,7 @@ function monthYearLabel(value: string): string {
 
 /** Meses elegibles (más reciente primero): posteriores a la tarifa vigente, hasta el mes actual. */
 function eligibleMonths(vigenteDesde: string | null, now: Date = new Date()): string[] {
-  const local = new Date(now.getTime() + BOGOTA_OFFSET_MS);
+  const local = toBogota(now);
   let year = local.getUTCFullYear();
   let month = local.getUTCMonth() + 1;
   const floor = vigenteDesde ? vigenteDesde.slice(0, 7) : null;

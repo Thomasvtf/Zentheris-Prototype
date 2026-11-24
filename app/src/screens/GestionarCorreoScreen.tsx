@@ -15,7 +15,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TextStyle,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -25,7 +24,7 @@ import { useRouter } from 'expo-router';
 
 import { MOCK_EMAIL, USE_MOCKS } from '@/api/devMocks';
 import { getSupabase } from '@/state/supabase';
-import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
 
 import { INPUT_LIMITS, sanitizeEmail } from './inputFilters';
@@ -110,14 +109,6 @@ function useManageEmailData() {
   return { state, reload, send, sendChange };
 }
 
-function textStyle(name: keyof typeof typography): TextStyle {
-  const style = typography[name];
-  return {
-    fontFamily: fontFamilyFor(style.family, style.fontWeight),
-    fontSize: style.fontSize,
-    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
-  };
-}
 
 interface EmailFieldProps {
   label: string;

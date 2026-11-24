@@ -35,6 +35,7 @@ import type { SuccessBody } from '@/api/client';
 import { getHistory } from '@/api/consumption';
 import { MOCK_HOGAR_ID, USE_MOCKS } from '@/api/devMocks';
 import { toErrorTextKey } from '@/api/errors';
+import { BOGOTA_OFFSET_MS } from '@/format';
 import type { paths } from '@/api/schema';
 
 /* ─────────────────────────── Tipos del contrato ─────────────────────────── */
@@ -104,7 +105,6 @@ const MOCK_PRICE_COP_KWH = 892;
 const MOCK_FIXED_CHARGE_COP = 12000;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
-const BOGOTA_OFFSET_MS = -5 * HOUR_MS;
 
 const MOCK_ID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 

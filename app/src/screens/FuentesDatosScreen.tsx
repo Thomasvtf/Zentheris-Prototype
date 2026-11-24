@@ -13,7 +13,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextStyle,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -43,8 +42,8 @@ import { useRouter } from 'expo-router';
 import { getDataSources } from '@/api/consumption';
 import { toErrorTextKey } from '@/api/errors';
 import type { SuccessBody } from '@/api/client';
-import { DECIMALES, formatNumber } from '@/format';
-import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { DECIMALES, formatNumber, intervalLabel } from '@/format';
+import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
 
 type DataSources = SuccessBody<'/hogares/{hogar_id}/fuentes-datos', 'get'>;
@@ -93,27 +92,6 @@ function useDataSourcesData(hogarId: string | null) {
   return { state: visibleState, retry };
 }
 
-/** Estilo de texto desde los tokens de tipografía. */
-function textStyle(name: keyof typeof typography): TextStyle {
-  const style = typography[name];
-  return {
-    fontFamily: fontFamilyFor(style.family, style.fontWeight),
-    fontSize: style.fontSize,
-    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
-  };
-}
-
-const BOGOTA_OFFSET_MS = -5 * 60 * 60 * 1000;
-
-function hourLabel(iso: string): string {
-  const local = new Date(new Date(iso).getTime() + BOGOTA_OFFSET_MS);
-  return `${String(local.getUTCHours()).padStart(2, '0')}:00`;
-}
-
-/** «14:00–15:00» en hora de Bogotá, para la nota al pie. */
-function intervalLabel(hora: DataSources['hora']): string {
-  return `${hourLabel(hora.inicio)}–${hourLabel(hora.fin)}`;
-}
 
 /** Íconos aprobados de las 9 zonas (DC-14), por tipo de zona. */
 const ZONE_ICONS = {

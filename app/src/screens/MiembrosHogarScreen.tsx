@@ -39,14 +39,13 @@ import {
   Switch,
   Text,
   TextInput,
-  TextStyle,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeftRight, Check, ChevronLeft, CircleCheck, CircleX, EllipsisVertical, LogOut, Mail, UserMinus, UserPlus, X } from 'lucide-react-native';
 
-import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { plural, t } from '@/texts';
 
 import { INPUT_LIMITS, sanitizeEmail } from './inputFilters';
@@ -55,14 +54,6 @@ import type { InviteResult, Member, MiembrosMockScenario, PendingInvitation, Per
 
 /* ───────────────────────────── Utilidades ───────────────────────────────── */
 
-function textStyle(name: keyof typeof typography): TextStyle {
-  const style = typography[name];
-  return {
-    fontFamily: fontFamilyFor(style.family, style.fontWeight),
-    fontSize: style.fontSize,
-    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
-  };
-}
 
 function initialsOf(fullName: string): string {
   return fullName

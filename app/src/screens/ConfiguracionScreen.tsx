@@ -18,7 +18,6 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextStyle,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -32,7 +31,7 @@ import type { SuccessBody } from '@/api/client';
 import { toErrorTextKey } from '@/api/errors';
 import { deleteAccount, getCurrentUser, updatePreferences } from '@/api/users';
 import { getSupabase } from '@/state/supabase';
-import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
 
 type CurrentUser = SuccessBody<'/usuarios/me', 'get'>;
@@ -162,14 +161,6 @@ function useSettingsData() {
   };
 }
 
-function textStyle(name: keyof typeof typography): TextStyle {
-  const style = typography[name];
-  return {
-    fontFamily: fontFamilyFor(style.family, style.fontWeight),
-    fontSize: style.fontSize,
-    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
-  };
-}
 
 function initialsOf(fullName: string): string {
   return fullName

@@ -23,11 +23,11 @@
  * `border-medium` sin marcar y `accent-primary` marcada, con área táctil de 44 pt.
  */
 import React, { useEffect, useState } from 'react';
-import { AccessibilityInfo, Animated, Pressable, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextStyle, View } from 'react-native';
+import { AccessibilityInfo, Animated, Pressable, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Check, CircleCheck, CircleX } from 'lucide-react-native';
 
-import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
 
 import { hasPendingTips, useConsejosData } from './useConsejosData';
@@ -35,14 +35,6 @@ import type { ConsejosMockScenario, Tip, TipPriority } from './useConsejosData';
 
 /* ───────────────────────────── Utilidades ───────────────────────────────── */
 
-function textStyle(name: keyof typeof typography): TextStyle {
-  const style = typography[name];
-  return {
-    fontFamily: fontFamilyFor(style.family, style.fontWeight),
-    fontSize: style.fontSize,
-    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
-  };
-}
 
 /** Área táctil mínima de la casilla (app/CLAUDE.md: 44 pt o más). */
 const CHECKBOX_TOUCH = 44;

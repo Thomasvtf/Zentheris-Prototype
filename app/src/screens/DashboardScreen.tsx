@@ -24,7 +24,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextStyle,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -58,8 +57,8 @@ import {
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 
-import { DECIMALES, formatCOP, formatNumber, formatPercent } from '@/format';
-import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { bogotaHour, DECIMALES, formatCOP, formatNumber, formatPercent, hourLabel, intervalLabel } from '@/format';
+import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { plural, t } from '@/texts';
 
 import { useDashboardData } from './useDashboardData';
@@ -79,32 +78,9 @@ type Severity = 'normal' | 'elevado' | 'critico';
 type ChartView = 'gauge' | 'anillo';
 type ZonesView = 'larga' | 'compacta';
 
-function textStyle(name: keyof typeof typography): TextStyle {
-  const style = typography[name];
-  return {
-    fontFamily: fontFamilyFor(style.family, style.fontWeight),
-    fontSize: style.fontSize,
-    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
-  };
-}
 
 function isSeverity(estado: ConsumptionState): estado is Severity {
   return estado === 'normal' || estado === 'elevado' || estado === 'critico';
-}
-
-const BOGOTA_OFFSET_MS = -5 * 60 * 60 * 1000;
-
-function bogotaHour(date: Date): number {
-  return new Date(date.getTime() + BOGOTA_OFFSET_MS).getUTCHours();
-}
-
-function hourLabel(iso: string): string {
-  return `${String(bogotaHour(new Date(iso))).padStart(2, '0')}:00`;
-}
-
-/** «14:00–15:00» en hora de Bogotá. */
-function intervalLabel(hora: CurrentConsumption['hora']): string {
-  return `${hourLabel(hora.inicio)}–${hourLabel(hora.fin)}`;
 }
 
 /** RN-XII-01: 5:00–11:59 mañana, 12:00–18:59 tarde, 19:00–4:59 noche (hora de Bogotá). */

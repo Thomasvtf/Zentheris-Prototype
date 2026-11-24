@@ -18,7 +18,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TextStyle,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -28,7 +27,7 @@ import { useRouter } from 'expo-router';
 
 import { toErrorTextKey } from '@/api/errors';
 import { changePassword, verifyCurrentPassword } from '@/api/users';
-import { colors, fontFamilyFor, radius, sizes, spacing, typography } from '@/theme';
+import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
 
 type VerifyState =
@@ -85,14 +84,6 @@ function useChangePasswordData() {
   return { verify, save, verifyCurrent, resetVerification, savePassword };
 }
 
-function textStyle(name: keyof typeof typography): TextStyle {
-  const style = typography[name];
-  return {
-    fontFamily: fontFamilyFor(style.family, style.fontWeight),
-    fontSize: style.fontSize,
-    ...('lineHeight' in style ? { lineHeight: style.lineHeight } : {}),
-  };
-}
 
 interface PasswordFieldProps {
   label: string;

@@ -14,7 +14,7 @@
  * Aquí se implementan como piezas locales de presentación con esas mismas props, para
  * moverlas a src/components/ cuando se apruebe ese cambio.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
@@ -113,10 +113,6 @@ function greetingKey(now: Date): string {
   if (h >= 5 && h < 12) return 'formato.saludo.manana';
   if (h >= 12 && h < 19) return 'formato.saludo.tarde';
   return 'formato.saludo.noche';
-}
-
-function kwText(v: number | null): string {
-  return v === null ? formatNumber(null) : `${formatNumber(v, DECIMALES.kW)} ${t('comun.kw')}`;
 }
 
 function kwhText(v: number | null): string {
@@ -341,7 +337,7 @@ function InlineNotice({ titulo, descripcion, onReintentar }: { titulo: string; d
 
 /** Pulso suave; se detiene con «reducir movimiento» (ficha Skeleton). */
 function useSkeletonPulse() {
-  const opacity = useRef(new Animated.Value(1)).current;
+  const [opacity] = useState(() => new Animated.Value(1));
   useEffect(() => {
     let loop: Animated.CompositeAnimation | null = null;
     let cancelled = false;
@@ -908,7 +904,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing['12'],
+    marginBottom: spacing['16'],
   },
   sectionTitle: { ...textStyle('display-m'), color: colors['text-primary'] },
   zonesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing['12'] },

@@ -19,17 +19,14 @@
  * - Barras, línea y anillo: src/components/charts/ (SVG a mano, DC-63: gifted-charts no deja
  *   fijar las etiquetas del eje X ni contener la píldora del pico). Aquí solo se arman sus datos.
  *
- * TODO(pendiente: componentes del sistema de diseño): src/components/ aún no tiene
- * PeakMarker, StatusBadge, Chip, Skeleton, StateMessage, InlineNotice ni ScreenHeader con
- * las props de index.d.ts. Aquí son piezas locales de presentación para moverlas a
- * src/components/ cuando se apruebe.
+ * - StatusBadge, Chip, Skeleton, StateMessage, InlineNotice y ScreenHeader vienen de @/components.
+ * TODO(pendiente: componentes del sistema de diseño): PeakMarker aún no está en src/components/.
  * TODO(pendiente: formato de fechas): @/format solo trae relativeTime; las etiquetas de hora,
  * día y fecha se arman aquí con las plantillas del catálogo (formato.dia_corto.*,
  * formato.dia.*, formato.tiempo.fecha) hasta tener un helper en @/format.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  AccessibilityInfo,
   Animated,
   LayoutChangeEvent,
   Pressable,
@@ -43,30 +40,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
-  Bath,
-  Bed,
   CalendarDays,
-  Car,
   ChartColumn,
   ChartPie,
   ChartSpline,
-  CircleAlert,
-  CircleCheck,
-  CircleX,
   Clock,
   Coins,
-  CookingPot,
-  DoorClosed,
-  Fence,
-  Info,
-  MapPin,
-  Monitor,
-  Shield,
-  Sofa,
   TrendingUp,
-  TriangleAlert,
-  WashingMachine,
-  Zap,
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 
@@ -75,9 +55,30 @@ import type { SeriesDatum, XLabel } from '@/components/charts/SeriesChart';
 import { CHART_HEIGHT, xLabelIndexes } from '@/components/charts/chartGeometry';
 import { groupZones, ZoneDonutChart } from '@/components/charts/ZoneDonutChart';
 import type { DonutZone, ZoneDonutChartProps } from '@/components/charts/ZoneDonutChart';
-import { DECIMALES, formatCOP, formatNumber, formatPercent, hourLabel, pad2, toBogota } from '@/format';
+import {
+  DECIMALES,
+  formatCOP,
+  formatNumber,
+  formatPercent,
+  hourLabel,
+  pad2,
+  toBogota,
+} from '@/format';
 import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
+
+import {
+  Chip,
+  estadoTokens,
+  Icon,
+  InlineNotice,
+  ScreenHeader,
+  Skeleton,
+  StateMessage,
+  StatusBadge,
+  useSkeletonPulse,
+} from '@/components';
+import type { IconName } from '@/components';
 
 import { isEmptyHistory, isMissingLastHour, useHistorialData } from './useHistorialData';
 import type {
@@ -151,76 +152,37 @@ function kwhText(v: number | null): string {
   return v === null ? formatNumber(null) : `${formatNumber(v, DECIMALES.kWh)} ${t('comun.kwh')}`;
 }
 
-/** Colores de severidad desde los tokens; los estados sin severidad van en neutro. */
-function stateTokens(estado: ConsumptionState) {
-  switch (estado) {
-    case 'normal':
-      return { bg: colors['status-success-bg'], border: colors['status-success-border'], text: colors['status-success-text'], icon: colors['status-success-default'], Glyph: CircleCheck };
-    case 'elevado':
-      return { bg: colors['status-warning-bg'], border: colors['status-warning-border'], text: colors['status-warning-text'], icon: colors['status-warning-default'], Glyph: TriangleAlert };
-    case 'critico':
-      return { bg: colors['status-error-bg'], border: colors['status-error-border'], text: colors['text-error'], icon: colors['status-error-default'], Glyph: CircleAlert };
-    default:
-      return { bg: colors['background-surfaceAlt'], border: colors['border-subtle'], text: colors['text-muted'], icon: colors['text-muted'], Glyph: estado === 'sin_datos' ? Clock : Info };
-  }
-}
-
 const ZONE_TYPES = ['bano', 'cocina', 'cuarto_servicio', 'dormitorio', 'garaje', 'lavanderia', 'oficina', 'sala', 'terraza'] as const;
-const ZONE_ICONS: Record<(typeof ZONE_TYPES)[number], LucideIcon> = {
-  bano: Bath,
-  cocina: CookingPot,
-  cuarto_servicio: DoorClosed,
-  dormitorio: Bed,
-  garaje: Car,
-  lavanderia: WashingMachine,
-  oficina: Monitor,
-  sala: Sofa,
-  terraza: Fence,
+const ZONE_ICONS: Record<(typeof ZONE_TYPES)[number], IconName> = {
+  bano: 'bath',
+  cocina: 'cooking-pot',
+  cuarto_servicio: 'door-closed',
+  dormitorio: 'bed',
+  garaje: 'car',
+  lavanderia: 'washing-machine',
+  oficina: 'monitor',
+  sala: 'sofa',
+  terraza: 'fence',
 };
 
 /** Ícono por nombre de zona (el contrato del historial trae `nombre`, no `tipo`). */
-function zoneIcon(nombre: string): LucideIcon {
+function zoneIcon(nombre: string): IconName {
   const tipo = ZONE_TYPES.find((z) => t(`zona.${z}`) === nombre);
-  return tipo ? ZONE_ICONS[tipo] : MapPin;
+  return tipo ? ZONE_ICONS[tipo] : 'map-pin';
 }
 
 /* ─────────────────────── Piezas de presentación ─────────────────────────── */
 
-function StatusBadge({ estado }: { estado: Severity }) {
-  const tk = stateTokens(estado);
-  return (
-    <View style={[styles.badge, { backgroundColor: tk.bg, borderColor: tk.border }]}>
-      <Text style={[styles.badgeText, { color: tk.text }]}>{t(`estado.palabra.${estado}`)}</Text>
-    </View>
-  );
-}
-
 function StateBlock({ estado, titulo, cuerpo }: { estado: ConsumptionState; titulo: string; cuerpo?: string }) {
-  const tk = stateTokens(estado);
+  const tk = estadoTokens(estado);
   return (
     <View style={[styles.stateBlock, { backgroundColor: tk.bg, borderColor: tk.border }]}>
-      <tk.Glyph size={16} color={tk.icon} />
+      <Icon name={tk.glyph} size={16} color={tk.icon} />
       <View style={styles.flex}>
         <Text style={[styles.stateBlockTitle, { color: tk.text }]}>{titulo}</Text>
         {cuerpo ? <Text style={styles.mutedXs}>{cuerpo}</Text> : null}
       </View>
     </View>
-  );
-}
-
-function Chip({ activo, icono: Icono, onPress, children }: { activo: boolean; icono: LucideIcon; onPress: () => void; children: string }) {
-  const color = activo ? colors['text-accent'] : colors['text-muted'];
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="radio"
-      accessibilityState={{ checked: activo }}
-      hitSlop={spacing['8']}
-      style={[styles.chip, activo && styles.chipActive]}
-    >
-      <Icono size={20} color={color} />
-      <Text style={[styles.chipText, { color }]}>{children}</Text>
-    </Pressable>
   );
 }
 
@@ -245,7 +207,7 @@ function CardHeader({ icono: Icono, titulo, estado }: { icono: LucideIcon; titul
         <Icono size={24} color={colors['accent-primary']} />
       </View>
       <Text style={[styles.cardTitle, styles.flex]}>{titulo}</Text>
-      {estado && isSeverity(estado) ? <StatusBadge estado={estado} /> : null}
+      {estado && isSeverity(estado) ? <StatusBadge estado={estado} icono={false} /> : null}
     </View>
   );
 }
@@ -261,79 +223,8 @@ function Metric({ value, unit, size = 'xl' }: { value: string; unit: string; siz
   );
 }
 
-function StateMessage({ icono: Icono, titulo, descripcion, accion, onAccion }: { icono: LucideIcon; titulo: string; descripcion?: string; accion?: string; onAccion?: () => void }) {
-  return (
-    <View style={[styles.card, styles.stateMessage]}>
-      <Icono size={32} color={colors['text-muted']} />
-      <View style={styles.flex}>
-        <Text style={styles.stateMessageTitle}>{titulo}</Text>
-        {descripcion ? <Text style={styles.mutedXs}>{descripcion}</Text> : null}
-        {accion && onAccion ? (
-          <Pressable onPress={onAccion} accessibilityRole="link" hitSlop={spacing['12']} style={styles.linkTouch}>
-            <Text style={styles.linkText}>{accion}</Text>
-          </Pressable>
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
-function InlineNotice({ tono, titulo, descripcion, onReintentar }: { tono: 'error' | 'informacion'; titulo: string; descripcion?: string; onReintentar?: () => void }) {
-  const isError = tono === 'error';
-  const Glyph = isError ? CircleX : Info;
-  return (
-    <View
-      style={[
-        styles.notice,
-        isError
-          ? { backgroundColor: colors['status-error-bg'], borderColor: colors['status-error-border'] }
-          : { backgroundColor: colors['status-info-bg'], borderColor: colors['border-subtle'] },
-      ]}
-      accessibilityRole={isError ? 'alert' : 'summary'}
-    >
-      <View style={styles.noticeRow}>
-        <Glyph size={16} color={isError ? colors['status-error-default'] : colors['status-info-default']} />
-        <View style={styles.flex}>
-          <Text style={[styles.stateBlockTitle, { color: isError ? colors['status-error-text'] : colors['text-primary'] }]}>{titulo}</Text>
-          {descripcion ? <Text style={styles.mutedXs}>{descripcion}</Text> : null}
-        </View>
-      </View>
-      {onReintentar ? (
-        <Pressable onPress={onReintentar} accessibilityRole="button" hitSlop={spacing['12']} style={styles.noticeAction}>
-          <Text style={styles.linkText}>{t('comun.reintentar')}</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
-
-/** Pulso suave; se detiene con «reducir movimiento» (ficha Skeleton). */
-function useSkeletonPulse() {
-  const [opacity] = useState(() => new Animated.Value(1));
-  useEffect(() => {
-    let loop: Animated.CompositeAnimation | null = null;
-    let cancelled = false;
-    AccessibilityInfo.isReduceMotionEnabled()
-      .then((reduce) => {
-        if (cancelled || reduce) return;
-        loop = Animated.loop(
-          Animated.sequence([
-            Animated.timing(opacity, { toValue: 0.5, duration: 700, useNativeDriver: true }),
-            Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
-          ]),
-        );
-        loop.start();
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-      loop?.stop();
-    };
-  }, [opacity]);
-  return opacity;
-}
-
-function Skeleton({ tamano = 'estandar' }: { tamano?: 'estandar' | 'grafico' }) {
+/** Esqueleto con la forma de la card del gráfico (Skeleton.md); las demás cards usan Skeleton. */
+function ChartSkeleton() {
   const opacity = useSkeletonPulse();
   return (
     <Animated.View style={[styles.card, { opacity }]} accessible accessibilityLabel={t('comun.cargando')}>
@@ -341,14 +232,7 @@ function Skeleton({ tamano = 'estandar' }: { tamano?: 'estandar' | 'grafico' }) 
         <View style={[styles.skeletonBlock, styles.skeletonIcon]} />
         <View style={[styles.skeletonBlock, styles.skeletonLine, styles.flex]} />
       </View>
-      {tamano === 'grafico' ? (
-        <View style={[styles.skeletonBlock, styles.skeletonChart]} />
-      ) : (
-        <>
-          <View style={[styles.skeletonBlock, styles.skeletonValue]} />
-          <View style={[styles.skeletonBlock, styles.skeletonStateBlock]} />
-        </>
-      )}
+      <View style={[styles.skeletonBlock, styles.skeletonChart]} />
     </Animated.View>
   );
 }
@@ -590,11 +474,11 @@ function ConsumptionChartCard({ data, zones, zonaId, onZona }: ConsumptionCardPr
 
       {!empty && (
         <View style={styles.chipRow} accessibilityRole="radiogroup">
-          <Chip activo={unit === 'energia'} icono={Zap} onPress={() => setUnitChoice('energia')}>
+          <Chip activo={unit === 'energia'} icono="zap" onClick={() => setUnitChoice('energia')}>
             {t(energyUnitKey(data.periodo))}
           </Chip>
           {data.tarifa_vigente && (
-            <Chip activo={unit === 'COP'} icono={Coins} onPress={() => setUnitChoice('COP')}>
+            <Chip activo={unit === 'COP'} icono="coins" onClick={() => setUnitChoice('COP')}>
               {t('comun.cop')}
             </Chip>
           )}
@@ -605,11 +489,11 @@ function ConsumptionChartCard({ data, zones, zonaId, onZona }: ConsumptionCardPr
         <View style={styles.filterBlock}>
           <Text style={styles.filterLabel}>{t('historial.filtrar_zona')}</Text>
           <View style={styles.chipWrap} accessibilityRole="radiogroup">
-            <Chip activo={general} icono={CalendarDays} onPress={() => onZona(null)}>
+            <Chip activo={general} icono="calendar-days" onClick={() => onZona(null)}>
               {t('comun.general')}
             </Chip>
             {sortedZones.map((z) => (
-              <Chip key={z.zona_id} activo={zonaId === z.zona_id} icono={zoneIcon(z.nombre)} onPress={() => onZona(z.zona_id)}>
+              <Chip key={z.zona_id} activo={zonaId === z.zona_id} icono={zoneIcon(z.nombre)} onClick={() => onZona(z.zona_id)}>
                 {z.nombre}
               </Chip>
             ))}
@@ -653,7 +537,7 @@ function CostCard({ data, onConfigureTariff }: { data: History; onConfigureTarif
   if (!data.tarifa_vigente) {
     return (
       <StateMessage
-        icono={Coins}
+        tipo="sin_tarifa"
         titulo={t('estado.historial_costo.sin_tarifa.titulo')}
         descripcion={t('estado.historial_costo.sin_tarifa.cuerpo')}
         accion={t('comun.configurar_tarifa')}
@@ -702,11 +586,7 @@ export function HistorialScreen({ hogarId = null, mockScenario }: HistorialScree
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
-      <View style={styles.header}>
-        <Text style={styles.headerTitle} accessibilityRole="header">
-          {t('historial.encabezado')}
-        </Text>
-      </View>
+      <ScreenHeader titulo={t('historial.encabezado')} onAtras={false} />
 
       <ScrollView
         style={styles.flex}
@@ -723,7 +603,7 @@ export function HistorialScreen({ hogarId = null, mockScenario }: HistorialScree
       >
         <View style={styles.periodRow} accessibilityRole="radiogroup">
           {PERIODS.map((p) => (
-            <Chip key={p} activo={periodo === p} icono={CalendarDays} onPress={() => setPeriodo(p)}>
+            <Chip key={p} activo={periodo === p} icono="calendar-days" onClick={() => setPeriodo(p)}>
               {t(`formato.periodo.${p}`)}
             </Chip>
           ))}
@@ -732,7 +612,7 @@ export function HistorialScreen({ hogarId = null, mockScenario }: HistorialScree
         {state.status === 'loading' && (
           <>
             <Skeleton />
-            <Skeleton tamano="grafico" />
+            <ChartSkeleton />
             <Skeleton />
             <Skeleton />
           </>
@@ -743,7 +623,7 @@ export function HistorialScreen({ hogarId = null, mockScenario }: HistorialScree
         )}
 
         {state.status === 'forbidden' && (
-          <StateMessage icono={Shield} titulo={t('error.sin_permiso_ver_historial.titulo')} descripcion={t('error.sin_permiso_ver_historial.cuerpo')} />
+          <StateMessage tipo="sin_permiso" titulo={t('error.sin_permiso_ver_historial.titulo')} descripcion={t('error.sin_permiso_ver_historial.cuerpo')} />
         )}
 
         {state.status === 'ready' && (
@@ -775,10 +655,6 @@ export function HistorialScreen({ hogarId = null, mockScenario }: HistorialScree
 
 /* ─────────────────────────────── Estilos ────────────────────────────────── */
 
-/** Alto de la cabecera en Figma (64): el token `topBar-height` vale 56, así que se compone sin
- * tocar el token (decisión del 24/11/2026). */
-const HEADER_HEIGHT = sizes['iconButtonLg-size'] + spacing['16'];
-
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors['background-default'] },
   flex: { flex: 1 },
@@ -788,16 +664,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing['40'],
     gap: spacing['16'],
   },
-
-  // Cabecera
-  header: {
-    height: HEADER_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: colors['border-subtle'],
-  },
-  headerTitle: { ...textStyle('display-l-24'), color: colors['text-primary'] },
 
   // Selector de periodo
   periodRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing['8'] },
@@ -831,13 +697,6 @@ const styles = StyleSheet.create({
   metricUnit: { ...textStyle('body-s-regular'), color: colors['text-muted'] },
 
   // StatusBadge y bloque de estado
-  badge: {
-    paddingVertical: spacing['4'],
-    paddingHorizontal: spacing['8'],
-    borderRadius: radius.full,
-    borderWidth: 1,
-  },
-  badgeText: { ...textStyle('ui-s-semibold-12') },
   stateBlock: {
     flexDirection: 'row',
     gap: spacing['8'],
@@ -859,18 +718,6 @@ const styles = StyleSheet.create({
   iconButtonActive: { backgroundColor: colors['accent-soft'] },
   chipRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing['8'] },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing['8'] },
-  chip: {
-    minHeight: 34,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['4'],
-    paddingHorizontal: spacing['16'],
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors['border-medium'],
-  },
-  chipActive: { backgroundColor: colors['accent-soft'], borderColor: colors['border-accent'] },
-  chipText: { ...textStyle('ui-s-semibold') },
   filterBlock: { gap: spacing['8'] },
   filterLabel: { ...textStyle('body-s-medium'), color: colors['text-primary'] },
 
@@ -883,13 +730,7 @@ const styles = StyleSheet.create({
   compareLabel: { ...textStyle('body-xs-medium'), color: colors['text-muted'] },
 
   // StateMessage e InlineNotice
-  stateMessage: { flexDirection: 'row', alignItems: 'flex-start' },
   stateMessageTitle: { ...textStyle('body-s-medium'), color: colors['text-primary'] },
-  linkTouch: { minHeight: spacing['48'], justifyContent: 'center', alignSelf: 'flex-start' },
-  linkText: { ...textStyle('ui-s-semibold-12'), color: colors['text-accent'] },
-  notice: { borderWidth: 1, borderRadius: radius.md, padding: spacing['12'], gap: spacing['8'] },
-  noticeRow: { flexDirection: 'row', gap: spacing['8'] },
-  noticeAction: { alignSelf: 'flex-end', minHeight: spacing['48'], justifyContent: 'center' },
 
   // Botón principal
   primaryButton: {
@@ -905,7 +746,5 @@ const styles = StyleSheet.create({
   skeletonBlock: { backgroundColor: colors['background-elevated'], borderRadius: radius.xs },
   skeletonIcon: { width: spacing['40'], height: spacing['40'] },
   skeletonLine: { height: spacing['12'] },
-  skeletonValue: { height: spacing['32'], width: '50%' },
-  skeletonStateBlock: { height: spacing['48'] },
   skeletonChart: { height: CHART_HEIGHT },
 });

@@ -42,6 +42,21 @@ function HouseFilled({ color }: { color: string }) {
   );
 }
 
+/** Casa inactiva de Figma: silueta en contorno con la puerta rellena (Lucide la dibuja hueca). */
+const HOUSE_OUTLINE =
+  'M33.78 26C34.37 26 34.93 25.78 35.35 25.38C35.77 24.99 36 24.45 36 23.89V14.42C36 14.12 35.93 13.81 35.79 13.53C35.66 13.26 35.46 13.01 35.21 12.81L27.43 6.5C27.03 6.18 26.53 6 26 6C25.47 6 24.97 6.18 24.57 6.5L16.79 12.81C16.54 13.01 16.34 13.26 16.21 13.53C16.07 13.81 16 14.12 16 14.42V23.89C16 24.45 16.23 24.99 16.65 25.38C17.07 25.78 17.63 26 18.22 26H33.78Z';
+const HOUSE_DOOR =
+  'M21.26 25.88V16.53C21.26 16.22 21.43 15.92 21.73 15.7C22.02 15.48 22.42 15.36 22.84 15.36H29.16C29.58 15.36 29.98 15.48 30.27 15.7C30.57 15.92 30.74 16.22 30.74 16.53V25.88Z';
+
+function HouseOutline({ color }: { color: string }) {
+  return (
+    <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="14 4 24 24">
+      <Path d={HOUSE_OUTLINE} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+      <Path d={HOUSE_DOOR} fill={color} stroke={color} strokeWidth={2} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
 interface NavIconProps {
   icono: LucideIcon;
   focused: boolean;
@@ -56,6 +71,8 @@ function NavIcon({ icono: Icono, focused, relleno }: NavIconProps) {
     <View style={[styles.iconBox, focused && styles.iconBoxActive]}>
       {focused && relleno && Icono === House ? (
         <HouseFilled color={color} />
+      ) : !focused && Icono === House ? (
+        <HouseOutline color={color} />
       ) : (
         <Icono size={ICON_SIZE} color={color} fill={focused && relleno ? color : 'none'} />
       )}

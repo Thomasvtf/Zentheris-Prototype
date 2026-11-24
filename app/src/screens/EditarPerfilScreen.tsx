@@ -24,6 +24,7 @@ import {
   ChevronRight,
   CircleAlert,
   CircleCheck,
+  CircleX,
   Image as ImageIcon,
   Pencil,
   Trash2,
@@ -31,7 +32,7 @@ import {
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 
-import { ScreenHeader } from '@/components';
+import { Button, ScreenHeader } from '@/components';
 import { deleteAvatar, getCurrentUser, updateProfile } from '@/api/users';
 import { toErrorTextKey } from '@/api/errors';
 import type { SuccessBody } from '@/api/client';
@@ -332,27 +333,6 @@ export function EditarPerfilScreen() {
                     {errors.phone ? <Text style={styles.fieldError}>{errors.phone}</Text> : null}
                   </View>
 
-                  <View style={styles.editActions}>
-                    <TouchableOpacity
-                      style={styles.btnSecondary}
-                      onPress={cancelEditing}
-                      disabled={working}
-                      accessibilityRole="button"
-                    >
-                      <Text style={styles.btnSecondaryText}>{t('perfil.cancelar')}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.btnPrimary, working && styles.btnDisabled]}
-                      onPress={handleSave}
-                      disabled={working}
-                      accessibilityRole="button"
-                      accessibilityState={{ disabled: working, busy: working }}
-                    >
-                      <Text style={[styles.btnPrimaryText, working && styles.btnDisabledText]}>
-                        {working ? t('comun.cargando') : t('perfil.guardar')}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
                 </>
               ) : (
                 <>
@@ -372,6 +352,18 @@ export function EditarPerfilScreen() {
                 </>
               )}
             </View>
+
+            {/* Edición (Figma A7.3): botones fuera de la card, apilados; principal arriba. */}
+            {editing && (
+              <View style={styles.editActions}>
+                <Button bloque estado={working ? 'cargando' : 'normal'} onClick={() => void handleSave()}>
+                  {t('perfil.guardar')}
+                </Button>
+                <Button variante="secundario" bloque estado={working ? 'deshabilitado' : 'normal'} onClick={cancelEditing}>
+                  {t('perfil.cancelar')}
+                </Button>
+              </View>
+            )}
 
             {!editing && (
               <View style={styles.card}>
@@ -414,8 +406,22 @@ export function EditarPerfilScreen() {
             activeOpacity={1}
             onPress={() => setPhotoSheet(false)}
           />
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{t('perfil.foto_titulo')}</Text>
+          {/* Hoja de foto (Figma A7.4): tirador, título con ✕ y opciones; sin botón Cancelar. */}
+          <View style={styles.modalContent} accessibilityViewIsModal>
+            <View style={styles.sheetHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle} accessibilityRole="header">
+                {t('perfil.foto_titulo')}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setPhotoSheet(false)}
+                hitSlop={spacing[12]}
+                accessibilityRole="button"
+                accessibilityLabel={t('comun.cerrar')}
+              >
+                <CircleX size={24} color={colors['text-primary']} />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.modalSubtitle}>{t('perfil.foto_cuerpo')}</Text>
 
             {/* TODO(pendiente: expo-image-picker): sin el paquete no se puede elegir de la galería. */}
@@ -440,13 +446,6 @@ export function EditarPerfilScreen() {
               </TouchableOpacity>
             ) : null}
 
-            <TouchableOpacity
-              style={styles.btnSecondary}
-              onPress={() => setPhotoSheet(false)}
-              accessibilityRole="button"
-            >
-              <Text style={styles.btnSecondaryText}>{t('perfil.cancelar')}</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -636,39 +635,8 @@ const styles = StyleSheet.create({
   },
 
   editActions: {
-    flexDirection: 'row',
     gap: spacing[12],
-  },
-  btnPrimary: {
-    flex: 1,
-    backgroundColor: colors['accent-primary'],
-    borderRadius: radius.md,
-    height: sizes['button-height'],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnPrimaryText: {
-    ...textStyle('ui-m-semibold'),
-    color: colors['text-inverse'],
-  },
-  btnSecondary: {
-    flex: 1,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors['border-medium'],
-    height: sizes['button-height'],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnSecondaryText: {
-    ...textStyle('ui-m-semibold'),
-    color: colors['text-accent'],
-  },
-  btnDisabled: {
-    backgroundColor: colors['state-disabled-bg'],
-  },
-  btnDisabledText: {
-    color: colors['state-disabled-text'],
+    marginBottom: spacing[16],
   },
 
   errorBox: {
@@ -739,6 +707,15 @@ const styles = StyleSheet.create({
     borderColor: colors['border-subtle'],
     gap: spacing[8],
   },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: spacing[40],
+    height: spacing[4],
+    borderRadius: radius.full,
+    backgroundColor: colors['border-medium'],
+    marginBottom: spacing[8],
+  },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   modalTitle: {
     ...textStyle('display-s-16'),
     color: colors['text-primary'],

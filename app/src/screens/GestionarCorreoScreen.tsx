@@ -22,7 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CircleAlert, CircleCheck, CircleX, Mail, User } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
-import { ScreenHeader } from '@/components';
+import { Button, ScreenHeader } from '@/components';
 import { MOCK_EMAIL, USE_MOCKS } from '@/api/devMocks';
 import { getSupabase } from '@/state/supabase';
 import { colors, radius, sizes, spacing, textStyle } from '@/theme';
@@ -179,6 +179,8 @@ export function GestionarCorreoScreen() {
     confirmTrim === newTrim &&
     !sameAsCurrent;
   const sending = send.status === 'sending';
+  /** Enlace enviado: la pantalla pasa a «Revisa tu correo». */
+  const sent = state.status === 'ready' && send.status === 'sent' ? send : null;
 
   const handleContinue = async () => {
     if (!isValid || sending) return;
@@ -196,14 +198,46 @@ export function GestionarCorreoScreen() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
 
-      <ScreenHeader titulo={t('correo.encabezado')} onAtras={() => router.back()} />
+      <ScreenHeader
+        titulo={t(sent ? 'auth.revisa_correo.titulo' : 'correo.encabezado')}
+        onAtras={() => router.back()}
+      />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
+      {/* «Revisa tu correo» (Figma A7.7): ícono centrado, texto y acciones abajo. */}
+      {sent ? (
+        <View style={styles.sentScreen}>
+          <View style={styles.sentContent}>
+            <View style={styles.sentIcon}>
+              <Mail size={32} color={colors['accent-primary']} />
+            </View>
+            <Text style={styles.sentTitle} accessibilityRole="header">
+              {t('auth.revisa_correo.titulo')}
+            </Text>
+            <Text style={styles.sentBody}>{t('auth.revisa_correo.cambio_correo', { correo: sent.email })}</Text>
+            <Text style={styles.sentHint}>{t('auth.revisa_correo.no_llego')}</Text>
+            {resent && (
+              <View style={styles.messageRow} accessibilityRole="alert">
+                <CircleCheck size={16} color={colors['text-success']} />
+                <Text style={styles.successText}>{t('auth.revisa_correo.reenviado')}</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.sentActions}>
+            <Button variante="secundario" bloque estado={sending ? 'cargando' : 'normal'} onClick={() => void handleResend()}>
+              {t('auth.revisa_correo.reenviar')}
+            </Button>
+            <Button variante="fantasma" bloque onClick={() => router.back()}>
+              {t('auth.revisa_correo.volver_config')}
+            </Button>
+          </View>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         {state.status === 'loading' && (
           <View accessibilityRole="progressbar" accessibilityLabel={t('comun.cargando')}>
             <View style={[styles.skeleton, styles.skeletonShort]} />
@@ -227,43 +261,6 @@ export function GestionarCorreoScreen() {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Text style={styles.retryText}>{t('comun.reintentar')}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {state.status === 'ready' && send.status === 'sent' && (
-          <View style={styles.formCard}>
-            <View style={styles.sentHeader}>
-              <Mail size={24} color={colors['text-accent']} />
-              <Text style={styles.sentTitle}>{t('auth.revisa_correo.titulo')}</Text>
-            </View>
-            <Text style={styles.sentBody}>
-              {t('auth.revisa_correo.cambio_correo', { correo: send.email })}
-            </Text>
-            <Text style={styles.sentHint}>{t('auth.revisa_correo.no_llego')}</Text>
-            {resent && (
-              <View style={styles.messageRow} accessibilityRole="alert">
-                <CircleCheck size={16} color={colors['text-success']} />
-                <Text style={styles.successText}>{t('auth.revisa_correo.reenviado')}</Text>
-              </View>
-            )}
-            <TouchableOpacity
-              style={styles.btnSecondary}
-              onPress={handleResend}
-              disabled={sending}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: sending, busy: sending }}
-            >
-              <Text style={styles.btnSecondaryText}>
-                {sending ? t('comun.cargando') : t('auth.revisa_correo.reenviar')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.btnPrimary}
-              onPress={() => router.back()}
-              accessibilityRole="button"
-            >
-              <Text style={styles.btnPrimaryText}>{t('auth.revisa_correo.volver_config')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -335,8 +332,9 @@ export function GestionarCorreoScreen() {
           </>
         )}
 
-        <View style={styles.bottomSpace} />
-      </ScrollView>
+          <View style={styles.bottomSpace} />
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -349,6 +347,17 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  sentScreen: { flex: 1, paddingHorizontal: spacing[16], paddingBottom: spacing[24] },
+  sentContent: { flex: 1, alignItems: 'center', paddingTop: spacing[64], gap: spacing[16] },
+  sentIcon: {
+    width: spacing[64] + spacing[8],
+    height: spacing[64] + spacing[8],
+    borderRadius: radius.full,
+    backgroundColor: colors['accent-soft'],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sentActions: { gap: spacing[12] },
   scrollContent: {
     paddingHorizontal: spacing[16],
     paddingTop: spacing[8],
@@ -523,25 +532,20 @@ const styles = StyleSheet.create({
     color: colors['text-accent'],
   },
 
-  sentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[12],
-    marginBottom: spacing[12],
-  },
   sentTitle: {
-    ...textStyle('display-s-16'),
+    ...textStyle('display-l-24'),
     color: colors['text-primary'],
+    textAlign: 'center',
   },
   sentBody: {
     ...textStyle('body-s-regular'),
     color: colors['text-muted'],
-    marginBottom: spacing[12],
+    textAlign: 'center',
   },
   sentHint: {
     ...textStyle('body-xs-regular'),
     color: colors['text-muted'],
-    marginBottom: spacing[16],
+    textAlign: 'center',
   },
 
   btnPrimary: {
@@ -555,19 +559,6 @@ const styles = StyleSheet.create({
   btnPrimaryText: {
     ...textStyle('ui-m-semibold'),
     color: colors['text-inverse'],
-  },
-  btnSecondary: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors['border-medium'],
-    height: sizes['button-height'],
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: spacing[8],
-  },
-  btnSecondaryText: {
-    ...textStyle('ui-m-semibold'),
-    color: colors['text-accent'],
   },
   btnDisabled: {
     backgroundColor: colors['state-disabled-bg'],

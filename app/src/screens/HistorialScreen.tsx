@@ -27,7 +27,7 @@
  * día y fecha se arman aquí con las plantillas del catálogo (formato.dia_corto.*,
  * formato.dia.*, formato.tiempo.fecha) hasta tener un helper en @/format.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
@@ -165,12 +165,6 @@ function peakWhen(periodo: Period, peak: { inicio: string; fin: string }): strin
 /** Texto de la unidad de energía: kW por hora en Día, kWh por día (RN-XIII-06). */
 function energyUnitKey(periodo: Period): 'comun.kw' | 'comun.kwh' {
   return periodo === 'dia' ? 'comun.kw' : 'comun.kwh';
-}
-
-function energyText(v: number | null, periodo: Period): string {
-  if (v === null) return formatNumber(null);
-  const dec = periodo === 'dia' ? DECIMALES.kW : DECIMALES.kWh;
-  return `${formatNumber(v, dec)} ${t(energyUnitKey(periodo))}`;
 }
 
 function kwhText(v: number | null): string {
@@ -335,7 +329,7 @@ function InlineNotice({ tono, titulo, descripcion, onReintentar }: { tono: 'erro
 
 /** Pulso suave; se detiene con «reducir movimiento» (ficha Skeleton). */
 function useSkeletonPulse() {
-  const opacity = useRef(new Animated.Value(1)).current;
+  const [opacity] = useState(() => new Animated.Value(1));
   useEffect(() => {
     let loop: Animated.CompositeAnimation | null = null;
     let cancelled = false;

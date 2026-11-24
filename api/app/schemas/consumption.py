@@ -96,6 +96,13 @@ class ConsumoZonaDetalle(BaseModel):
     participacion: ConsumoZonaDetalleParticipacion
 
 
+class PuntoSerieZona(BaseModel):
+    """Objeto de `PuntoSerie.zonas` (en línea en el contrato, v0.2.9)."""
+
+    zona_id: UUID
+    energia_kwh: float | None = Field(ge=0)
+
+
 class PuntoSerie(BaseModel):
     """Esquema `PuntoSerie` del contrato."""
 
@@ -104,6 +111,7 @@ class PuntoSerie(BaseModel):
     energia_kwh: float | None = Field(ge=0)
     costo_cop: float | None = Field(ge=0)
     es_pico_maximo: bool
+    zonas: list[PuntoSerieZona] | None
 
 
 class HistorialParticipacionZona(BaseModel):

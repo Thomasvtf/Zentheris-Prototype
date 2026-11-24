@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Zentheris API (MVP)
-  version: 0.2.8
+  version: 0.2.9
   description: |
-    Contrato de la API del MVP de Zentheris (proyecto formativo SENA). **Versión 0.2.8 · 22/11/2026.**
+    Contrato de la API del MVP de Zentheris (proyecto formativo SENA). **Versión 0.2.9 · 23/11/2026.**
 
     **Estado:** candidato a congelar. Validación estructural propia sin errores (referencias,
     operationId únicos, parámetros de ruta, esquemas JSON Schema 2020-12, enums cruzados con el
@@ -13,10 +13,14 @@ info:
     **Fuentes:** Reglas de Negocio y Modelo de Datos v4.9 (cada operación cita su regla RN-),
     registro de decisiones DC-01 a DC-58 (03/11/2026), umbrales `umbrales-estado.v1.json` y acta 04.
 
-    **Cambios frente a 0.2.7:** `POST /onboarding` declara el `404` con `FICHA_NO_CREADA` (la persona
-    aún no creó su ficha) y `nombre_hogar` tiene un máximo de 80 caracteres. El texto del error
-    `MEMBRESIA_ACTIVA_EXISTENTE` del catálogo deja de hablar solo de invitaciones.
-    Sin endpoints nuevos ni campos nuevos: 40 operaciones.
+    **Cambios frente a 0.2.8:** cada punto de la serie del historial (`PuntoSerie`) trae `zonas`,
+    el consumo de cada zona en ese punto, para el gráfico de área apilada del filtro General
+    (`null` con filtro por zona). `GET /consumo/zonas` aclara que lista solo las zonas que cuentan
+    (zona activa con sensor activo) y `GET /consumo/zonas/{zona_id}` aclara que una zona que no
+    cuenta responde `200` con valores `null` y estado `sin_datos`. Sin endpoints nuevos: 40 operaciones.
+
+    **Cambios de 0.2.8 frente a 0.2.7:** `POST /onboarding` declara el `404` con `FICHA_NO_CREADA` y
+    `nombre_hogar` tiene un máximo de 80 caracteres.
 
     **Convenciones**
     - Autenticación: Supabase Auth (RN-I-01). El cliente obtiene el JWT con Supabase
@@ -655,9 +659,10 @@ paths:
     get:
       tags: [Consumo]
       operationId: obtenerConsumoZonas
-      summary: Participación y estado de cada zona en la última hora completa (RN-XI-05, RN-XII-05, RN-XII-06)
+      summary: Participación y estado de las zonas que cuentan en la última hora completa (RN-XI-05, RN-XII-05, RN-XII-06)
       description: |
-        Usado en el Panel y en Zonas. Orden alfabético por nombre. Requiere
+        Usado en el Panel y en Zonas. Lista solo las zonas que cuentan para el total (zona activa
+        con sensor activo). Orden alfabético por nombre. Requiere
         `permiso_ver_consumo_actual` o ser administrador.
       responses:
         '200':
@@ -680,7 +685,9 @@ paths:
       summary: Zona individual (RN-XI-05, RN-XI-06, RN-XII-07)
       description: |
         El estado de consumo se compara siempre contra el promedio histórico de la zona en la
-        misma hora del día, nunca contra la meta. Requiere `permiso_ver_consumo_actual` o ser administrador.
+        misma hora del día, nunca contra la meta. Una zona del hogar que no cuenta para el total
+        (inactiva o con el sensor pausado) responde `200` con los valores en `null` y los estados en
+        `sin_datos`. Requiere `permiso_ver_consumo_actual` o ser administrador.
       responses:
         '200':
           description: Detalle de la zona.
@@ -1421,7 +1428,7 @@ components:
             estado: { $ref: '#/components/schemas/EstadoConsumo' }
     PuntoSerie:
       type: object
-      required: [inicio, fin, energia_kwh, costo_cop, es_pico_maximo]
+      required: [inicio, fin, energia_kwh, costo_cop, es_pico_maximo, zonas]
       properties:
         inicio: { type: string, format: date-time }
         fin: { type: string, format: date-time }
@@ -1436,6 +1443,17 @@ components:
         es_pico_maximo:
           type: boolean
           description: Pico más alto del periodo. La app lo marca con la etiqueta «Pico» y el rojo claro `chart/peak`, sin componentes ni palabras de estado (RN-XIII-03, D17).
+        zonas:
+          description: Solo con el filtro General (gráfico de área apilada por zona, v0.2.9); `null` con filtro por zona. Una entrada por cada zona de `participacion_zonas`, en el mismo orden. `energia_kwh` null = esa zona no tiene lectura en ese punto. Si alguna zona es null, el `energia_kwh` del punto también es null.
+          oneOf:
+            - type: array
+              items:
+                type: object
+                required: [zona_id, energia_kwh]
+                properties:
+                  zona_id: { type: string, format: uuid }
+                  energia_kwh: { type: [number, 'null'], minimum: 0 }
+            - type: 'null'
     Historial:
       type: object
       required: [periodo, zona_id, inicio, fin, granularidad, tarifa_vigente, total_kwh, serie, participacion_zonas, ultimo_pico, comparacion, costo]

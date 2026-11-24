@@ -63,7 +63,6 @@ function useEditProfileData() {
 
   useEffect(() => {
     let cancelled = false;
-    setState((prev) => (prev.status === 'ready' ? prev : { status: 'loading' }));
     getCurrentUser()
       .then((user) => {
         if (!cancelled) setState({ status: 'ready', user });
@@ -78,11 +77,9 @@ function useEditProfileData() {
 
   const avatarPath = state.status === 'ready' ? state.user.avatar_url : null;
   useEffect(() => {
+    // Sin ruta no se pide URL firmada; `shownAvatarUri` queda en null más abajo.
+    if (!avatarPath) return;
     let cancelled = false;
-    if (!avatarPath) {
-      setAvatarUri(null);
-      return;
-    }
     (async () => {
       try {
         const { data } = await getSupabase().storage.from('avatares').createSignedUrl(avatarPath, 3600);
@@ -97,7 +94,12 @@ function useEditProfileData() {
     };
   }, [avatarPath]);
 
-  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  // Al reintentar se muestra el esqueleto (salvo con datos ya cargados), desde el evento.
+  const reload = useCallback(() => {
+    setState((prev) => (prev.status === 'ready' ? prev : { status: 'loading' }));
+    setAttempt((n) => n + 1);
+  }, []);
+  const shownAvatarUri = avatarPath ? avatarUri : null;
 
   const saveProfile = useCallback(
     async (nombreCompleto: string, telefono: string | null) => {
@@ -128,7 +130,7 @@ function useEditProfileData() {
 
   const clearAction = useCallback(() => setAction({ status: 'idle' }), []);
 
-  return { state, action, avatarUri, reload, saveProfile, removePhoto, clearAction };
+  return { state, action, avatarUri: shownAvatarUri, reload, saveProfile, removePhoto, clearAction };
 }
 
 function textStyle(name: keyof typeof typography): TextStyle {

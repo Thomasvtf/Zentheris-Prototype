@@ -54,12 +54,9 @@ function useGoalData(hogarId: string | null) {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (!hogarId) {
-      setState({ status: 'error', errorKey: 'error.app.no_encontrado' });
-      return;
-    }
+    // Sin hogar no se pide nada: el error se deriva abajo, sin setState aquí.
+    if (!hogarId) return;
     let cancelled = false;
-    setState({ status: 'loading' });
     getGoal(hogarId)
       .then((data) => {
         if (!cancelled) setState({ status: 'ready', data });
@@ -72,8 +69,15 @@ function useGoalData(hogarId: string | null) {
     };
   }, [hogarId, attempt]);
 
-  const reload = useCallback(() => setAttempt((n) => n + 1), []);
-  return { state, reload };
+  // El esqueleto se muestra al pedir de nuevo (evento), no dentro del efecto.
+  const reload = useCallback(() => {
+    setState({ status: 'loading' });
+    setAttempt((n) => n + 1);
+  }, []);
+  const visibleState: GoalState = hogarId
+    ? state
+    : { status: 'error', errorKey: 'error.app.no_encontrado' };
+  return { state: visibleState, reload };
 }
 
 function textStyle(name: keyof typeof typography): TextStyle {
@@ -145,8 +149,9 @@ export function EstablecerMetaScreen({ hogarId = null }: EstablecerMetaScreenPro
 
   // Valor inicial: la meta activa; si no hay, el promedio diario de 30 días × días del mes
   // redondeado a la decena. Sin ninguno de los dos queda en 0 (hay que elegir un valor).
-  useEffect(() => {
-    if (state.status !== 'ready' || initialized) return;
+  // Se ajusta durante el render, una sola vez, en lugar de con un efecto (patrón de React
+  // «ajustar el estado cuando cambian los datos»).
+  if (state.status === 'ready' && !initialized) {
     const { meta, promedio_diario_30d_kwh: average } = state.data;
     if (meta) {
       setGoalKwh(meta.valor_kwh_mensual);
@@ -155,7 +160,7 @@ export function EstablecerMetaScreen({ hogarId = null }: EstablecerMetaScreenPro
       setGoalKwh(Math.max(STEP_KWH, Math.round((average * days) / STEP_KWH) * STEP_KWH));
     }
     setInitialized(true);
-  }, [state, initialized, days]);
+  }
 
   const canEdit = state.status === 'ready' && state.data.puede_editar;
 

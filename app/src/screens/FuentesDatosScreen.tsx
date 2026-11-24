@@ -48,12 +48,9 @@ function useDataSourcesData(hogarId: string | null) {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (!hogarId) {
-      setState({ status: 'error', errorKey: 'error.app.no_encontrado' });
-      return;
-    }
+    // Sin hogar no se pide nada: el error se deriva abajo, sin setState aquí.
+    if (!hogarId) return;
     let cancelled = false;
-    setState({ status: 'loading' });
     getDataSources(hogarId)
       .then((data) => {
         if (!cancelled) setState({ status: 'ready', data });
@@ -66,8 +63,15 @@ function useDataSourcesData(hogarId: string | null) {
     };
   }, [hogarId, attempt]);
 
-  const retry = useCallback(() => setAttempt((n) => n + 1), []);
-  return { state, retry };
+  // El esqueleto se muestra al pedir de nuevo (evento), no dentro del efecto.
+  const retry = useCallback(() => {
+    setState({ status: 'loading' });
+    setAttempt((n) => n + 1);
+  }, []);
+  const visibleState: DataSourcesState = hogarId
+    ? state
+    : { status: 'error', errorKey: 'error.app.no_encontrado' };
+  return { state: visibleState, retry };
 }
 
 /** Estilo de texto desde los tokens de tipografía. */

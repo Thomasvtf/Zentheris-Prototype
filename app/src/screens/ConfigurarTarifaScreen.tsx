@@ -57,12 +57,9 @@ function useTariffData(hogarId: string | null) {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (!hogarId) {
-      setState({ status: 'error', errorKey: 'error.app.no_encontrado' });
-      return;
-    }
+    // Sin hogar no se pide nada: el error se deriva abajo, sin setState aquí.
+    if (!hogarId) return;
     let cancelled = false;
-    setState({ status: 'loading' });
     getTariff(hogarId)
       .then((data) => {
         if (!cancelled) setState({ status: 'ready', data });
@@ -75,8 +72,15 @@ function useTariffData(hogarId: string | null) {
     };
   }, [hogarId, attempt]);
 
-  const reload = useCallback(() => setAttempt((n) => n + 1), []);
-  return { state, reload };
+  // El esqueleto se muestra al pedir de nuevo (evento), no dentro del efecto.
+  const reload = useCallback(() => {
+    setState({ status: 'loading' });
+    setAttempt((n) => n + 1);
+  }, []);
+  const visibleState: TariffState = hogarId
+    ? state
+    : { status: 'error', errorKey: 'error.app.no_encontrado' };
+  return { state: visibleState, reload };
 }
 
 function textStyle(name: keyof typeof typography): TextStyle {

@@ -60,7 +60,6 @@ function useSettingsData() {
 
   useEffect(() => {
     let cancelled = false;
-    setState((prev) => (prev.status === 'ready' ? prev : { status: 'loading' }));
     getCurrentUser()
       .then((user) => {
         if (cancelled) return;
@@ -77,11 +76,9 @@ function useSettingsData() {
 
   const avatarPath = state.status === 'ready' ? state.user.avatar_url : null;
   useEffect(() => {
+    // Sin ruta no se pide URL firmada; `shownAvatarUri` queda en null más abajo.
+    if (!avatarPath) return;
     let cancelled = false;
-    if (!avatarPath) {
-      setAvatarUri(null);
-      return;
-    }
     (async () => {
       try {
         const { data } = await getSupabase().storage.from('avatares').createSignedUrl(avatarPath, 3600);
@@ -95,7 +92,12 @@ function useSettingsData() {
     };
   }, [avatarPath]);
 
-  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  // Al reintentar se muestra el esqueleto (salvo con datos ya cargados), desde el evento.
+  const reload = useCallback(() => {
+    setState((prev) => (prev.status === 'ready' ? prev : { status: 'loading' }));
+    setAttempt((n) => n + 1);
+  }, []);
+  const shownAvatarUri = avatarPath ? avatarUri : null;
 
   const setPreference = useCallback(
     async (change: Partial<Preferences>) => {
@@ -148,7 +150,7 @@ function useSettingsData() {
   return {
     state,
     prefs,
-    avatarUri,
+    avatarUri: shownAvatarUri,
     reload,
     setPreference,
     signOut,

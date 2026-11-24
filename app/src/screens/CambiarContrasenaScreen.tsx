@@ -68,14 +68,17 @@ function useChangePasswordData() {
     setSave({ status: 'idle' });
   }, []);
 
+  /** Devuelve `true` si se guardó, para que la pantalla limpie los campos. */
   const savePassword = useCallback(async (current: string, next: string) => {
     setSave({ status: 'saving' });
     try {
       await changePassword({ contrasena_actual: current, contrasena_nueva: next });
       setSave({ status: 'saved' });
       setVerify({ status: 'idle' });
+      return true;
     } catch (error: unknown) {
       setSave({ status: 'error', errorKey: toErrorTextKey(error) });
+      return false;
     }
   }, []);
 
@@ -217,17 +220,14 @@ export function CambiarContrasenaScreen() {
 
   const handleSave = async () => {
     if (!isValid || saving) return;
-    await savePassword(current, next);
-  };
-
-  // Tras guardar con éxito se limpian los campos (nunca se conservan contraseñas en pantalla).
-  React.useEffect(() => {
-    if (save.status === 'saved') {
+    const ok = await savePassword(current, next);
+    // Tras guardar con éxito se limpian los campos (nunca se conservan contraseñas en pantalla).
+    if (ok) {
       setCurrent('');
       setNext('');
       setConfirm('');
     }
-  }, [save.status]);
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>

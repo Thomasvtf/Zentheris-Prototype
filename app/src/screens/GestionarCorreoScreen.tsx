@@ -56,7 +56,6 @@ function useManageEmailData() {
 
   useEffect(() => {
     let cancelled = false;
-    setState({ status: 'loading' });
     (async () => {
       try {
         if (USE_MOCKS) {
@@ -81,7 +80,11 @@ function useManageEmailData() {
     };
   }, [attempt]);
 
-  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  // El esqueleto se muestra al pedir de nuevo (evento), no dentro del efecto.
+  const reload = useCallback(() => {
+    setState({ status: 'loading' });
+    setAttempt((n) => n + 1);
+  }, []);
 
   const sendChange = useCallback(async (newEmail: string) => {
     setSend({ status: 'sending' });

@@ -14,7 +14,7 @@
  * Aquí se implementan como piezas locales de presentación con esas mismas props, para
  * moverlas a src/components/ cuando se apruebe ese cambio.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
@@ -113,10 +113,6 @@ function greetingKey(now: Date): string {
   if (h >= 5 && h < 12) return 'formato.saludo.manana';
   if (h >= 12 && h < 19) return 'formato.saludo.tarde';
   return 'formato.saludo.noche';
-}
-
-function kwText(v: number | null): string {
-  return v === null ? formatNumber(null) : `${formatNumber(v, DECIMALES.kW)} ${t('comun.kw')}`;
 }
 
 function kwhText(v: number | null): string {
@@ -341,7 +337,7 @@ function InlineNotice({ titulo, descripcion, onReintentar }: { titulo: string; d
 
 /** Pulso suave; se detiene con «reducir movimiento» (ficha Skeleton). */
 function useSkeletonPulse() {
-  const opacity = useRef(new Animated.Value(1)).current;
+  const [opacity] = useState(() => new Animated.Value(1));
   useEffect(() => {
     let loop: Animated.CompositeAnimation | null = null;
     let cancelled = false;
@@ -770,19 +766,23 @@ export function DashboardScreen({ hogarId = null, onOpenAlerts, mockScenario }: 
 
 /* ─────────────────────────────── Estilos ────────────────────────────────── */
 
+/** Alto de la cabecera en Figma (64): el token `topBar-height` vale 56, así que se compone sin
+ * tocar el token (decisión del 24/11/2026). */
+const HEADER_HEIGHT = sizes['iconButtonLg-size'] + spacing['16'];
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors['background-default'] },
   flex: { flex: 1 },
   center: { textAlign: 'center' },
   content: {
-    paddingHorizontal: sizes['grid-margin'],
+    paddingHorizontal: spacing['16'],
     paddingBottom: spacing['40'],
     gap: spacing['16'],
   },
 
   // Cabecera (ScreenHeader)
   header: {
-    height: sizes['topBar-height'],
+    height: HEADER_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing['4'],
@@ -904,7 +904,12 @@ const styles = StyleSheet.create({
   chipText: { ...textStyle('ui-s-semibold') },
 
   // Zonas
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing['16'],
+  },
   sectionTitle: { ...textStyle('display-m'), color: colors['text-primary'] },
   zonesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing['12'] },
   zoneLong: { marginBottom: spacing['12'] },

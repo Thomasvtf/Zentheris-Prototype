@@ -106,6 +106,15 @@ function ZoneIcon({ zona }: { zona: string }) {
   return <Icono size={22} color={colors['text-muted']} />;
 }
 
+/**
+ * Estado de la fuente principal: sin lectura de la última hora es «Sin datos» (Figma A8.6);
+ * si no, «inactiva» se muestra como «Pausado» (el contrato solo trae activa | inactiva).
+ */
+function principalState(fuente: DataSources['fuente_principal']): SourceState {
+  if (fuente.potencia_kw === null) return 'sin_datos';
+  return fuente.estado === 'activa' ? 'activo' : 'pausado';
+}
+
 /** Estado = ícono + palabra (nunca solo color). */
 function SourceStatus({ estado }: { estado: SourceState }) {
   const active = estado === 'activo';
@@ -140,7 +149,7 @@ function SourceRow({ icon, nombre, detalle, potenciaKw, estado, mostrarValor }: 
         {mostrarValor && (
           <View style={styles.valueRow}>
             <Text style={styles.metricNumber}>{formatNumber(potenciaKw, DECIMALES.kW)}</Text>
-            <Text style={styles.metricUnit}> kW</Text>
+            <Text style={styles.metricUnit}> {t('comun.kw')}</Text>
           </View>
         )}
         <SourceStatus estado={estado} />
@@ -210,8 +219,7 @@ export function FuentesDatosScreen({ hogarId = null }: FuentesDatosScreenProps) 
               nombre={state.data.fuente_principal.nombre}
               detalle={t('fuentes.principal_suma')}
               potenciaKw={state.data.fuente_principal.potencia_kw}
-              // «inactiva» se muestra como «Pausado» (el contrato solo trae activa | inactiva).
-              estado={state.data.fuente_principal.estado === 'activa' ? 'activo' : 'pausado'}
+              estado={principalState(state.data.fuente_principal)}
               mostrarValor={!state.data.valores_ocultos}
             />
 

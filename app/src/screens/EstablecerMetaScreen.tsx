@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
   },
   counterValue: {
     ...textStyle('data-xl-32'),
-    color: colors['text-primary'],
+    color: colors['text-accent'],
   },
   metaDivider: {
     height: 1,

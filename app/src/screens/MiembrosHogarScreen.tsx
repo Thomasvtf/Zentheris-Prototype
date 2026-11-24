@@ -134,7 +134,11 @@ function MemberRow({ member, isSelf, onMenu }: { member: Member; isSelf: boolean
           {member.nombre_completo}
           {isSelf ? ` ${t('comun.tu')}` : ''}
         </Text>
-        <Text style={styles.rowSubtitle}>{`${t(`rol.${member.rol}`)} · ${t('miembros.estado_activo')}`}</Text>
+        <Text style={styles.rowSubtitle}>
+          {`${t(`rol.${member.rol}`)} · `}
+          {/* «Activo» en verde, como en Figma A9.1. */}
+          <Text style={styles.activeText}>{t('miembros.estado_activo')}</Text>
+        </Text>
       </View>
       {onMenu ? <MenuButton nombre={member.nombre_completo} onPress={onMenu} /> : null}
     </View>
@@ -571,6 +575,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing['12'] },
   rowTitle: { ...textStyle('body-m-medium'), color: colors['text-primary'] },
   rowSubtitle: { ...textStyle('body-xs-regular'), color: colors['text-muted'] },
+  activeText: { color: colors['text-accent'] },
   avatar: { width: AVATAR, height: AVATAR, borderRadius: radius.full, backgroundColor: colors['accent-soft'], alignItems: 'center', justifyContent: 'center' },
   avatarText: { ...textStyle('ui-s-semibold'), color: colors['text-accent'] },
   menuButton: { width: TOUCH, height: TOUCH, alignItems: 'center', justifyContent: 'center' },

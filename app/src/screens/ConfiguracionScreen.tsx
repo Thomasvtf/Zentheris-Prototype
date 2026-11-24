@@ -188,18 +188,10 @@ function initialsOf(fullName: string): string {
     .join('');
 }
 
-function Section({
-  title,
-  danger = false,
-  children,
-}: {
-  title: string;
-  danger?: boolean;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={styles.sectionCard}>
-      <Text style={[styles.sectionHeader, danger && styles.sectionHeaderDanger]}>{title}</Text>
+      <Text style={styles.sectionHeader}>{title}</Text>
       {children}
     </View>
   );
@@ -498,7 +490,7 @@ export function ConfiguracionScreen() {
               </View>
             </Section>
 
-            <Section title={t('config.sec_riesgo')} danger>
+            <Section title={t('config.sec_riesgo')}>
               <View style={styles.rowItem}>
                 <RowBody
                   danger
@@ -640,12 +632,10 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     ...textStyle('ui-s-etiqueta-12'),
-    color: colors['text-muted'],
+    // Etiqueta de sección en acento, también «Zona de riesgo» (Figma A7.1).
+    color: colors['text-accent'],
     marginBottom: spacing[12],
     textTransform: 'uppercase',
-  },
-  sectionHeaderDanger: {
-    color: colors['text-error'],
   },
   rowItem: {
     flexDirection: 'row',

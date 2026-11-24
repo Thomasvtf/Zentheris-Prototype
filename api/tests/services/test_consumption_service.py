@@ -430,9 +430,8 @@ def test_zone_of_another_household_is_404(db: FakeConsumptionDatabase, which: st
 
 
 # ------------------------------------------------------------------ 501 de fases futuras
-def test_history_and_data_sources_still_501() -> None:
-    with pytest.raises(NotImplementedOperation):
-        service.get_history(USER, HOGAR, "dia", None)
+def test_data_sources_still_501() -> None:
+    """El historial ya está implementado (fase 7, `test_history_service.py`)."""
     with pytest.raises(NotImplementedOperation):
         service.get_data_sources(USER, HOGAR)
 

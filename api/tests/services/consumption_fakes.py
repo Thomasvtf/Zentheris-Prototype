@@ -1,9 +1,9 @@
 """Dobles en memoria de `app.data` para los casos de uso de consumo (fase 6).
 
 Sin base ni red. Se reemplazan con monkeypatch `list_household_zones`, `get_hourly_readings`,
-`get_preferences`, `get_active_goal` y `get_current_tariff`, que leen de `FakeConsumptionDatabase`
-y filtran como la consulta real (por `hogar_id`, zonas pedidas, [start, end] inclusivo y
-vigencia [desde, hasta)). La recuperación de horas se reemplaza por un espía
+`get_preferences`, `get_active_goal`, `get_current_tariff` y (fase 7) `list_tariffs_between`, que
+leen de `FakeConsumptionDatabase` y filtran como la consulta real (por `hogar_id`, zonas pedidas,
+[start, end] inclusivo y vigencia [desde, hasta)). La recuperación de horas se reemplaza por un espía
 (`hour_recovery.fill_missing_hours`), salvo que la prueba instale la real. Cada llamada queda en
 `calls` para comprobar el orden. No demuestra compatibilidad con PostgreSQL.
 """
@@ -171,6 +171,23 @@ class FakeConsumptionDatabase:
                 return tariff
         return None
 
+    def list_tariffs_between(
+        self, session: Any, hogar_id: UUID, start: date, end: date
+    ) -> list[TariffRow]:
+        """Como `tariffs_data.list_tariffs_between`: vigencia que toca [start, end] (inclusive)."""
+        self.calls.append(("tariffs_between", hogar_id, start, end))
+        if isinstance(start, datetime) or isinstance(end, datetime):
+            raise TypeError("start y end deben ser fechas")
+        if start > end:
+            raise ValueError("start > end")
+        found = [
+            tariff
+            for tariff in self.tariffs.get(hogar_id, [])
+            if tariff.vigente_desde <= end
+            and (tariff.vigente_hasta is None or tariff.vigente_hasta > start)
+        ]
+        return sorted(found, key=lambda tariff: tariff.vigente_desde)
+
 
 def install_fake_consumption_database(
     monkeypatch: pytest.MonkeyPatch, spy_recovery: bool = True
@@ -183,6 +200,7 @@ def install_fake_consumption_database(
     monkeypatch.setattr(users_data, "get_preferences", db.get_preferences)
     monkeypatch.setattr(goals_data, "get_active_goal", db.get_active_goal)
     monkeypatch.setattr(tariffs_data, "get_current_tariff", db.get_current_tariff)
+    monkeypatch.setattr(tariffs_data, "list_tariffs_between", db.list_tariffs_between)
     return db
 
 

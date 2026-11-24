@@ -1,6 +1,6 @@
 """Consultas de tarifas del hogar (tarifas_hogar).
 
-RN-V-01, RN-V-02, RN-XI-08, DC-39. Sentencias constantes con parámetros con nombre; sin commit.
+RN-V-01, RN-V-02, RN-XI-08, RN-XIII-05, DC-39. Sentencias constantes con parámetros con nombre; sin commit.
 Las demás funciones se escriben en la sesión de cada endpoint (ver docs/MAPA-DE-INTEGRACION.md).
 """
 
@@ -33,6 +33,24 @@ CURRENT_TARIFF_SQL = text(
     """
 )
 
+# RN-V-01, RN-V-02, RN-XIII-05, DC-39, R-01: las tarifas de :hogar_id cuya vigencia
+# [desde, hasta) toca alguna fecha de [:start, :end] (ambas inclusive), en orden de vigencia.
+# tarifas_sin_solapamiento garantiza a lo sumo una tarifa por fecha. Usa ix_tarifas_hogar_desde.
+TARIFFS_BETWEEN_SQL = text(
+    """
+    select id,
+           precio_kwh,
+           cargo_fijo_mensual,
+           vigente_desde,
+           vigente_hasta
+      from tarifas_hogar
+     where hogar_id = :hogar_id
+       and vigente_desde <= :end
+       and (vigente_hasta is null or vigente_hasta > :start)
+     order by vigente_desde
+    """
+)
+
 
 @dataclass(frozen=True)
 class TariffRow:
@@ -57,6 +75,28 @@ def get_current_tariff(session: Session, hogar_id: UUID, today: date) -> TariffR
     result = session.exec(CURRENT_TARIFF_SQL, params={"hogar_id": hogar_id, "today": today})
     row = result.mappings().first()
     return None if row is None else _to_tariff_row(row)
+
+
+def list_tariffs_between(
+    session: Session, hogar_id: UUID, start: date, end: date
+) -> list[TariffRow]:
+    """Tarifas de `hogar_id` vigentes en alguna fecha de [start, end], ambas inclusive.
+
+    Para el costo del historial: cada fecha usa la tarifa vigente en esa fecha (RN-XIII-05,
+    RN-V-01, RN-V-02). Vigencia [vigente_desde, vigente_hasta) como en la restricción de
+    exclusión tarifas_sin_solapamiento (DC-39): sin solapes, a lo sumo una tarifa por fecha.
+    Ordenadas por `vigente_desde`; lista vacía si no hay. Solo filas de `hogar_id` (R-01).
+    Un `datetime` en `start` o `end` da TypeError y `start > end` da ValueError, ambos sin SQL.
+    Los numeric llegan como float. Sin commit.
+    """
+    if isinstance(start, datetime) or isinstance(end, datetime):
+        raise TypeError("`start` y `end` deben ser fechas (date), no datetime.")
+    if start > end:
+        raise ValueError("`start` no puede ser posterior a `end`.")
+    result = session.exec(
+        TARIFFS_BETWEEN_SQL, params={"hogar_id": hogar_id, "start": start, "end": end}
+    )
+    return [_to_tariff_row(row) for row in result.mappings().all()]
 
 
 def _to_tariff_row(row: Mapping[str, Any]) -> TariffRow:

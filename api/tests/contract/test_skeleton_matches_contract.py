@@ -298,6 +298,7 @@ IMPLEMENTED_OPERATIONS = frozenset(
         "obtenerConsumoActual",
         "obtenerConsumoZonas",
         "obtenerConsumoZona",
+        "obtenerHistorial",
     }
 )
 

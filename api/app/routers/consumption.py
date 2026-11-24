@@ -98,10 +98,11 @@ def get_history(
     user: CurrentUser,
     member: Annotated[Membership, Depends(require_permission("ver_historial"))],
     periodo: Annotated[Literal["dia", "semana", "mes"], Query()],
+    session: DbSession,
     zona_id: Annotated[UUID | None, Query()] = None,
 ) -> Historial:
     """Historial por periodo (RN-XIII-01 a RN-XIII-06)."""
-    return service.get_history(user.id, hogar_id, periodo, zona_id)
+    return service.get_history(session, user.id, hogar_id, periodo, zona_id)
 
 
 @router.get(

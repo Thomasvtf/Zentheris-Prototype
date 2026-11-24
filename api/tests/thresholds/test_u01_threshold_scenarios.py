@@ -4,7 +4,8 @@ Esperado: Mismos resultados que la referencia **[ref: 13/13]**. Regla: RN-XI-07.
 Matriz: docs/pruebas/matriz-pruebas-backend-v1.md.
 
 Port a pytest de `docs/datos/test_escenarios_umbrales.py` (4 «Simulado» + 9 «Reglas») con las
-funciones de `app.domain.states` y los umbrales de `app/config_files/umbrales-estado.v1.json`.
+funciones de `app.domain.states` y `app.domain.history` (comparación, pico y
+proyección) y los umbrales de `app/config_files/umbrales-estado.v1.json`.
 Los escenarios simulados usan el simulador del repo con el conjunto oficial de *Consumo familiar*
 (casa con cocina, sala, dormitorio, baño, oficina y lavandería; día 2026-11-03 y 31 días previos),
 como el original. Al final, una prueba diferencial compara el port con `motor_estados_ref.py`.
@@ -20,6 +21,7 @@ from types import ModuleType
 
 import pytest
 
+from app.domain import history as H
 from app.domain import states as S
 from app.domain.simulator import hour_from_index
 from app.domain.simulator.engine import simulate_household
@@ -165,20 +167,20 @@ def test_acumulado_meta() -> None:
 def test_comparacion() -> None:
     """−6 % menor; −5 % similar; +10 % mayor; +25 % muy mayor; sin anterior."""
     t = thresholds().period_comparison
-    assert S.period_comparison(94, 100, t) == ("menor", "normal")
-    assert S.period_comparison(95, 100, t) == ("similar", "normal")
-    assert S.period_comparison(110, 100, t) == ("mayor", "elevado")
-    assert S.period_comparison(125, 100, t) == ("muy_mayor", "critico")
-    assert S.period_comparison(10, None, t) == ("sin_anterior", "sin_referencia")
+    assert H.period_comparison(94, 100, t) == ("menor", "normal")
+    assert H.period_comparison(95, 100, t) == ("similar", "normal")
+    assert H.period_comparison(110, 100, t) == ("mayor", "elevado")
+    assert H.period_comparison(125, 100, t) == ("muy_mayor", "critico")
+    assert H.period_comparison(10, None, t) == ("sin_anterior", "sin_referencia")
 
 
 def test_pico() -> None:
     """+9 % no es pico; +10 % sí. +15 %: normal en Día, elevado en Semana."""
     t = thresholds()
-    assert not S.is_peak(1.09, 1.0, t.peak_min_pct)
-    assert S.is_peak(1.10, 1.0, t.peak_min_pct)
-    assert S.peak_state(1.15, 1.0, "dia", t) == "normal"
-    assert S.peak_state(1.15, 1.0, "semana", t) == "elevado"
+    assert not H.is_peak(1.09, 1.0, t.peak_min_pct)
+    assert H.is_peak(1.10, 1.0, t.peak_min_pct)
+    assert H.peak_state(1.15, 1.0, "dia", t) == "normal"
+    assert H.peak_state(1.15, 1.0, "semana", t) == "elevado"
 
 
 def test_variacion_hora() -> None:
@@ -196,9 +198,9 @@ def test_referencia_meta_hora() -> None:
 
 def test_proyeccion() -> None:
     """10 + 0,5 + 0,5 + 2 × 4 = 19 kWh; COP con cargo fijo solo en Mes."""
-    assert S.project_period(10, [0.5, 0.5], 2, 4) == pytest.approx(19, abs=1e-7)
-    with_fixed = S.project_cost(1000, 19, 10, 800, fixed_charge=12000, is_month=True)
-    without_fixed = S.project_cost(1000, 19, 10, 800, fixed_charge=12000, is_month=False)
+    assert H.project_period(10, [0.5, 0.5], 2, 4) == pytest.approx(19, abs=1e-7)
+    with_fixed = H.project_cost(1000, 19, 10, 800, fixed_charge=12000, is_month=True)
+    without_fixed = H.project_cost(1000, 19, 10, 800, fixed_charge=12000, is_month=False)
     assert with_fixed == pytest.approx(1000 + 7200 + 12000, abs=1e-7)
     assert without_fixed == pytest.approx(1000 + 7200, abs=1e-7)
 
@@ -278,29 +280,29 @@ def test_other_functions_match_reference() -> None:
     ref, t = reference_engine(), thresholds()
     for previous in (None, -1.0, 0.0, 100.0):
         for current in (0, 50, 94, 94.99, 95, 109.99, 110, 124.99, 125, 300):
-            assert S.period_comparison(current, previous, t.period_comparison) == (
+            assert H.period_comparison(current, previous, t.period_comparison) == (
                 ref.comparacion_periodo(current, previous)
             )
     for average_value in (None, 0.0, 0.3, 1.0, 2.7):
         for factor in (0.5, 1.0, 1.099, 1.0999999, 1.1, 1.15, 1.2, 1.3, 1.4):
             value = None if average_value is None else average_value * factor
-            assert S.is_peak(value, average_value, t.peak_min_pct) == ref.es_pico(
+            assert H.is_peak(value, average_value, t.peak_min_pct) == ref.es_pico(
                 value, average_value
             )
             if value is not None and average_value > 0:
                 for period in ("dia", "semana", "mes"):
-                    assert S.peak_state(value, average_value, period, t) == ref.estado_pico(
+                    assert H.peak_state(value, average_value, period, t) == ref.estado_pico(
                         value, average_value, period
                     )
             assert S.hour_variation(value, average_value, t.hour_variation_equal_abs_pct) == (
                 ref.variacion_hora(value, average_value)
             )
-    assert S.project_period(3.5, [0.2, 0.3, 0.1], 5, 9.8) == ref.proyeccion_cierre(
+    assert H.project_period(3.5, [0.2, 0.3, 0.1], 5, 9.8) == ref.proyeccion_cierre(
         3.5, [0.2, 0.3, 0.1], 5, 9.8
     )
     for fixed in (None, 0, 12000.0):
         for is_month in (True, False):
-            assert S.project_cost(1500.0, 40.0, 12.5, 812.3, fixed, is_month) == (
+            assert H.project_cost(1500.0, 40.0, 12.5, 812.3, fixed, is_month) == (
                 ref.proyeccion_cop(1500.0, 40.0, 12.5, 812.3, fixed, is_month)
             )
 

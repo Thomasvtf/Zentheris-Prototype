@@ -1,30 +1,35 @@
 """Casos de uso de la etiqueta «Consumo».
 
 Fase 6: consumo actual, consumo por zonas y detalle de una zona (RN-XI-01 a RN-XI-09, RN-XII-03,
-RN-XII-05 a RN-XII-07, RN-V-01, RN-V-02, RN-IV-05, DC-28, DC-34). Historial y fuentes de datos
-siguen en 501 (fases 7 y 10).
+RN-XII-05 a RN-XII-07, RN-V-01, RN-V-02, RN-IV-05, DC-28, DC-34). Fase 7: historial por periodo
+(RN-XIII-01 a RN-XIII-06, DC-29 a DC-31; el cálculo vive en `app.domain.history`). Fuentes de
+datos sigue en 501 (fase 10).
 
-Pasos de cada consulta (la seguridad ya corrió en el router), explícitos para que la fase 7 los
-reutilice con su propio rango:
+Pasos de cada consulta (la seguridad ya corrió en el router); cada caso de uso decide su rango:
 1. `_recover`: un único instante (`now` o `datetime.now(UTC)`) y la recuperación de horas
    (`fill_missing_hours_or_continue`). Si la recuperación falla, la consulta sigue con los datos
    guardados y la hora que falte sale `sin_datos` (decisión de Nicolás, 23/11/2026).
 2. `list_household_zones` → zonas que cuentan (`zone_rules.counts_for_total`: zona `activa` con
    sensor `activo`; solo ellas suman al total) y, en el detalle, `_find_zone` (404).
-3. `_read_series` de las zonas que cuentan en el rango que decide el caso de uso (aquí:
-   `reference_window_start(hour_start, window_days)` .. `hour_start`).
-4. Preferencias, meta y tarifa según haga falta → dominio (`app.domain.states`) → esquema.
+3. `_read_series` de las zonas que cuentan en el rango que decide el caso de uso (consumo:
+   `reference_window_start(hour_start, window_days)` .. `hour_start`; historial:
+   `rng.read_start` .. `rng.end − 1 h`, porque la lectura es inclusiva en ambos extremos).
+4. Preferencias, meta y tarifa según haga falta → dominio (`app.domain.states` o
+   `app.domain.history`) → esquema.
 
 Costo = kWh × `precio_kwh` de la tarifa vigente en la fecha (Bogotá) de la hora evaluada
 (RN-V-01), sin cargo fijo (RN-V-02); sin tarifa o sin kWh, `costo_cop` es null (RN-XI-08), y el
 del acumulado también cuando el acumulado está `sin_datos` (null = sin dato, nunca cero). El
 nombre de cada zona es el visible de su tipo (RN-XII-03). Solo lectura: no hace commit (la
 recuperación termina su propia transacción antes). Los números salen sin redondear (DC-11).
+
+Historial: cada fecha del periodo se cobra con la tarifa vigente en esa fecha (RN-V-01,
+RN-XIII-05); el cargo fijo solo entra en la proyección de Mes con filtro General (RN-V-02,
+DC-30); `tarifa_vigente` indica si hay tarifa hoy.
 """
 
 from collections.abc import Iterable, Sequence
-from datetime import UTC, date, datetime
-from typing import Literal
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from sqlmodel import Session
@@ -35,7 +40,7 @@ from app.data import readings as readings_data
 from app.data import tariffs as tariffs_data
 from app.data import users as users_data
 from app.data.households import ZoneRow
-from app.domain import states
+from app.domain import history, states
 from app.domain.formats import zone_name
 from app.domain.simulator import TIMEZONE
 from app.domain.zone_rules import counts_for_total
@@ -52,12 +57,19 @@ from app.schemas.consumption import (
     ConsumoZonas,
     FuentesDatos,
     Historial,
+    HistorialComparacion,
+    HistorialCosto,
+    HistorialParticipacionZona,
+    HistorialUltimoPico,
+    PuntoSerie,
+    PuntoSerieZona,
 )
 from app.schemas.households import Zona
 from app.services import hour_recovery
 from app.services.thresholds import get_thresholds
 
 ReadingsByZone = dict[UUID, dict[datetime, float]]
+ONE_HOUR = timedelta(hours=1)
 
 __all__ = [
     "get_current_consumption",
@@ -94,13 +106,13 @@ def get_current_consumption(
 
     current = states.evaluate_current(series, hour_start, goal, thresholds)
     today = states.evaluate_today(series, moment, goal, thresholds)
-    today_cost = None if today.state == "sin_datos" else _cost(today.energy_kwh, price)
+    today_cost = None if today.state == "sin_datos" else states.cost(today.energy_kwh, price)
     return ConsumoActualHogar(
         hora=IntervaloHora(inicio=hour_start, fin=hour_end),
         tarifa_vigente=price is not None,
         actual=ConsumoActualHogarActual(
             potencia_kw=current.power_kw,
-            costo_cop=_cost(current.power_kw, price),
+            costo_cop=states.cost(current.power_kw, price),
             variacion_hora_anterior_pct=current.variation_pct,
             referencia_tipo=current.reference_type,
             referencia_kw=current.reference_kw,
@@ -150,7 +162,7 @@ def get_zones_consumption(
                 tipo=zone.tipo,
                 nombre=zone_name(zone.tipo),
                 potencia_kw=result.power_kw,
-                costo_cop=_cost(result.power_kw, price),
+                costo_cop=states.cost(result.power_kw, price),
                 participacion_pct=result.share_pct,
                 estado_participacion=result.share_state,
             )
@@ -195,7 +207,7 @@ def get_zone_consumption(
         hora=IntervaloHora(inicio=hour_start, fin=hour_end),
         tarifa_vigente=price is not None,
         potencia_kw=result.power_kw,
-        costo_cop=_cost(result.power_kw, price),
+        costo_cop=states.cost(result.power_kw, price),
         estado_consumo=ConsumoZonaDetalleEstadoConsumo(
             promedio_misma_hora_kw=result.average_kw,
             variacion_pct=result.variation_pct,
@@ -211,10 +223,57 @@ def get_zone_consumption(
 
 
 def get_history(
-    user_id: UUID, hogar_id: UUID, periodo: Literal["dia", "semana", "mes"], zona_id: UUID | None
+    session: Session,
+    user_id: UUID,
+    hogar_id: UUID,
+    periodo: history.Period,
+    zona_id: UUID | None,
+    now: datetime | None = None,
 ) -> Historial:
-    """`obtenerHistorial`: Historial por periodo (RN-XIII-01 a RN-XIII-06). TODO(obtenerHistorial)."""
-    raise NotImplementedOperation("obtenerHistorial")
+    """`obtenerHistorial`: Historial por periodo, General o de una zona (RN-XIII-01 a RN-XIII-06).
+
+    Recupera primero las horas faltantes (RN-IV-05, DC-34; si falla, sigue con lo guardado). Con
+    `zona_id`: 404 NO_ENCONTRADO si la zona no es del hogar (antes de leer lecturas); una zona
+    del hogar que no cuenta responde todo sin dato, sin leer sus lecturas. General: las zonas que
+    cuentan, en orden alfabético por nombre visible (RN-XII-03); ese orden es el de
+    `participacion_zonas` y el de `zonas` en cada punto. Con filtro, ambos son null. Periodos,
+    tramo anterior (DC-29), pico (DC-31), costo y proyección (DC-30) los calcula
+    `app.domain.history.evaluate_history`.
+    """
+    moment = _recover(session, hogar_id, now)
+    thresholds = get_thresholds()
+    zones = households_data.list_household_zones(session, hogar_id)
+    if zona_id is not None:
+        _find_zone(zones, zona_id)
+    rng = history.period_range(periodo, moment, thresholds.window_days)
+    counting = _counting_zones(zones)
+    if zona_id is None:
+        selected = sorted(counting, key=_alphabetical)
+    else:
+        selected = [zone for zone in counting if zone.id == zona_id]
+    series = _read_series(
+        session, hogar_id, [zone.id for zone in selected], rng.read_start, rng.end - ONE_HOUR
+    )
+    if zona_id is not None:
+        series.setdefault(zona_id, {})  # zona que no cuenta: sin lecturas → todo sin dato
+    first_day = rng.start.astimezone(TIMEZONE).date()
+    tariffs = tariffs_data.list_tariffs_between(session, hogar_id, first_day, rng.today)
+    periods = [
+        history.TariffPeriod(
+            t.precio_kwh, t.cargo_fijo_mensual, t.vigente_desde, t.vigente_hasta
+        )
+        for t in tariffs
+    ]
+
+    evaluation = history.evaluate_history(
+        series,
+        periodo,
+        moment,
+        thresholds,
+        history.tariffs_by_date(periods, first_day, rng.today),
+        general=zona_id is None,
+    )
+    return _to_history(evaluation, zona_id, {zone.id: zone.tipo for zone in counting})
 
 
 def get_data_sources(user_id: UUID, hogar_id: UUID) -> FuentesDatos:
@@ -283,8 +342,74 @@ def _price_for_hour(session: Session, hogar_id: UUID, hour_start: datetime) -> f
     return None if tariff is None else tariff.precio_kwh
 
 
-def _cost(kwh: float | None, price: float | None) -> float | None:
-    """kWh × precio (RN-V-01), sin cargo fijo (RN-V-02); null sin tarifa o sin kWh (RN-XI-08)."""
-    if kwh is None or price is None:
-        return None
-    return kwh * price
+def _to_history(
+    evaluation: history.HistoryEvaluation, zona_id: UUID | None, zone_types: dict[UUID, str]
+) -> Historial:
+    """Evaluación del dominio → esquema `Historial` del contrato (nombre visible, RN-XII-03)."""
+    rng = evaluation.bounds
+    shares = None
+    if evaluation.zone_shares is not None:
+        shares = [
+            HistorialParticipacionZona(
+                zona_id=share.zona_id,
+                nombre=zone_name(zone_types[share.zona_id]),
+                energia_kwh=share.energy_kwh,
+                participacion_pct=share.share_pct,
+            )
+            for share in evaluation.zone_shares
+        ]
+    peak, comparison, cost = evaluation.last_peak, evaluation.comparison, evaluation.cost
+    last_peak = None
+    if peak is not None:
+        last_peak = HistorialUltimoPico(
+            inicio=peak.start,
+            fin=peak.end,
+            energia_kwh=peak.energy_kwh,
+            promedio_historico_kwh=peak.average_kwh,
+            exceso_pct=peak.excess_pct,
+            estado=peak.state,
+        )
+    return Historial(
+        periodo=rng.period,
+        zona_id=zona_id,
+        inicio=rng.start,
+        fin=rng.end,
+        granularidad=rng.granularity,
+        tarifa_vigente=evaluation.has_tariff,
+        total_kwh=evaluation.total_kwh,
+        serie=[_to_point(point) for point in evaluation.series],
+        participacion_zonas=shares,
+        ultimo_pico=last_peak,
+        comparacion=HistorialComparacion(
+            actual_kwh=comparison.current_kwh,
+            anterior_kwh=comparison.previous_kwh,
+            variacion_pct=comparison.variation_pct,
+            estado=comparison.state,
+            mensaje_codigo=comparison.message_code,
+        ),
+        costo=HistorialCosto(
+            costo_cop=cost.cost_cop,
+            proyeccion_cierre_cop=cost.projection_cop,
+            incluye_cargo_fijo=cost.includes_fixed_charge,
+            estado=cost.state,
+            mensaje_codigo=cost.message_code,
+        ),
+    )
+
+
+def _to_point(point: history.SeriesPoint) -> PuntoSerie:
+    """Punto de la serie; `zonas` en el orden de `participacion_zonas` (null con filtro)."""
+    zones = None
+    if point.zones is not None:
+        zones = [
+            PuntoSerieZona(zona_id=zone.zona_id, energia_kwh=zone.energy_kwh)
+            for zone in point.zones
+        ]
+    return PuntoSerie(
+        inicio=point.start,
+        fin=point.end,
+        energia_kwh=point.energy_kwh,
+        costo_cop=point.cost_cop,
+        es_pico_maximo=point.is_max_peak,
+        zonas=zones,
+    )

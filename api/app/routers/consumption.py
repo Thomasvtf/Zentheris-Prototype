@@ -1,13 +1,17 @@
 """Router de la etiqueta «Consumo» del contrato.
 
-Solo valida la entrada y llama al servicio (api/CLAUDE.md).
+Solo valida la entrada y llama al servicio (api/CLAUDE.md). Las consultas de consumo reciben la
+sesión de la petición (`get_session`), la misma que usó la guardia; el servicio completa las horas
+faltantes antes de leer (RN-IV-05, DC-34).
 """
 
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from sqlmodel import Session
 
+from app.data.database import get_session
 from app.errors import error_responses
 from app.schemas.consumption import (
     ConsumoActualHogar,
@@ -26,6 +30,9 @@ from app.services import consumption as service
 
 router = APIRouter(tags=["Consumo"])
 
+# La misma sesión que reciben las dependencias de la petición (la guardia de membresía).
+DbSession = Annotated[Session, Depends(get_session)]
+
 
 @router.get(
     "/hogares/{hogar_id}/consumo/actual",
@@ -38,9 +45,10 @@ def get_current_consumption(
     hogar_id: UUID,
     user: CurrentUser,
     member: Annotated[Membership, Depends(require_permission("ver_consumo_actual"))],
+    session: DbSession,
 ) -> ConsumoActualHogar:
     """Cards del Panel principal (RN-XI-01, RN-XI-03, RN-XI-04, RN-XI-08)."""
-    return service.get_current_consumption(user.id, hogar_id)
+    return service.get_current_consumption(session, user.id, hogar_id)
 
 
 @router.get(
@@ -54,9 +62,10 @@ def get_zones_consumption(
     hogar_id: UUID,
     user: CurrentUser,
     member: Annotated[Membership, Depends(require_permission("ver_consumo_actual"))],
+    session: DbSession,
 ) -> ConsumoZonas:
     """Participación y estado de cada zona en la última hora completa (RN-XI-05, RN-XII-05, RN-XII-06)."""
-    return service.get_zones_consumption(user.id, hogar_id)
+    return service.get_zones_consumption(session, user.id, hogar_id)
 
 
 @router.get(
@@ -71,9 +80,10 @@ def get_zone_consumption(
     zona_id: UUID,
     user: CurrentUser,
     member: Annotated[Membership, Depends(require_permission("ver_consumo_actual"))],
+    session: DbSession,
 ) -> ConsumoZonaDetalle:
     """Zona individual (RN-XI-05, RN-XI-06, RN-XII-07)."""
-    return service.get_zone_consumption(user.id, hogar_id, zona_id)
+    return service.get_zone_consumption(session, user.id, hogar_id, zona_id)
 
 
 @router.get(

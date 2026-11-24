@@ -6,11 +6,13 @@ docs/MAPA-DE-INTEGRACION.md). Sentencias constantes con parámetros con nombre; 
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlmodel import Session
+
+from app.data._convert import as_uuid
 
 # RN-IX-09, DC-36: bloquea la fila del hogar para serializar altas y bajas de miembros.
 LOCK_HOUSEHOLD_SQL = text(
@@ -106,8 +108,11 @@ INSERT_ZONE_SENSORS_SQL = text(
 # RN-IV-05, DC-34: hogares con algo que generar, para la tarea programada. Es la única consulta
 # que recorre todos los hogares: solo devuelve ids y cada hogar se procesa después con su propio
 # filtro por hogar_id (R-01).
-# TODO(pendiente: ¿un sensor pausado o una zona inactiva generan lecturas? ¿se rellena el
-# periodo pausado al reactivar? En el MVP no hay operación que cambie esos estados)
+# Decidido el 23/11/2026 (Nicolás): los sensores 'pausado' y las zonas 'inactiva' NO reciben
+# lecturas nuevas; por eso solo cuentan hogares con un sensor 'activo' en una zona 'activa'. La
+# misma regla en Python es app.domain.zone_rules.counts_for_total.
+# TODO(pendiente: ¿al reactivar un sensor o una zona se rellena el periodo en que estuvo
+# pausado? En el MVP no hay operación que cambie esos estados)
 HOUSEHOLDS_WITH_SENSORS_SQL = text(
     """
     select distinct z.hogar_id
@@ -116,6 +121,24 @@ HOUSEHOLDS_WITH_SENSORS_SQL = text(
      where z.estado = 'activa'
        and s.estado = 'activo'
      order by z.hogar_id
+    """
+)
+
+
+# RN-XI-01, RN-XI-05, R-01: todas las zonas del hogar con el estado de su sensor (uno por zona,
+# RN-X-03). El servicio decide cuáles cuentan (zona 'activa' con sensor 'activo'). LEFT JOIN: una
+# zona sin sensor sale con sensor_estado NULL. Usa ix_zonas_hogar y el único sensores_zona.zona_id.
+HOUSEHOLD_ZONES_SQL = text(
+    """
+    select z.id,
+           z.tipo,
+           z.nombre,
+           z.estado,
+           s.estado as sensor_estado
+      from zonas z
+      left join sensores_zona s on s.zona_id = z.id
+     where z.hogar_id = :hogar_id
+     order by z.nombre, z.id
     """
 )
 
@@ -148,6 +171,17 @@ class SensorToInsert:
 
     id: UUID
     zona_id: UUID
+
+
+@dataclass(frozen=True)
+class ZoneRow:
+    """Zona del hogar con el estado de su sensor (RN-XI-01, RN-XI-05)."""
+
+    id: UUID
+    tipo: str
+    nombre: str
+    estado: Literal["activa", "inactiva"]
+    sensor_estado: Literal["activo", "pausado"] | None  # None si la zona no tiene sensor
 
 
 def insert_household(
@@ -230,22 +264,39 @@ def list_household_ids_with_active_sensors(session: Session) -> list[UUID]:
     backend y no devuelve ningún otro dato. Sin commit.
     """
     result = session.exec(HOUSEHOLDS_WITH_SENSORS_SQL)
-    return [_as_uuid(row["hogar_id"]) for row in result.mappings().all()]
+    return [as_uuid(row["hogar_id"]) for row in result.mappings().all()]
 
 
-def _as_uuid(value: UUID | str) -> UUID:
-    return value if isinstance(value, UUID) else UUID(str(value))
+def list_household_zones(session: Session, hogar_id: UUID) -> list[ZoneRow]:
+    """Todas las zonas de `hogar_id` con el estado de su sensor (RN-XI-01, RN-XI-05, R-01).
+
+    Incluye zonas inactivas y sensores pausados: el servicio decide cuáles cuentan para el total.
+    Orden por nombre y, a igual nombre, por id. Hogar sin zonas → lista vacía. Sin commit.
+    """
+    result = session.exec(HOUSEHOLD_ZONES_SQL, params={"hogar_id": hogar_id})
+    return [_to_zone_row(row) for row in result.mappings().all()]
 
 
 def _to_household_row(row: Mapping[str, Any]) -> HouseholdRow:
     """Convierte la fila de INSERT_HOUSEHOLD_SQL en HouseholdRow."""
     hogar_id = row["id"]
     return HouseholdRow(
-        id=hogar_id if isinstance(hogar_id, UUID) else UUID(str(hogar_id)),
+        id=as_uuid(hogar_id),
         nombre=row["nombre"],
         tipo_vivienda=row["tipo_vivienda"],
         permiso_ver_consumo_actual=bool(row["permiso_ver_consumo_actual"]),
         permiso_ver_historial=bool(row["permiso_ver_historial"]),
         permiso_recibir_alertas=bool(row["permiso_recibir_alertas"]),
         permiso_modificar_metas=bool(row["permiso_modificar_metas"]),
+    )
+
+
+def _to_zone_row(row: Mapping[str, Any]) -> ZoneRow:
+    """Convierte la fila de HOUSEHOLD_ZONES_SQL en ZoneRow (id a UUID)."""
+    return ZoneRow(
+        id=as_uuid(row["id"]),
+        tipo=row["tipo"],
+        nombre=row["nombre"],
+        estado=row["estado"],
+        sensor_estado=row["sensor_estado"],
     )

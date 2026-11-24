@@ -18,6 +18,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
+from app.data._convert import as_uuid
+
 # SQLSTATE de Postgres para violación de clave foránea (usuarios.id → auth.users.id).
 _FOREIGN_KEY_VIOLATION = "23503"
 
@@ -151,7 +153,7 @@ def get_user_profile(session: Session, usuario_id: UUID) -> UserProfileRow | Non
     if row is None:
         return None
     return UserProfileRow(
-        id=_as_uuid(row["id"]),
+        id=as_uuid(row["id"]),
         nombre_completo=row["nombre_completo"],
         telefono=row["telefono"],
         avatar_url=row["avatar_url"],
@@ -261,10 +263,6 @@ def _partial_update_params(changes: Mapping[str, Any], allowed: frozenset[str]) 
         params[f"set_{field}"] = field in changes
         params[field] = changes.get(field)
     return params
-
-
-def _as_uuid(value: UUID | str) -> UUID:
-    return value if isinstance(value, UUID) else UUID(str(value))
 
 
 def _to_preferences_row(row: Mapping[str, Any]) -> PreferencesRow:

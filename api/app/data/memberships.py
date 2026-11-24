@@ -14,6 +14,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
+from app.data._convert import as_uuid
+
 # RN-I-03 y RN-XVII: membresía activa del usuario en el hogar con los 4 permisos generales.
 # Constante sin datos del usuario: los valores viajan como parámetros con nombre.
 ACTIVE_MEMBERSHIP_SQL = text(
@@ -68,16 +70,12 @@ def get_active_membership(
     return _to_active_membership_row(row)
 
 
-def _as_uuid(value: UUID | str) -> UUID:
-    return value if isinstance(value, UUID) else UUID(str(value))
-
-
 def _to_active_membership_row(row: Mapping[str, Any]) -> ActiveMembershipRow:
     """Convierte la fila de ACTIVE_MEMBERSHIP_SQL en ActiveMembershipRow."""
     return ActiveMembershipRow(
-        membresia_id=_as_uuid(row["membresia_id"]),
-        hogar_id=_as_uuid(row["hogar_id"]),
-        usuario_id=_as_uuid(row["usuario_id"]),
+        membresia_id=as_uuid(row["membresia_id"]),
+        hogar_id=as_uuid(row["hogar_id"]),
+        usuario_id=as_uuid(row["usuario_id"]),
         rol=row["rol"],
         permiso_ver_consumo_actual=bool(row["permiso_ver_consumo_actual"]),
         permiso_ver_historial=bool(row["permiso_ver_historial"]),
@@ -149,8 +147,8 @@ def get_active_membership_of_user(
     if row is None:
         return None
     return MembershipSummaryRow(
-        membresia_id=_as_uuid(row["membresia_id"]),
-        hogar_id=_as_uuid(row["hogar_id"]),
+        membresia_id=as_uuid(row["membresia_id"]),
+        hogar_id=as_uuid(row["hogar_id"]),
         rol=row["rol"],
     )
 

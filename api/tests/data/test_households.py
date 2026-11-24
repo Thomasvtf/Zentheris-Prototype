@@ -15,6 +15,7 @@ from app.data import households
 from app.data.households import (
     HouseholdRow,
     SensorToInsert,
+    ZoneRow,
     ZoneToInsert,
     delete_household,
     insert_household,
@@ -22,6 +23,7 @@ from app.data.households import (
     insert_zone_sensors,
     insert_zones,
     list_household_ids_with_active_sensors,
+    list_household_zones,
     lock_household,
 )
 from tests.data.fake_session import FakeResult, FakeSession, assert_bound_only, normalized_sql
@@ -307,11 +309,120 @@ def test_households_with_sensors_does_not_commit() -> None:
     assert "%" not in sql
 
 
-def test_households_with_sensors_documents_the_pending_rule_for_paused_sensors() -> None:
+def test_households_with_sensors_documents_the_paused_sensor_decision_and_open_question() -> None:
+    """Decidido el 23/11/2026: pausados e inactivas no reciben lecturas; queda el relleno."""
     source = Path(households.__file__).read_text(encoding="utf-8")
-    before_sql = source.split("HOUSEHOLDS_WITH_SENSORS_SQL = text(")[0]
+    comment = source.split("HOUSEHOLDS_WITH_SENSORS_SQL = text(")[0].rsplit("\n\n", 1)[1]
 
-    assert (
-        "TODO(pendiente: ¿un sensor pausado o una zona inactiva generan lecturas?"
-        in (before_sql.rsplit("\n\n", 1)[1])
+    assert "Decidido el 23/11/2026" in comment
+    assert "NO reciben" in comment
+    assert "app.domain.zone_rules.counts_for_total" in comment
+    assert "TODO(pendiente: ¿al reactivar un sensor o una zona se rellena el periodo" in comment
+    assert "¿un sensor pausado o una zona inactiva generan lecturas?" not in comment
+
+
+# --- Fase 6: zonas del hogar con el estado de su sensor (RN-XI-01, RN-XI-05, R-01) -----------
+
+
+def _zone_row(tipo: str, **overrides: object) -> dict[str, object]:
+    """Fila como la entregaría psycopg2; el nombre sale del catálogo (RN-XII-03)."""
+    row: dict[str, object] = {
+        "id": uuid4(),
+        "tipo": tipo,
+        "nombre": ZONE_NAMES[tipo],
+        "estado": "activa",
+        "sensor_estado": "activo",
+    }
+    row.update(overrides)
+    return row
+
+
+def test_household_zones_sends_only_the_household_as_parameter() -> None:
+    hogar_id = uuid4()
+    session = FakeSession()
+
+    assert list_household_zones(session, hogar_id) == []  # type: ignore[arg-type]
+
+    assert len(session.calls) == 1
+    statement, params = session.calls[0]
+    assert statement is households.HOUSEHOLD_ZONES_SQL
+    assert isinstance(statement, TextClause)
+    assert params == {"hogar_id": hogar_id}
+    assert_bound_only(statement, params)
+
+
+def test_household_zones_sql_left_joins_the_sensor_and_filters_by_household() -> None:
+    """R-01: solo zonas del hogar; LEFT JOIN para no perder una zona sin sensor."""
+    assert normalized_sql(households.HOUSEHOLD_ZONES_SQL) == (
+        "select z.id, z.tipo, z.nombre, z.estado, s.estado as sensor_estado "
+        "from zonas z "
+        "left join sensores_zona s on s.zona_id = z.id "
+        "where z.hogar_id = :hogar_id "
+        "order by z.nombre, z.id"
     )
+
+
+def test_household_zones_include_inactive_zones_and_paused_sensors() -> None:
+    """El servicio decide qué zonas cuentan: la consulta no filtra por estado."""
+    sql = normalized_sql(households.HOUSEHOLD_ZONES_SQL)
+
+    assert "'activa'" not in sql
+    assert "'activo'" not in sql
+
+
+def test_household_zones_are_mapped_in_the_query_order() -> None:
+    cocina_id, sala_id, garaje_id = uuid4(), uuid4(), uuid4()
+    session = FakeSession(
+        [
+            _zone_row("cocina", id=cocina_id),
+            _zone_row("garaje", id=str(garaje_id), estado="inactiva", sensor_estado="pausado"),
+            _zone_row("sala", id=sala_id, sensor_estado=None),
+        ]
+    )
+
+    zones = list_household_zones(session, uuid4())  # type: ignore[arg-type]
+
+    assert zones == [
+        ZoneRow(
+            id=cocina_id,
+            tipo="cocina",
+            nombre=ZONE_NAMES["cocina"],
+            estado="activa",
+            sensor_estado="activo",
+        ),
+        ZoneRow(
+            id=garaje_id,
+            tipo="garaje",
+            nombre=ZONE_NAMES["garaje"],
+            estado="inactiva",
+            sensor_estado="pausado",
+        ),
+        ZoneRow(
+            id=sala_id,
+            tipo="sala",
+            nombre=ZONE_NAMES["sala"],
+            estado="activa",
+            sensor_estado=None,
+        ),
+    ]
+    assert all(isinstance(zone.id, UUID) for zone in zones)
+
+
+def test_household_zones_map_all_nine_zone_types() -> None:
+    session = FakeSession([_zone_row(tipo) for tipo in ZONE_KEYS])
+
+    zones = list_household_zones(session, uuid4())  # type: ignore[arg-type]
+
+    assert [zone.tipo for zone in zones] == list(ZONE_KEYS)
+    assert [zone.nombre for zone in zones] == [ZONE_NAMES[tipo] for tipo in ZONE_KEYS]
+
+
+def test_household_zones_do_not_commit_and_have_no_python_formatting() -> None:
+    session = FakeSession([_zone_row("cocina")])
+
+    list_household_zones(session, uuid4())  # type: ignore[arg-type]
+
+    assert session.commits == 0
+    sql = str(households.HOUSEHOLD_ZONES_SQL)
+    assert "{" not in sql
+    assert "%" not in sql

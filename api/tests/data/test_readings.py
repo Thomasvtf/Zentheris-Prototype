@@ -18,7 +18,9 @@ from sqlalchemy.sql.elements import TextClause
 
 from app.data import readings
 from app.data.readings import (
+    HourlyReadingRow,
     SensorGapRow,
+    get_hourly_readings,
     get_sensor_gaps,
     insert_readings_batch,
     lock_household_recovery,
@@ -247,11 +249,16 @@ def test_gaps_query_is_an_anti_join_over_the_unique_index() -> None:
     assert "array_agg(h.missing_hour order by h.missing_hour) as missing_hours" in sql
 
 
-def test_gaps_query_documents_the_pending_rule_for_paused_sensors() -> None:
+def test_gaps_query_documents_the_paused_sensor_decision_and_open_question() -> None:
+    """Decidido el 23/11/2026: pausados e inactivas no reciben lecturas; queda el relleno."""
     source = Path(readings.__file__).read_text(encoding="utf-8")
     comment = source.split("SENSOR_GAPS_SQL = text(")[0].rsplit("\n\n", 1)[1]
 
-    assert "TODO(pendiente: ¿un sensor pausado o una zona inactiva generan lecturas?" in comment
+    assert "Decidido el 23/11/2026" in comment
+    assert "NO reciben" in comment
+    assert "app.domain.zone_rules.counts_for_total" in comment
+    assert "TODO(pendiente: ¿al reactivar un sensor o una zona se rellena el periodo" in comment
+    assert "¿un sensor pausado o una zona inactiva generan lecturas?" not in comment
     assert "huecos internos, A13" in comment
 
 
@@ -388,5 +395,181 @@ def test_recovery_lock_does_not_commit() -> None:
 
     assert session.commits == 0
     sql = str(readings.LOCK_HOUSEHOLD_RECOVERY_SQL)
+    assert "{" not in sql
+    assert "%" not in sql
+
+
+# --- Fase 6: series horarias por zona (RN-XI-01, RN-XI-05, DC-28, R-01) ----------------------
+
+WINDOW_START = datetime(2026, 10, 23, 0, 0, tzinfo=BOGOTA)  # 30 días antes del 22/11
+EVALUATED_HOUR = datetime(2026, 11, 23, 14, 0, tzinfo=BOGOTA)
+HOURLY_PARAM_NAMES = {"hogar_id", "zona_ids", "start", "end"}
+
+
+def _hourly_row(zone: str, moment: datetime, **overrides: Any) -> dict[str, Any]:
+    """Fila como la entregaría psycopg2: numeric(12,4) como Decimal; kWh de *Consumo amplio*."""
+    kwh = load_personalities()["Consumo amplio"].zone_kwh_for_hour(zone, moment.hour)
+    row: dict[str, Any] = {
+        "zona_id": uuid4(),
+        "fecha_hora": moment,
+        "consumo_kwh": Decimal(str(kwh)).quantize(Decimal("0.0001")),
+    }
+    row.update(overrides)
+    return row
+
+
+def test_hourly_readings_send_household_zones_and_range_as_parameters() -> None:
+    hogar_id = uuid4()
+    zona_ids = [uuid4(), uuid4()]
+    session = FakeSession()
+
+    result = get_hourly_readings(
+        session,  # type: ignore[arg-type]
+        hogar_id,
+        zona_ids,
+        WINDOW_START,
+        EVALUATED_HOUR,
+    )
+
+    assert result == []
+    assert len(session.calls) == 1
+    statement, params = session.calls[0]
+    assert statement is readings.HOURLY_READINGS_SQL
+    assert isinstance(statement, TextClause)
+    assert params == {
+        "hogar_id": hogar_id,
+        "zona_ids": [str(zona_id) for zona_id in zona_ids],
+        "start": WINDOW_START,
+        "end": EVALUATED_HOUR,
+    }
+    assert_bound_only(statement, params)
+
+
+def test_hourly_readings_sql_filters_by_household_and_inclusive_range() -> None:
+    """R-01: la zona se une a su hogar; una zona de otro hogar no produce filas."""
+    assert normalized_sql(readings.HOURLY_READINGS_SQL) == (
+        "select z.id as zona_id, l.fecha_hora, l.consumo_kwh "
+        "from lecturas l "
+        "join sensores_zona s on s.id = l.sensor_id "
+        "join zonas z on z.id = s.zona_id "
+        "where z.hogar_id = :hogar_id "
+        "and z.id = any(cast(:zona_ids as uuid[])) "
+        "and l.fecha_hora between :start and :end "
+        "order by z.id, l.fecha_hora"
+    )
+
+
+def test_hourly_readings_document_the_index_and_cost() -> None:
+    source = Path(readings.__file__).read_text(encoding="utf-8")
+    comment = source.split("HOURLY_READINGS_SQL = text(")[0].rsplit("\n\n", 1)[1]
+
+    assert "lecturas_una_por_sensor_y_hora (sensor_id, fecha_hora)" in comment
+    assert "~31 días × 24 h" in comment
+    assert "hasta 9 zonas" in comment
+
+
+def test_hourly_readings_parameters_are_adapted_by_psycopg2() -> None:
+    session = FakeSession()
+
+    get_hourly_readings(session, uuid4(), [uuid4()], WINDOW_START, EVALUATED_HOUR)  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert params is not None
+    compiled = statement.compile(dialect=psycopg2_dialect.dialect())
+    assert set(compiled.params) == HOURLY_PARAM_NAMES
+    assert psycopg2.extensions.adapt(params["zona_ids"]).getquoted().startswith(b"ARRAY[")
+
+
+def test_hourly_readings_map_numeric_to_float_and_ids_to_uuid() -> None:
+    cocina_id, sala_id = sorted([uuid4(), uuid4()])
+    previous_hour = EVALUATED_HOUR - timedelta(hours=1)
+    rows = [
+        _hourly_row("cocina", previous_hour, zona_id=cocina_id),
+        _hourly_row("cocina", EVALUATED_HOUR, zona_id=cocina_id),
+        _hourly_row("sala", EVALUATED_HOUR, zona_id=str(sala_id)),
+    ]
+    session = FakeSession(rows)
+
+    result = get_hourly_readings(
+        session,  # type: ignore[arg-type]
+        uuid4(),
+        [cocina_id, sala_id],
+        WINDOW_START,
+        EVALUATED_HOUR,
+    )
+
+    assert result == [
+        HourlyReadingRow(cocina_id, previous_hour, float(rows[0]["consumo_kwh"])),
+        HourlyReadingRow(cocina_id, EVALUATED_HOUR, float(rows[1]["consumo_kwh"])),
+        HourlyReadingRow(sala_id, EVALUATED_HOUR, float(rows[2]["consumo_kwh"])),
+    ]
+    assert all(isinstance(row.zona_id, UUID) for row in result)
+    assert all(type(row.consumo_kwh) is float for row in result)
+    assert result[1].fecha_hora.utcoffset() == timedelta(hours=-5)
+
+
+def test_hourly_readings_keep_a_zero_reading_as_zero() -> None:
+    """Una lectura de 0 kWh es un dato (consumo_kwh >= 0), no «sin dato»."""
+    session = FakeSession([_hourly_row("cocina", EVALUATED_HOUR, consumo_kwh=Decimal("0.0000"))])
+
+    result = get_hourly_readings(session, uuid4(), [uuid4()], EVALUATED_HOUR, EVALUATED_HOUR)  # type: ignore[arg-type]
+
+    assert result[0].consumo_kwh == 0.0
+
+
+def test_hourly_readings_accept_a_single_hour_range() -> None:
+    session = FakeSession()
+
+    get_hourly_readings(session, uuid4(), [uuid4()], EVALUATED_HOUR, EVALUATED_HOUR)  # type: ignore[arg-type]
+
+    assert len(session.calls) == 1
+
+
+def test_hourly_readings_accept_utc_and_bogota_bounds() -> None:
+    session = FakeSession()
+    start_utc = WINDOW_START.astimezone(UTC)
+
+    get_hourly_readings(session, uuid4(), [uuid4()], start_utc, EVALUATED_HOUR)  # type: ignore[arg-type]
+
+    params = session.calls[0][1]
+    assert params is not None
+    assert params["start"] is start_utc
+
+
+def test_hourly_readings_without_zones_return_empty_without_sql() -> None:
+    session = FakeSession()
+
+    assert get_hourly_readings(session, uuid4(), [], WINDOW_START, EVALUATED_HOUR) == []  # type: ignore[arg-type]
+    assert session.calls == []
+
+
+@pytest.mark.parametrize("naive", ["start", "end"])
+def test_hourly_readings_reject_naive_bounds_without_sql(naive: str) -> None:
+    bounds = {"start": WINDOW_START, "end": EVALUATED_HOUR}
+    bounds[naive] = bounds[naive].replace(tzinfo=None)
+    session = FakeSession()
+
+    with pytest.raises(ValueError, match="zona horaria"):
+        get_hourly_readings(session, uuid4(), [uuid4()], bounds["start"], bounds["end"])  # type: ignore[arg-type]
+
+    assert session.calls == []
+
+
+def test_hourly_readings_reject_start_after_end_without_sql() -> None:
+    session = FakeSession()
+
+    with pytest.raises(ValueError, match="posterior"):
+        get_hourly_readings(session, uuid4(), [uuid4()], EVALUATED_HOUR, WINDOW_START)  # type: ignore[arg-type]
+
+    assert session.calls == []
+
+
+def test_hourly_readings_do_not_commit_and_have_no_python_formatting() -> None:
+    session = FakeSession([_hourly_row("sala", EVALUATED_HOUR)])
+
+    get_hourly_readings(session, uuid4(), [uuid4()], WINDOW_START, EVALUATED_HOUR)  # type: ignore[arg-type]
+
+    assert session.commits == 0
+    sql = str(readings.HOURLY_READINGS_SQL)
     assert "{" not in sql
     assert "%" not in sql

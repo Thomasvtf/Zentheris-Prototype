@@ -3,14 +3,15 @@
 Render suspende el servidor cuando no hay tráfico (DC-34): al volver, faltan las horas en que
 estuvo apagado. Este caso de uso las genera con el simulador, idénticas a las de una generación
 continua, y las guarda en una transacción propia. Lo llaman la tarea programada (al arrancar y
-cada hora) y, en las fases 6-10, las consultas de consumo, historial, fuentes y alertas al INICIO
-de su caso de uso, después de la seguridad y antes de cualquier escritura o bloqueo propio: hace
-commit o rollback sobre la sesión que recibe.
+cada hora, `fill_missing_hours`) y, en las fases 6-10, las consultas de consumo, historial,
+fuentes y alertas al INICIO de su caso de uso, después de la seguridad y antes de cualquier
+escritura o bloqueo propio (`fill_missing_hours_or_continue`: si falla, la consulta sigue con los
+datos guardados). Hace commit o rollback sobre la sesión que recibe.
 
 Solo se generan lecturas de los sensores de las zonas del hogar (RN-IV-07). Además, solo de los
-sensores con estado 'activo' en zonas con estado 'activa' (filtro de `get_sensor_gaps`).
-TODO(pendiente: ninguna regla RN fija ese filtro por estado; confirmar que una zona o un sensor
-inactivo no debe recuperar horas). No genera alertas ni consejos (DC-35, fase 8).
+sensores con estado 'activo' en zonas con estado 'activa' (filtro de `get_sensor_gaps`): decidido
+por Nicolás (23/11/2026), los sensores pausados y las zonas inactivas no reciben lecturas nuevas.
+No genera alertas ni consejos (DC-35, fase 8).
 
 Concurrencia: cada recuperación toma primero el candado del hogar (`lock_household_recovery`,
 pg_advisory_xact_lock), así que dos recuperaciones simultáneas del mismo hogar (tarea de arranque
@@ -38,6 +39,7 @@ from app.domain.simulator import (
 logger = logging.getLogger(__name__)
 
 HOUR_RECOVERY_FAILED_MESSAGE = "No se pudieron completar las horas faltantes."
+RECOVERY_SKIPPED_MESSAGE = "Consulta con los datos guardados: recuperación de horas fallida"
 # SQLSTATE de llave foránea: el hogar (o su sensor) se borró entre el listado y la inserción.
 FOREIGN_KEY_VIOLATION = "23503"
 
@@ -60,8 +62,10 @@ def fill_missing_hours(session: Session, hogar_id: UUID, now: datetime | None = 
     23503, hogar borrado a mitad de camino, va como WARNING; lo demás como ERROR).
     `now` debe llevar zona horaria: si no, `ValueError` antes de tocar la base.
 
-    TODO(pendiente: si la recuperación falla en una consulta, ¿se responde 500 ERROR_INTERNO o
-    los datos que ya hay? Hoy lanza HourRecoveryError → 500)
+    Las consultas (fases 6-10) no la llaman directamente sino con
+    `fill_missing_hours_or_continue`: decidido (Nicolás, 23/11/2026) que si la recuperación falla
+    la consulta responde 200 con los datos ya guardados, no 500. La tarea programada sí la llama
+    directamente.
     """
     moment = datetime.now(UTC) if now is None else now
     if moment.utcoffset() is None:
@@ -76,6 +80,22 @@ def fill_missing_hours(session: Session, hogar_id: UUID, now: datetime | None = 
         _log_failure("Recuperación de horas fallida", exc, level)
     _rollback(session)
     raise HourRecoveryError() from None
+
+
+def fill_missing_hours_or_continue(session: Session, hogar_id: UUID, now: datetime) -> int | None:
+    """Recuperación para las consultas: si falla, la consulta sigue con los datos ya guardados.
+
+    RN-IV-05, DC-34; decisión de Nicolás (23/11/2026). Llama a `fill_missing_hours` y devuelve
+    cuántas lecturas guardó. Si lanza `HourRecoveryError` (ya revertida y registrada sin datos),
+    escribe un WARNING sin ids ni mensajes de la base y devuelve None: la hora que falte saldrá
+    como `sin_datos`. Nunca lanza `HourRecoveryError`. Un `now` sin zona horaria sigue dando
+    `ValueError` (error de programación, no de la base).
+    """
+    try:
+        return fill_missing_hours(session, hogar_id, now)
+    except HourRecoveryError:
+        logger.warning(RECOVERY_SKIPPED_MESSAGE)
+        return None
 
 
 # --- auxiliares ---------------------------------------------------------------------------

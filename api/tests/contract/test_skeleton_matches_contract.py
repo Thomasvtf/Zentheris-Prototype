@@ -282,7 +282,8 @@ SAMPLE_ID = "00000000-0000-0000-0000-000000000001"
 SAMPLE_USER_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 
 
-# Operaciones ya implementadas (fase 3 · Usuario; fase 4 · Onboarding): no responden 501.
+# Operaciones ya implementadas (fase 3 · Usuario; fase 4 · Onboarding; fase 6 · Consumo): no
+# responden 501.
 IMPLEMENTED_OPERATIONS = frozenset(
     {
         "obtenerUsuarioActual",
@@ -294,6 +295,9 @@ IMPLEMENTED_OPERATIONS = frozenset(
         "obtenerPreferencias",
         "actualizarPreferencias",
         "crearHogarOnboarding",
+        "obtenerConsumoActual",
+        "obtenerConsumoZonas",
+        "obtenerConsumoZona",
     }
 )
 

@@ -15,13 +15,16 @@ obligatorias. `oneOf` con `type: 'null'` valida tal cual (null o el objeto, nunc
 
 Cubre `obtenerSalud`, las 8 operaciones de la fase 3 (Usuario): RN-IX-01, RN-IX-07, RN-IX-09,
 RN-I-02, RN-VII-01, RN-VI-04, RN-XVI-02, RN-XVI-03; y `crearHogarOnboarding` (fase 4): RN-X-02,
-RN-X-03, RN-X-04, RN-IV-01, RN-IV-07, RN-II-01, RN-II-03; errores DC-16.
+RN-X-03, RN-X-04, RN-IV-01, RN-IV-07, RN-II-01, RN-II-03; errores DC-16; y las 3 consultas de
+consumo de la fase 6 (`obtenerConsumoActual`, `obtenerConsumoZonas`, `obtenerConsumoZona`):
+RN-XI-01, RN-XI-03 a RN-XI-08, RN-XVII-01, RN-IV-05, DC-34, con el servicio real sobre datos en
+memoria construidos con los promedios de las personalidades.
 Las demás: TODO(C-01).
 """
 
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -32,19 +35,31 @@ from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 
 from app.config import Settings, get_settings
+from app.data import goals as goals_data
 from app.data import households as households_data
 from app.data import memberships as memberships_data
+from app.data import readings as readings_data
+from app.data import tariffs as tariffs_data
 from app.data import users as users_data
 from app.data.database import get_session
-from app.data.memberships import ActiveMembershipExistsError, MembershipSummaryRow
+from app.data.memberships import (
+    ActiveMembershipExistsError,
+    ActiveMembershipRow,
+    MembershipSummaryRow,
+)
 from app.data.users import PreferencesRow, UserProfileRow
+from app.domain import states
+from app.domain.formats import zone_name
+from app.domain.simulator import TIMEZONE
 from app.domain.zone_rules import BASIC_ZONES, PERSONALITIES, ZONE_TYPES
 from app.main import API_PREFIX, create_app
-from app.services import supabase_admin
+from app.services import consumption as consumption_service
+from app.services import hour_recovery, supabase_admin
 from tests.helpers.auth import (
     TEST_SUPABASE_URL,
     auth_header,
     install_test_jwks,
+    make_membership_row,
     make_test_settings,
     make_token,
 )
@@ -54,7 +69,13 @@ from tests.helpers.onboarding import (
     install_fake_database,
     missing_profile_error,
 )
-from tests.helpers.personalities import PERSONALITY_ORDER
+from tests.helpers.personalities import PERSONALITY_ORDER, load_personalities
+from tests.services.consumption_fakes import (
+    FakeConsumptionDatabase,
+    hourly_series,
+    install_fake_consumption_database,
+)
+from tests.services.consumption_fakes import FakeSession as ConsumptionFakeSession
 
 CONTRACT_PATH = Path(__file__).resolve().parents[3] / "docs/api/zentheris-api.yaml"
 CONTRACT: dict[str, Any] = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
@@ -80,8 +101,14 @@ PHASE_OPERATIONS = frozenset(
         "actualizarPreferencias",
     }
 )
-# Operaciones con C-01 real: las de la fase 3, el onboarding y la salud (sin autenticación).
-COVERED_OPERATIONS = PHASE_OPERATIONS | {"obtenerSalud", "crearHogarOnboarding"}
+CONSUMPTION_OPERATIONS = frozenset(
+    {"obtenerConsumoActual", "obtenerConsumoZonas", "obtenerConsumoZona"}
+)
+# Operaciones con C-01 real: las de la fase 3, el onboarding, la salud (sin autenticación) y las
+# consultas de consumo de la fase 6.
+COVERED_OPERATIONS = (
+    PHASE_OPERATIONS | CONSUMPTION_OPERATIONS | {"obtenerSalud", "crearHogarOnboarding"}
+)
 # Rangos del contrato que no se pueden provocar: `/salud` no tiene parámetros ni cuerpo, así que
 # ninguna petición a esa operación da un 4XX propio.
 UNREACHABLE_RANGES = frozenset({("obtenerSalud", "4XX")})
@@ -715,7 +742,12 @@ ONBOARDING_CASES: tuple[Case, ...] = (
     ),
     # 401
     onboarding_error("sin-token", 401, "NO_AUTENTICADO", authenticated=False),
-    onboarding_error("sin-ficha", 404, "FICHA_NO_CREADA", setup=failing_at("insert_admin_membership", missing_profile_error())),
+    onboarding_error(
+        "sin-ficha",
+        404,
+        "FICHA_NO_CREADA",
+        setup=failing_at("insert_admin_membership", missing_profile_error()),
+    ),
     onboarding_error(
         "nombre-de-81-caracteres", 422, "VALIDACION", onboarding_body(nombre_hogar="a" * 81)
     ),
@@ -835,7 +867,7 @@ def test_cases_cover_every_declared_response_of_the_phase() -> None:
         for code in OPERATIONS[operation_id][2]["responses"]
         if (operation_id, str(code)) not in UNREACHABLE_RANGES | COVERED_BY_OWN_TEST
     }
-    cases = CASES + ONBOARDING_CASES
+    cases = CASES + ONBOARDING_CASES + CONSUMPTION_CASES
     covered = {(case.operation_id, case.status) for case in cases}
     assert covered == declared
     assert len({(c.operation_id, c.name) for c in cases}) == len(cases)
@@ -1045,6 +1077,477 @@ def test_onboarding_validation_error_locates_the_field_without_echoing_it(
     assert [campo["ubicacion"] for campo in response.json()["detalles"]["campos"]] == [location]
     assert HOUSEHOLD_NAME not in response.text
     assert "piscina" not in response.text
+
+
+# --- consultas de consumo (fase 6) ---------------------------------------------------------
+#
+# El servicio y el dominio son los reales; los datos (`app.data.*`) son los dobles en memoria de
+# `tests/services/consumption_fakes.py`, con lecturas construidas con los promedios de cada
+# personalidad (`tests/helpers/personalities.py`). La recuperación de horas es un espía. El reloj
+# del servicio se fija (el router no pasa `now`) para que la hora evaluada no dependa de cuándo
+# corre la prueba.
+
+FIXED_NOW = datetime(2026, 11, 23, 15, 20, tzinfo=TIMEZONE)  # lunes; hora evaluada 14:00-15:00
+HOUR_START, HOUR_END = states.evaluated_hour(FIXED_NOW)
+PRICE_KWH = 850.0  # COP por kWh de la tarifa de prueba (el valor no cambia el esquema)
+DEFAULT_PERSONALITY = "Consumo intermedio"
+OTHER_HOUSEHOLD_ID = UUID("22222222-3333-4444-8555-666666666666")
+REAL_FILL_MISSING_HOURS = hour_recovery.fill_missing_hours
+CONSUMPTION_DATA_FUNCTIONS = (
+    (households_data, "list_household_zones"),
+    (readings_data, "get_hourly_readings"),
+    (users_data, "get_preferences"),
+    (goals_data, "get_active_goal"),
+    (tariffs_data, "get_current_tariff"),
+    (hour_recovery, "fill_missing_hours"),
+)
+
+
+class FixedClock(datetime):
+    """`datetime` del módulo del servicio con `now()` fijo en `FIXED_NOW`."""
+
+    @classmethod
+    def now(cls, tz: Any = None) -> datetime:  # type: ignore[override]
+        return FIXED_NOW if tz is None else FIXED_NOW.astimezone(tz)
+
+
+@dataclass
+class ConsumptionWorld:
+    """Hogar de la prueba: datos en memoria, membresías y sesiones que vio cada capa."""
+
+    db: FakeConsumptionDatabase
+    session: ConsumptionFakeSession
+    memberships: list[ActiveMembershipRow]
+    personality: str = DEFAULT_PERSONALITY
+    zone_ids: dict[str, UUID] = field(default_factory=dict)  # tipo -> id
+    foreign_zone_id: UUID | None = None
+    guard_sessions: list[object] = field(default_factory=list)
+    data_sessions: list[object] = field(default_factory=list)
+
+    def build_household(self, personality: str) -> None:
+        """Zonas del hogar de referencia de la personalidad y 31 días de lecturas promedio."""
+        averages = load_personalities()[personality]
+        self.personality = personality
+        for zona_id in self.zone_ids.values():
+            self.db.readings.pop(zona_id, None)
+        self.db.zones.pop(HOGAR_ID, None)
+        self.zone_ids.clear()
+        first = HOUR_START - timedelta(days=31)
+        for tipo in REFERENCE_HOUSEHOLDS[personality][1]:
+            zona_id = self.db.add_zone(HOGAR_ID, tipo, zone_name(tipo))
+            self.zone_ids[tipo] = zona_id
+
+            def kwh(moment: datetime, tipo: str = tipo) -> float:
+                local = moment.astimezone(TIMEZONE)
+                weekend = averages.weekend_factor if local.weekday() >= 5 else 1.0
+                return averages.zone_kwh_for_hour(tipo, local.hour) * weekend
+
+            self.db.set_series(zona_id, hourly_series(kwh, first, HOUR_START))
+
+    @property
+    def first_zone_id(self) -> UUID:
+        return next(iter(self.zone_ids.values()))
+
+
+def install_consumption_world(
+    monkeypatch: pytest.MonkeyPatch, store: FakeStore
+) -> ConsumptionWorld:
+    db = install_fake_consumption_database(monkeypatch)
+    world = ConsumptionWorld(
+        db=db,
+        session=ConsumptionFakeSession(),
+        memberships=[make_membership_row(USER_ID, HOGAR_ID, rol="miembro")],
+    )
+    store.session = world.session  # type: ignore[assignment]  # la que entrega `get_session`
+
+    def fake_get_active_membership(
+        session: object, usuario_id: UUID, hogar_id: UUID
+    ) -> ActiveMembershipRow | None:
+        world.guard_sessions.append(session)
+        return next(
+            (m for m in world.memberships if m.usuario_id == usuario_id and m.hogar_id == hogar_id),
+            None,
+        )
+
+    monkeypatch.setattr(memberships_data, "get_active_membership", fake_get_active_membership)
+    for module, name in CONSUMPTION_DATA_FUNCTIONS:
+        original = getattr(module, name)
+
+        def spy(session: object, *args: Any, _original: Any = original, **kw: Any) -> Any:
+            world.data_sessions.append(session)
+            return _original(session, *args, **kw)
+
+        monkeypatch.setattr(module, name, spy)
+    monkeypatch.setattr(consumption_service, "datetime", FixedClock)
+    world.build_household(DEFAULT_PERSONALITY)
+    db.add_tariff(HOGAR_ID, PRICE_KWH, date(2026, 1, 1))
+    world.foreign_zone_id = db.add_zone(OTHER_HOUSEHOLD_ID, "cocina", zone_name("cocina"))
+    return world
+
+
+@pytest.fixture
+def consumption(monkeypatch: pytest.MonkeyPatch, store: FakeStore) -> ConsumptionWorld:
+    return install_consumption_world(monkeypatch, store)
+
+
+# Preparaciones de los casos (reciben el `ConsumptionWorld`).
+def with_personality(name: str) -> Callable[[ConsumptionWorld], None]:
+    return lambda world: world.build_household(name)
+
+
+def without_tariff(world: ConsumptionWorld) -> None:
+    world.db.tariffs.clear()  # RN-XI-08: tarifa_vigente = false y COP null
+
+
+def without_evaluated_hour(world: ConsumptionWorld) -> None:
+    """A una zona le falta la lectura de la hora evaluada: kW null y `sin_datos`."""
+    world.db.readings[world.first_zone_id].pop(HOUR_START)
+
+
+def with_goal(world: ConsumptionWorld) -> None:
+    """`base_comparacion = meta` y una meta activa igual al consumo mensual de referencia."""
+    averages = load_personalities()[world.personality]
+    zones = tuple(world.zone_ids)
+    monthly = sum(averages.household_kwh_for_hour(hour, zones) for hour in range(24)) * 30
+    world.db.set_preferences(USER_ID, "meta")
+    world.db.set_goal(HOGAR_ID, monthly)
+
+
+def with_goal_preference_without_goal(world: ConsumptionWorld) -> None:
+    world.db.set_preferences(USER_ID, "meta")  # sin meta activa: se usa el promedio (RN-XI-03)
+
+
+def with_elevated_hour(world: ConsumptionWorld) -> None:
+    series = world.db.readings[world.first_zone_id]
+    series[HOUR_START] *= 1.6
+
+
+def with_paused_first_zone(world: ConsumptionWorld) -> None:
+    """La primera zona tiene el sensor pausado: no cuenta y su detalle sale sin datos."""
+    zones = world.db.zones[HOGAR_ID]
+    index = next(i for i, z in enumerate(zones) if z.id == world.first_zone_id)
+    zones[index] = replace(zones[index], sensor_estado="pausado")
+
+
+def without_recent_history(world: ConsumptionWorld) -> None:
+    """Solo 3 días de lecturas: menos de los 7 días mínimos, sin referencia (DC-28)."""
+    cutoff = HOUR_START - timedelta(days=3)
+    for series in world.db.readings.values():
+        for moment in [m for m in series if m < cutoff]:
+            del series[moment]
+
+
+def without_permission(world: ConsumptionWorld) -> None:
+    world.memberships[:] = [
+        make_membership_row(USER_ID, HOGAR_ID, rol="miembro", ver_consumo_actual=False)
+    ]
+
+
+def as_admin_without_permissions(world: ConsumptionWorld) -> None:
+    world.memberships[:] = [
+        make_membership_row(
+            USER_ID,
+            HOGAR_ID,
+            rol="administrador",
+            ver_consumo_actual=False,
+            ver_historial=False,
+            recibir_alertas=False,
+        )
+    ]
+
+
+def without_membership(world: ConsumptionWorld) -> None:
+    world.memberships.clear()
+
+
+@dataclass(frozen=True)
+class ConsumptionCase:
+    name: str
+    operation_id: str
+    status: int
+    setup: Callable[[ConsumptionWorld], None] | None = None
+    authenticated: bool = True
+    codigo: str | None = None
+    hogar_id: str | None = None  # por defecto, el hogar de la prueba
+    zona_id: str | None = None  # por defecto, la primera zona del hogar (`foreign` = otro hogar)
+
+
+def _consumption_cases_for(operation_id: str) -> tuple[ConsumptionCase, ...]:
+    def case(name: str, status: int, **kw: Any) -> ConsumptionCase:
+        return ConsumptionCase(name, operation_id, status, **kw)
+
+    return (
+        *(
+            case(f"promedio-{name.split()[1]}", 200, setup=with_personality(name))
+            for name in PERSONALITY_ORDER
+        ),
+        case("sin-tarifa", 200, setup=without_tariff),
+        case("hora-sin-lectura", 200, setup=without_evaluated_hour),
+        case("con-meta", 200, setup=with_goal),
+        case("meta-elegida-sin-meta-activa", 200, setup=with_goal_preference_without_goal),
+        case("hora-elevada", 200, setup=with_elevated_hour),
+        case("sensor-pausado", 200, setup=with_paused_first_zone),
+        case("sin-referencia", 200, setup=without_recent_history),
+        case("admin-sin-permisos", 200, setup=as_admin_without_permissions),
+        case("sin-token", 401, authenticated=False, codigo="NO_AUTENTICADO"),
+        case("sin-permiso", 403, setup=without_permission, codigo="SIN_PERMISO_VER_CONSUMO"),
+        case("sin-membresia", 404, setup=without_membership, codigo="NO_ENCONTRADO"),
+        case("hogar-ajeno", 404, hogar_id=str(OTHER_HOUSEHOLD_ID), codigo="NO_ENCONTRADO"),
+        case("hogar-no-uuid", 422, hogar_id="no-es-un-uuid", codigo="VALIDACION"),
+    )
+
+
+CONSUMPTION_CASES: tuple[ConsumptionCase, ...] = (
+    *_consumption_cases_for("obtenerConsumoActual"),
+    *_consumption_cases_for("obtenerConsumoZonas"),
+    *_consumption_cases_for("obtenerConsumoZona"),
+    ConsumptionCase(
+        "zona-de-otro-hogar", "obtenerConsumoZona", 404, zona_id="foreign", codigo="NO_ENCONTRADO"
+    ),
+    ConsumptionCase(
+        "zona-inexistente",
+        "obtenerConsumoZona",
+        404,
+        zona_id="00000000-0000-4000-8000-000000000000",
+        codigo="NO_ENCONTRADO",
+    ),
+    ConsumptionCase(
+        "zona-no-uuid", "obtenerConsumoZona", 422, zona_id="no-es-un-uuid", codigo="VALIDACION"
+    ),
+)
+# Casos que la guardia corta antes de llegar al servicio.
+GUARD_STOPS = frozenset({"sin-token", "sin-permiso", "sin-membresia", "hogar-ajeno"})
+
+
+def consumption_url(case: ConsumptionCase, world: ConsumptionWorld) -> str:
+    _method, path, _op = OPERATIONS[case.operation_id]
+    zona_id = case.zona_id or str(world.first_zone_id)
+    if zona_id == "foreign":
+        zona_id = str(world.foreign_zone_id)
+    return API_PREFIX + path.format(hogar_id=case.hogar_id or str(HOGAR_ID), zona_id=zona_id)
+
+
+def send_consumption(client: TestClient, case: ConsumptionCase, world: ConsumptionWorld) -> Any:
+    headers = auth_header(make_token(USER_ID, CORREO)) if case.authenticated else {}
+    return client.get(consumption_url(case, world), headers=headers)
+
+
+def get_consumption(client: TestClient, world: ConsumptionWorld, operation_id: str) -> Any:
+    response = send_consumption(client, ConsumptionCase("x", operation_id, 200), world)
+    assert response.status_code == 200, response.text
+    assert_matches_contract(operation_id, response)
+    return response.json()
+
+
+@pytest.mark.parametrize(
+    "case", CONSUMPTION_CASES, ids=lambda c: f"{c.operation_id}-{c.status}-{c.name}"
+)
+def test_consumption_response_matches_contract_schema(
+    case: ConsumptionCase, client: TestClient, consumption: ConsumptionWorld
+) -> None:
+    if case.setup is not None:
+        case.setup(consumption)
+    response = send_consumption(client, case, consumption)
+    assert response.status_code == case.status, response.text
+    assert_matches_contract(case.operation_id, response)
+    # La guardia y cada función de datos recibieron la sesión de la petición.
+    assert all(s is consumption.session for s in consumption.guard_sessions)
+    assert all(s is consumption.session for s in consumption.data_sessions)
+    assert consumption.session.commits == 0  # solo lectura (la recuperación espía no guarda)
+    if case.status == 200:
+        assert consumption.guard_sessions == [consumption.session]
+        assert consumption.db.names()[0] == "recovery"  # recuperación primero (RN-IV-05)
+        assert consumption.db.calls[0][2] == FIXED_NOW  # el reloj fijo llegó al servicio
+        return
+    assert response.json()["codigo"] == case.codigo
+    assert (response.headers.get("WWW-Authenticate") == "Bearer") == (case.status == 401)
+    if case.status == 422 or case.name in GUARD_STOPS:
+        assert consumption.db.calls == []  # no llegó al servicio
+
+
+def test_consumption_cases_cover_every_code_of_the_operations() -> None:
+    for operation_id in CONSUMPTION_OPERATIONS:
+        codes = {c.codigo for c in CONSUMPTION_CASES if c.operation_id == operation_id}
+        assert codes - {None} == {
+            "NO_AUTENTICADO",
+            "SIN_PERMISO_VER_CONSUMO",
+            "NO_ENCONTRADO",
+            "VALIDACION",
+        }
+
+
+SERVICE_FUNCTIONS = {
+    "obtenerConsumoActual": "get_current_consumption",
+    "obtenerConsumoZonas": "get_zones_consumption",
+    "obtenerConsumoZona": "get_zone_consumption",
+}
+
+
+@pytest.mark.parametrize("operation_id", sorted(CONSUMPTION_OPERATIONS))
+def test_router_passes_guard_session_and_token_user_to_service(
+    operation_id: str,
+    client: TestClient,
+    consumption: ConsumptionWorld,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """La MISMA sesión llega a la guardia y al servicio, con el usuario del token, el hogar de la
+    ruta (y la zona) y sin `now` (lo decide el servicio)."""
+    received: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    name = SERVICE_FUNCTIONS[operation_id]
+    real = getattr(consumption_service, name)
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        received.append((args, kwargs))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(consumption_service, name, spy)
+    get_consumption(client, consumption, operation_id)
+    ((args, kwargs),) = received
+    assert kwargs == {}
+    expected: tuple[Any, ...] = (consumption.session, USER_ID, HOGAR_ID)
+    if operation_id == "obtenerConsumoZona":
+        expected += (consumption.first_zone_id,)
+    assert args == expected
+    assert args[0] is consumption.session
+    assert consumption.guard_sessions == [consumption.session]
+    assert consumption.guard_sessions[0] is args[0]
+
+
+def test_current_consumption_with_tariff_has_costs(
+    client: TestClient, consumption: ConsumptionWorld
+) -> None:
+    body = get_consumption(client, consumption, "obtenerConsumoActual")
+    assert body["tarifa_vigente"] is True
+    assert datetime.fromisoformat(body["hora"]["inicio"]) == HOUR_START
+    assert datetime.fromisoformat(body["hora"]["fin"]) == HOUR_END
+    actual, today = body["actual"], body["acumulado_hoy"]
+    expected_kw = sum(consumption.db.readings[z][HOUR_START] for z in consumption.zone_ids.values())
+    assert actual["potencia_kw"] == pytest.approx(expected_kw)
+    assert actual["costo_cop"] == pytest.approx(actual["potencia_kw"] * PRICE_KWH)
+    assert actual["referencia_tipo"] == "promedio"
+    assert today["costo_cop"] == pytest.approx(today["energia_kwh"] * PRICE_KWH)
+    assert today["muestra_limite"] is False
+
+
+@pytest.mark.parametrize("operation_id", sorted(CONSUMPTION_OPERATIONS))
+def test_consumption_without_tariff_has_null_costs(
+    operation_id: str, client: TestClient, consumption: ConsumptionWorld
+) -> None:
+    """RN-XI-08: sin tarifa vigente, `tarifa_vigente = false` y todos los COP null."""
+    without_tariff(consumption)
+    body = get_consumption(client, consumption, operation_id)
+    assert body["tarifa_vigente"] is False
+    if operation_id == "obtenerConsumoActual":
+        assert body["actual"]["potencia_kw"] is not None
+        assert body["actual"]["costo_cop"] is None
+        assert body["acumulado_hoy"]["costo_cop"] is None
+    elif operation_id == "obtenerConsumoZonas":
+        assert body["zonas"]
+        assert all(z["potencia_kw"] is not None and z["costo_cop"] is None for z in body["zonas"])
+    else:
+        assert body["potencia_kw"] is not None
+        assert body["costo_cop"] is None
+
+
+def assert_missing_hour_is_sin_datos(
+    operation_id: str, body: dict[str, Any], world: ConsumptionWorld
+) -> None:
+    """La zona sin la lectura de la hora evaluada: kW null (nunca 0) y `sin_datos`."""
+    if operation_id == "obtenerConsumoActual":
+        assert body["actual"]["potencia_kw"] is None
+        assert body["actual"]["costo_cop"] is None
+        assert body["actual"]["estado"] == "sin_datos"
+        assert body["actual"]["mensaje_codigo"] == "consumo_actual.sin_datos"
+    elif operation_id == "obtenerConsumoZonas":
+        assert body["total_kw"] is None
+        (missing,) = [z for z in body["zonas"] if z["zona_id"] == str(world.first_zone_id)]
+        assert missing["potencia_kw"] is None
+        assert missing["costo_cop"] is None
+        assert missing["participacion_pct"] is None
+    else:
+        assert body["potencia_kw"] is None
+        assert body["costo_cop"] is None
+        assert body["estado_consumo"]["estado"] == "sin_datos"
+        assert body["estado_consumo"]["mensaje_codigo"] == "zona_estado.sin_datos"
+        assert body["participacion"]["total_hogar_kw"] is None
+
+
+@pytest.mark.parametrize("operation_id", sorted(CONSUMPTION_OPERATIONS))
+def test_consumption_hour_without_reading_is_null_and_sin_datos(
+    operation_id: str, client: TestClient, consumption: ConsumptionWorld
+) -> None:
+    without_evaluated_hour(consumption)
+    body = get_consumption(client, consumption, operation_id)
+    assert_missing_hour_is_sin_datos(operation_id, body, consumption)
+
+
+def test_zone_detail_of_a_zone_that_does_not_count_is_200_without_data(
+    client: TestClient, consumption: ConsumptionWorld
+) -> None:
+    with_paused_first_zone(consumption)
+    body = get_consumption(client, consumption, "obtenerConsumoZona")
+    assert body["zona"]["id"] == str(consumption.first_zone_id)
+    assert body["potencia_kw"] is None
+    assert body["estado_consumo"]["estado"] == "sin_datos"
+
+
+def test_zones_consumption_lists_the_counting_zones(
+    client: TestClient, consumption: ConsumptionWorld
+) -> None:
+    body = get_consumption(client, consumption, "obtenerConsumoZonas")
+    assert {z["zona_id"] for z in body["zonas"]} == {str(z) for z in consumption.zone_ids.values()}
+    assert body["total_kw"] == pytest.approx(sum(z["potencia_kw"] for z in body["zonas"]))
+
+
+# --- recuperación de horas fallida (decisión de Nicolás, 23/11/2026) -----------------------
+
+
+def recovery_raises(world: ConsumptionWorld, monkeypatch: pytest.MonkeyPatch) -> None:
+    def failing(session: object, hogar_id: UUID, now: datetime | None = None) -> int:
+        world.data_sessions.append(session)
+        raise hour_recovery.HourRecoveryError()
+
+    monkeypatch.setattr(hour_recovery, "fill_missing_hours", failing)
+
+
+def recovery_lock_fails(world: ConsumptionWorld, monkeypatch: pytest.MonkeyPatch) -> None:
+    """La recuperación real falla al tomar el candado del hogar (p. ej. conexión perdida)."""
+
+    def failing_lock(session: object, hogar_id: UUID) -> None:
+        world.data_sessions.append(session)
+        raise RuntimeError(INTERNAL_DETAIL)
+
+    monkeypatch.setattr(hour_recovery, "fill_missing_hours", REAL_FILL_MISSING_HOURS)
+    monkeypatch.setattr(readings_data, "lock_household_recovery", failing_lock)
+
+
+@pytest.mark.parametrize(
+    "failure", [recovery_raises, recovery_lock_fails], ids=["error", "candado"]
+)
+@pytest.mark.parametrize("operation_id", sorted(CONSUMPTION_OPERATIONS))
+def test_failed_hour_recovery_answers_200_with_stored_data(
+    operation_id: str,
+    failure: Callable[[ConsumptionWorld, pytest.MonkeyPatch], None],
+    client: TestClient,
+    consumption: ConsumptionWorld,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Si la recuperación falla, 200 (no 500) con los datos guardados; la hora que la
+    recuperación no pudo completar sale `sin_datos`. Sin detalles internos en la respuesta."""
+    without_evaluated_hour(consumption)  # la hora que la recuperación habría generado
+    failure(consumption, monkeypatch)
+    with caplog.at_level("WARNING", logger=hour_recovery.__name__):
+        body = get_consumption(client, consumption, operation_id)
+    assert_missing_hour_is_sin_datos(operation_id, body, consumption)
+    assert INTERNAL_DETAIL not in str(body)
+    assert consumption.data_sessions, "la recuperación no se llamó"
+    assert all(s is consumption.session for s in consumption.data_sessions)
+    assert consumption.session.commits == 0
+    if failure is recovery_lock_fails:
+        assert consumption.session.rollbacks == 1  # la recuperación revirtió lo suyo
+    assert hour_recovery.RECOVERY_SKIPPED_MESSAGE in caplog.messages
+    assert not [r for r in caplog.records if INTERNAL_DETAIL in r.getMessage()]
 
 
 # --- operaciones pendientes ---------------------------------------------------------------

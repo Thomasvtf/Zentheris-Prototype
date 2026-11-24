@@ -99,6 +99,8 @@ type ChartView = 'barras' | 'linea' | 'anillo';
 type ChartUnit = 'energia' | 'COP';
 
 const PERIODS: Period[] = ['dia', 'semana', 'mes'];
+/** Ícono de cada periodo en el selector (Figma A5.1): calendario con «1», semana y rango. */
+const PERIOD_ICONS: Record<Period, IconName> = { dia: 'calendar-1', semana: 'calendar-days', mes: 'calendar-range' };
 
 
 function isSeverity(estado: ConsumptionState): estado is Severity {
@@ -603,7 +605,7 @@ export function HistorialScreen({ hogarId = null, mockScenario }: HistorialScree
       >
         <View style={styles.periodRow} accessibilityRole="radiogroup">
           {PERIODS.map((p) => (
-            <Chip key={p} activo={periodo === p} icono="calendar-days" onClick={() => setPeriodo(p)}>
+            <Chip key={p} activo={periodo === p} icono={PERIOD_ICONS[p]} onClick={() => setPeriodo(p)}>
               {t(`formato.periodo.${p}`)}
             </Chip>
           ))}
@@ -629,7 +631,7 @@ export function HistorialScreen({ hogarId = null, mockScenario }: HistorialScree
         {state.status === 'ready' && (
           <>
             {isMissingLastHour(state.data) && (
-              <InlineNotice tono="informacion" titulo={t('historial.faltan_titulo')} descripcion={t('historial.faltan_cuerpo')} />
+              <StateMessage tipo="sin_datos" icono="loader" titulo={t('historial.faltan_titulo')} descripcion={t('historial.faltan_cuerpo')} />
             )}
             {!isEmptyHistory(state.data) && <PeakCard data={state.data} />}
             <ConsumptionChartCard data={state.data} zones={zones} zonaId={zonaId} onZona={setZonaId} />
@@ -727,7 +729,8 @@ const styles = StyleSheet.create({
   // Comparación
   compareRow: { flexDirection: 'row', gap: spacing['16'] },
   compareDivider: { width: 1, backgroundColor: colors['border-subtle'] },
-  compareLabel: { ...textStyle('body-xs-medium'), color: colors['text-muted'] },
+  // «ESTE PERIODO» y «PERIODO ANTERIOR» en mayúsculas (token ui-s-etiqueta-12, Figma A5.1).
+  compareLabel: { ...textStyle('ui-s-etiqueta-12'), color: colors['text-muted'], textTransform: 'uppercase' },
 
   // StateMessage e InlineNotice
   stateMessageTitle: { ...textStyle('body-s-medium'), color: colors['text-primary'] },

@@ -33,7 +33,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Check, CircleCheck } from 'lucide-react-native';
+import { CircleCheck, ThumbsUp } from 'lucide-react-native';
 
 import { colors, radius, sizes, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
@@ -50,6 +50,8 @@ import type { ConsejosMockScenario, Tip, TipPriority } from './useConsejosData';
 const CHECKBOX_TOUCH = 44;
 const CHECKBOX_SIZE = 24;
 const SKELETON_CARDS = 3;
+/** Punto de la etiqueta de prioridad en Figma (6 px; no hay token de ese tamaño). */
+const TAG_DOT = 6;
 
 /* ─────────────────────── Piezas de presentación ─────────────────────────── */
 
@@ -58,6 +60,8 @@ function PriorityTag({ prioridad }: { prioridad: TipPriority }) {
   const tone = TAG_TONES[prioridad];
   return (
     <View style={[styles.tag, { backgroundColor: tone.bg, borderColor: tone.border }]}>
+      {/* Punto de la etiqueta (Figma A4.3); decorativo, la prioridad se lee en la palabra. */}
+      <View style={[styles.tagDot, { backgroundColor: tone.text }]} />
       <Text style={[styles.tagText, { color: tone.text }]}>{t(`consejos.prioridad_${prioridad}`)}</Text>
     </View>
   );
@@ -65,7 +69,7 @@ function PriorityTag({ prioridad }: { prioridad: TipPriority }) {
 
 const TAG_TONES: Record<TipPriority, { bg: string; border: string; text: string }> = {
   alta: { bg: colors['accent-soft'], border: colors['border-accent'], text: colors['text-accent'] },
-  media: { bg: 'transparent', border: colors['border-medium'], text: colors['text-muted'] },
+  media: { bg: 'transparent', border: colors['border-medium'], text: colors['text-primary'] },
   baja: { bg: 'transparent', border: colors['border-subtle'], text: colors['text-muted'] },
 };
 
@@ -80,7 +84,7 @@ function Checkbox({ checked, disabled, label, onPress }: { checked: boolean; dis
       style={styles.checkboxTouch}
     >
       <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-        {checked ? <Check size={16} color={colors['text-inverse']} strokeWidth={3} /> : null}
+        {checked ? <CircleCheck size={16} color={colors['accent-primary']} /> : null}
       </View>
     </Pressable>
   );
@@ -119,11 +123,13 @@ function TipCard({ tip, saving, onToggle }: { tip: Tip; saving: boolean; onToggl
 function AllClearCard() {
   return (
     <View style={styles.stateCard}>
-      <CircleCheck size={32} color={colors['text-muted']} />
-      <View style={styles.flex}>
-        <Text style={styles.stateTitle}>{t('consejos.vacio_titulo')}</Text>
-        <Text style={styles.stateBody}>{t('consejos.vacio_cuerpo')}</Text>
+      <View style={styles.stateIconBox}>
+        <ThumbsUp size={32} color={colors['accent-primary']} />
       </View>
+      <Text style={styles.stateTitle} accessibilityRole="header">
+        {t('consejos.vacio_titulo')}
+      </Text>
+      <Text style={styles.stateBody}>{t('consejos.vacio_cuerpo')}</Text>
     </View>
   );
 }
@@ -201,7 +207,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: {
     paddingHorizontal: spacing['16'],
-    paddingTop: spacing['16'],
+    paddingTop: spacing['12'],
     paddingBottom: spacing['40'],
     gap: spacing['12'],
   },
@@ -238,31 +244,50 @@ const styles = StyleSheet.create({
   checkbox: {
     width: CHECKBOX_SIZE,
     height: CHECKBOX_SIZE,
-    borderRadius: radius.xs,
+    borderRadius: radius.sm,
     borderWidth: 2,
     borderColor: colors['border-medium'],
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkboxChecked: { backgroundColor: colors['accent-primary'], borderColor: colors['accent-primary'] },
+  // Marcada (Figma A4.3): fondo accent-soft, borde de acento y circle-check verde.
+  checkboxChecked: { backgroundColor: colors['accent-soft'], borderColor: colors['border-accent'] },
 
   // PriorityTag
-  tag: { paddingVertical: spacing['4'], paddingHorizontal: spacing['8'], borderRadius: radius.full, borderWidth: 1 },
+  tag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing['8'],
+    paddingVertical: spacing['4'],
+    paddingHorizontal: spacing['12'],
+    borderRadius: radius.full,
+    borderWidth: 1,
+  },
+  tagDot: { width: TAG_DOT, height: TAG_DOT, borderRadius: radius.full },
   tagText: { ...textStyle('body-xs-medium') },
 
   // StateMessage «Todo bajo control»
+  // «¡Todo bajo control!» (Figma A4.4): columna centrada, cuadro de 72 con el pulgar en acento.
   stateCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing['12'],
+    alignItems: 'center',
+    gap: spacing['16'],
     backgroundColor: colors['background-surface'],
     borderColor: colors['border-subtle'],
     borderWidth: 1,
     borderRadius: radius.lg,
-    padding: sizes['card-padding'],
+    paddingVertical: spacing['40'],
+    paddingHorizontal: sizes['card-padding'],
   },
-  stateTitle: { ...textStyle('body-s-medium'), color: colors['text-primary'] },
-  stateBody: { ...textStyle('body-xs-regular'), color: colors['text-muted'] },
+  stateIconBox: {
+    width: spacing['64'] + spacing['8'],
+    height: spacing['64'] + spacing['8'],
+    borderRadius: radius.lg,
+    backgroundColor: colors['accent-soft'],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stateTitle: { ...textStyle('display-m'), color: colors['text-primary'], textAlign: 'center' },
+  stateBody: { ...textStyle('body-s-regular'), color: colors['text-muted'], textAlign: 'center' },
 
   // Skeleton
   skeletonBlock: { backgroundColor: colors['background-elevated'], borderRadius: radius.xs },

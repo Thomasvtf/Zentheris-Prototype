@@ -9,18 +9,12 @@
  * - Solo el administrador o quien tiene `permiso_modificar_metas` puede editar (`puede_editar`).
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, CircleAlert, CircleCheck, Info, Minus, Plus } from 'lucide-react-native';
+import { Minus, Plus } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
+import { InlineNotice, ScreenHeader } from '@/components';
 import { createGoal, getGoal } from '@/api/goalsTariff';
 import { toErrorTextKey } from '@/api/errors';
 import type { SuccessBody } from '@/api/client';
@@ -78,35 +72,6 @@ function useGoalData(hogarId: string | null) {
   return { state: visibleState, reload };
 }
 
-
-function Notice({
-  tone,
-  title,
-  body,
-}: {
-  tone: 'error' | 'success' | 'neutral';
-  title: string;
-  body?: string;
-}) {
-  const palette =
-    tone === 'error'
-      ? { bg: colors['status-error-bg'], border: colors['status-error-border'], icon: CircleAlert }
-      : tone === 'success'
-        ? { bg: colors['status-success-bg'], border: colors['status-success-border'], icon: CircleCheck }
-        : { bg: colors['background-surfaceAlt'], border: colors['border-medium'], icon: Info };
-  return (
-    <View
-      style={[styles.notice, { backgroundColor: palette.bg, borderColor: palette.border }]}
-      accessibilityRole="alert"
-    >
-      <palette.icon size={20} color={colors['text-muted']} />
-      <View style={styles.noticeTexts}>
-        <Text style={styles.noticeTitle}>{title}</Text>
-        {body ? <Text style={styles.noticeBody}>{body}</Text> : null}
-      </View>
-    </View>
-  );
-}
 
 export interface EstablecerMetaScreenProps {
   /** TODO(pendiente: hogarId): vendrá del estado de sesión/hogar cuando exista. */
@@ -180,20 +145,7 @@ export function EstablecerMetaScreen({ hogarId = null }: EstablecerMetaScreenPro
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
 
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.headerBtn}
-          activeOpacity={0.7}
-          onPress={() => router.back()}
-          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-          accessibilityRole="button"
-          accessibilityLabel={t('a11y.volver')}
-        >
-          <ChevronLeft size={24} color={colors['text-primary']} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('meta.encabezado')}</Text>
-        <View style={styles.headerBtn} />
-      </View>
+      <ScreenHeader titulo={t('meta.encabezado')} onAtras={() => router.back()} />
 
       <ScrollView
         style={styles.scrollView}
@@ -210,10 +162,10 @@ export function EstablecerMetaScreen({ hogarId = null }: EstablecerMetaScreenPro
 
         {state.status === 'error' && (
           <View>
-            <Notice
-              tone="error"
-              title={t(`${state.errorKey}.titulo`)}
-              body={t(`${state.errorKey}.cuerpo`)}
+            <InlineNotice
+              tono="error"
+              titulo={t(`${state.errorKey}.titulo`)}
+              descripcion={t(`${state.errorKey}.cuerpo`)}
             />
             <TouchableOpacity
               style={styles.retryBtn}
@@ -229,10 +181,10 @@ export function EstablecerMetaScreen({ hogarId = null }: EstablecerMetaScreenPro
         {state.status === 'ready' && (
           <>
             {!canEdit && (
-              <Notice
-                tone="neutral"
-                title={t('meta.lectura_titulo')}
-                body={t('meta.lectura_cuerpo')}
+              <InlineNotice
+                tono="informacion"
+                titulo={t('meta.lectura_titulo')}
+                descripcion={t('meta.lectura_cuerpo')}
               />
             )}
 
@@ -334,13 +286,13 @@ export function EstablecerMetaScreen({ hogarId = null }: EstablecerMetaScreenPro
             </View>
 
             {saveErrorKey && (
-              <Notice
-                tone="error"
-                title={t(`${saveErrorKey}.titulo`)}
-                body={t(`${saveErrorKey}.cuerpo`)}
+              <InlineNotice
+                tono="error"
+                titulo={t(`${saveErrorKey}.titulo`)}
+                descripcion={t(`${saveErrorKey}.cuerpo`)}
               />
             )}
-            {saved && <Notice tone="success" title={t('meta.guardada')} />}
+            {saved && <InlineNotice tono="exito" titulo={t('meta.guardada')} />}
 
             {canEdit && (
               <TouchableOpacity
@@ -365,33 +317,10 @@ export function EstablecerMetaScreen({ hogarId = null }: EstablecerMetaScreenPro
   );
 }
 
-/** Alto de la cabecera en Figma (64): el token `topBar-height` vale 56, así que se compone sin
- * tocar el token (decisión del 24/11/2026). */
-const HEADER_HEIGHT = sizes['iconButtonLg-size'] + spacing['16'];
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors['background-default'],
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[16],
-    height: HEADER_HEIGHT,
-    borderBottomWidth: 1,
-    borderBottomColor: colors['border-subtle'],
-  },
-  headerBtn: {
-    width: sizes['iconButton-size'],
-    height: sizes['iconButton-size'],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    ...textStyle('display-m'),
-    color: colors['text-primary'],
   },
   scrollView: {
     flex: 1,
@@ -572,27 +501,6 @@ const styles = StyleSheet.create({
     color: colors['text-muted'],
   },
 
-  notice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing[12],
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    padding: spacing[16],
-    marginBottom: spacing[16],
-  },
-  noticeTexts: {
-    flex: 1,
-    gap: spacing[4],
-  },
-  noticeTitle: {
-    ...textStyle('ui-s-semibold'),
-    color: colors['text-primary'],
-  },
-  noticeBody: {
-    ...textStyle('body-s-regular'),
-    color: colors['text-muted'],
-  },
   retryBtn: {
     alignSelf: 'flex-start',
     paddingVertical: spacing[8],

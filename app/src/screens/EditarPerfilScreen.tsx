@@ -20,10 +20,18 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Image as ImageIcon, Pencil, Trash2 } from 'lucide-react-native';
+import {
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  Image as ImageIcon,
+  Pencil,
+  Trash2,
+} from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 
+import { ScreenHeader } from '@/components';
 import { deleteAvatar, getCurrentUser, updateProfile } from '@/api/users';
 import { toErrorTextKey } from '@/api/errors';
 import type { SuccessBody } from '@/api/client';
@@ -202,20 +210,7 @@ export function EditarPerfilScreen() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
 
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.headerBtn}
-          activeOpacity={0.7}
-          onPress={() => router.back()}
-          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-          accessibilityRole="button"
-          accessibilityLabel={t('a11y.volver')}
-        >
-          <ChevronLeft size={24} color={colors['text-primary']} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('perfil.encabezado')}</Text>
-        <View style={styles.headerBtn} />
-      </View>
+      <ScreenHeader titulo={t('perfil.encabezado')} onAtras={() => router.back()} />
 
       <ScrollView
         style={styles.scrollView}
@@ -461,33 +456,10 @@ export function EditarPerfilScreen() {
 
 const AVATAR_SIZE = spacing[64] + spacing[24] + spacing[8];
 
-/** Alto de la cabecera en Figma (64): el token `topBar-height` vale 56, así que se compone sin
- * tocar el token (decisión del 24/11/2026). */
-const HEADER_HEIGHT = sizes['iconButtonLg-size'] + spacing['16'];
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors['background-default'],
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[16],
-    height: HEADER_HEIGHT,
-    borderBottomWidth: 1,
-    borderBottomColor: colors['border-subtle'],
-  },
-  headerBtn: {
-    width: sizes['iconButton-size'],
-    height: sizes['iconButton-size'],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    ...textStyle('display-m'),
-    color: colors['text-primary'],
   },
   scrollView: {
     flex: 1,

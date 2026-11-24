@@ -12,7 +12,6 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -22,10 +21,28 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, ChartLine, ChevronRight, CircleAlert, Cpu, Footprints, Leaf, Lightbulb, LogOut, Mail, Shield, Target, Trash2, User, Users, Zap } from 'lucide-react-native';
+import {
+  Bell,
+  ChartLine,
+  ChevronRight,
+  CircleAlert,
+  Cpu,
+  Footprints,
+  Leaf,
+  Lightbulb,
+  LogOut,
+  Mail,
+  Shield,
+  Target,
+  Trash2,
+  User,
+  Users,
+  Zap,
+} from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 
+import { ConfirmDialog, ScreenHeader } from '@/components';
 import { ApiRequestError } from '@/api/client';
 import type { SuccessBody } from '@/api/client';
 import { toErrorTextKey } from '@/api/errors';
@@ -269,49 +286,6 @@ function SoonRow(props: RowProps) {
   );
 }
 
-function ConfirmDialog({
-  visible,
-  title,
-  body,
-  confirmLabel,
-  cancelLabel,
-  onConfirm,
-  onCancel,
-  danger = false,
-}: {
-  visible: boolean;
-  title: string;
-  body: string;
-  confirmLabel: string;
-  cancelLabel: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-  danger?: boolean;
-}) {
-  return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
-      <View style={styles.dialogOverlay}>
-        <View style={styles.dialogCard} accessibilityViewIsModal>
-          <Text style={styles.dialogTitle}>{title}</Text>
-          <Text style={styles.dialogBody}>{body}</Text>
-          <View style={styles.dialogActions}>
-            <TouchableOpacity style={styles.btnSecondary} onPress={onCancel} accessibilityRole="button">
-              <Text style={styles.btnSecondaryText}>{cancelLabel}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.btnPrimary, danger && styles.btnDanger]}
-              onPress={onConfirm}
-              accessibilityRole="button"
-            >
-              <Text style={[styles.btnPrimaryText, danger && styles.btnDangerText]}>{confirmLabel}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 const ICON_COLOR = colors['text-accent'];
 
 export function ConfiguracionScreen() {
@@ -338,11 +312,7 @@ export function ConfiguracionScreen() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
 
-      <View style={styles.header}>
-        <Text style={styles.headerTitle} accessibilityRole="header">
-          {t('config.encabezado')}
-        </Text>
-      </View>
+      <ScreenHeader titulo={t('config.encabezado')} onAtras={false} />
 
       <ScrollView
         style={styles.scrollView}
@@ -561,61 +531,46 @@ export function ConfiguracionScreen() {
 
       {/* TODO(pendiente: hogar único): si el usuario es el único miembro corresponde
           dialogo.eliminar_cuenta_hogar (con {hogar}); /usuarios/me no trae esos datos. */}
-      <ConfirmDialog
-        visible={confirmDelete}
-        danger
-        title={t('dialogo.eliminar_cuenta.titulo')}
-        body={t('dialogo.eliminar_cuenta.cuerpo')}
-        confirmLabel={t('dialogo.eliminar_cuenta.confirmar')}
-        cancelLabel={t('dialogo.eliminar_cuenta.cancelar')}
-        onCancel={() => setConfirmDelete(false)}
-        onConfirm={() => {
-          setConfirmDelete(false);
-          void removeAccount();
-        }}
-      />
+      {confirmDelete && (
+        <ConfirmDialog
+          tono="destructivo"
+          titulo={t('dialogo.eliminar_cuenta.titulo')}
+          descripcion={t('dialogo.eliminar_cuenta.cuerpo')}
+          confirmar={t('dialogo.eliminar_cuenta.confirmar')}
+          cancelar={t('dialogo.eliminar_cuenta.cancelar')}
+          onCancelar={() => setConfirmDelete(false)}
+          onConfirmar={() => {
+            setConfirmDelete(false);
+            void removeAccount();
+          }}
+        />
+      )}
 
-      <ConfirmDialog
-        visible={mustTransfer}
-        title={t('dialogo.debes_transferir.titulo')}
-        body={t('dialogo.debes_transferir.cuerpo', {
-          accion_pendiente: t('config.eliminar_t').toLowerCase(),
-        })}
-        confirmLabel={t('dialogo.debes_transferir.confirmar')}
-        cancelLabel={t('dialogo.debes_transferir.cancelar')}
-        onCancel={clearMustTransfer}
-        onConfirm={() => {
-          clearMustTransfer();
-          router.push('/miembros');
-        }}
-      />
+      {mustTransfer && (
+        <ConfirmDialog
+          titulo={t('dialogo.debes_transferir.titulo')}
+          descripcion={t('dialogo.debes_transferir.cuerpo', {
+            accion_pendiente: t('config.eliminar_t').toLowerCase(),
+          })}
+          confirmar={t('dialogo.debes_transferir.confirmar')}
+          cancelar={t('dialogo.debes_transferir.cancelar')}
+          onCancelar={clearMustTransfer}
+          onConfirmar={() => {
+            clearMustTransfer();
+            router.push('/miembros');
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
 const AVATAR_SIZE = spacing[64] + spacing[8];
 
-/** Alto de la cabecera en Figma (64): el token `topBar-height` vale 56, así que se compone sin
- * tocar el token (decisión del 24/11/2026). */
-const HEADER_HEIGHT = sizes['iconButtonLg-size'] + spacing['16'];
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors['background-default'],
-  },
-  header: {
-    height: HEADER_HEIGHT,
-    paddingHorizontal: spacing[16],
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: colors['border-subtle'],
-  },
-  headerTitle: {
-    ...textStyle('display-l-24'),
-    color: colors['text-primary'],
-    textAlign: 'center',
   },
   scrollView: {
     flex: 1,
@@ -799,66 +754,4 @@ const styles = StyleSheet.create({
     height: spacing[24],
   },
 
-  dialogOverlay: {
-    flex: 1,
-    backgroundColor: colors['background-overlay'],
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing[24],
-  },
-  dialogCard: {
-    width: '100%',
-    backgroundColor: colors['background-elevated'],
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors['border-subtle'],
-    padding: spacing[20],
-    gap: spacing[12],
-  },
-  dialogTitle: {
-    ...textStyle('display-s-16'),
-    color: colors['text-primary'],
-  },
-  dialogBody: {
-    ...textStyle('body-s-regular'),
-    color: colors['text-muted'],
-  },
-  dialogActions: {
-    flexDirection: 'row',
-    gap: spacing[12],
-    marginTop: spacing[8],
-  },
-  btnPrimary: {
-    flex: 1,
-    backgroundColor: colors['accent-primary'],
-    borderRadius: radius.md,
-    minHeight: sizes['button-height'],
-    paddingHorizontal: spacing[8],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnPrimaryText: {
-    ...textStyle('ui-s-semibold'),
-    color: colors['text-inverse'],
-    textAlign: 'center',
-  },
-  btnDanger: {
-    backgroundColor: colors['status-error-default'],
-  },
-  btnDangerText: {
-    color: colors['text-primary'],
-  },
-  btnSecondary: {
-    flex: 1,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors['border-medium'],
-    minHeight: sizes['button-height'],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnSecondaryText: {
-    ...textStyle('ui-s-semibold'),
-    color: colors['text-accent'],
-  },
 });

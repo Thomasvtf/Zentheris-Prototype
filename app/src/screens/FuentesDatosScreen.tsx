@@ -8,21 +8,12 @@
  * - El estado «Sin datos» / «Pausado» no es severidad: sin amarillo ni rojo.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Bath,
   Bed,
   Car,
-  ChevronLeft,
-  CircleAlert,
   CircleCheck,
   CirclePause,
   CookingPot,
@@ -39,11 +30,12 @@ import {
 import type { LucideIcon } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
+import { InlineNotice, ScreenHeader } from '@/components';
 import { getDataSources } from '@/api/consumption';
 import { toErrorTextKey } from '@/api/errors';
 import type { SuccessBody } from '@/api/client';
 import { DECIMALES, formatNumber, intervalLabel } from '@/format';
-import { colors, radius, sizes, spacing, textStyle } from '@/theme';
+import { colors, radius, spacing, textStyle } from '@/theme';
 import { t } from '@/texts';
 
 type DataSources = SuccessBody<'/hogares/{hogar_id}/fuentes-datos', 'get'>;
@@ -167,26 +159,6 @@ function SkeletonRows() {
   );
 }
 
-function ErrorNotice({ errorKey, onRetry }: { errorKey: string; onRetry: () => void }) {
-  return (
-    <View style={styles.errorBox} accessibilityRole="alert">
-      <CircleAlert size={22} color={colors['status-error-text']} />
-      <View style={styles.errorTexts}>
-        <Text style={styles.errorTitle}>{t(`${errorKey}.titulo`)}</Text>
-        <Text style={styles.errorBody}>{t(`${errorKey}.cuerpo`)}</Text>
-        <TouchableOpacity
-          onPress={onRetry}
-          activeOpacity={0.7}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          accessibilityRole="button"
-        >
-          <Text style={styles.retryText}>{t('error.app.desconocido.accion')}</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
 export interface FuentesDatosScreenProps {
   /** TODO(pendiente: hogarId): vendrá del estado de sesión/hogar cuando exista. */
   hogarId?: string | null;
@@ -200,20 +172,7 @@ export function FuentesDatosScreen({ hogarId = null }: FuentesDatosScreenProps) 
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={colors['background-default']} />
 
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.headerBtn}
-          activeOpacity={0.7}
-          onPress={() => router.back()}
-          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-          accessibilityRole="button"
-          accessibilityLabel={t('a11y.volver')}
-        >
-          <ChevronLeft size={24} color={colors['text-primary']} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('fuentes.encabezado')}</Text>
-        <View style={styles.headerBtn} />
-      </View>
+      <ScreenHeader titulo={t('fuentes.encabezado')} onAtras={() => router.back()} />
 
       <ScrollView
         style={styles.scrollView}
@@ -231,7 +190,9 @@ export function FuentesDatosScreen({ hogarId = null }: FuentesDatosScreenProps) 
 
         {state.status === 'loading' && <SkeletonRows />}
 
-        {state.status === 'error' && <ErrorNotice errorKey={state.errorKey} onRetry={retry} />}
+        {state.status === 'error' && (
+          <InlineNotice tono="error" titulo={t(`${state.errorKey}.titulo`)} descripcion={t(`${state.errorKey}.cuerpo`)} onReintentar={retry} />
+        )}
 
         {state.status === 'ready' && (
           <>
@@ -284,33 +245,10 @@ export function FuentesDatosScreen({ hogarId = null }: FuentesDatosScreenProps) 
   );
 }
 
-/** Alto de la cabecera en Figma (64): el token `topBar-height` vale 56, así que se compone sin
- * tocar el token (decisión del 24/11/2026). */
-const HEADER_HEIGHT = sizes['iconButtonLg-size'] + spacing['16'];
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors['background-default'],
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[16],
-    height: HEADER_HEIGHT,
-    borderBottomWidth: 1,
-    borderBottomColor: colors['border-subtle'],
-  },
-  headerBtn: {
-    width: sizes['iconButton-size'],
-    height: sizes['iconButton-size'],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    ...textStyle('display-m'),
-    color: colors['text-primary'],
   },
   scrollView: {
     flex: 1,
@@ -407,34 +345,6 @@ const styles = StyleSheet.create({
   },
   statusText: {
     ...textStyle('body-xs-medium'),
-  },
-
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing[12],
-    backgroundColor: colors['status-error-bg'],
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors['status-error-border'],
-    padding: spacing[16],
-  },
-  errorTexts: {
-    flex: 1,
-    gap: spacing[4],
-  },
-  errorTitle: {
-    ...textStyle('ui-s-semibold'),
-    color: colors['text-primary'],
-  },
-  errorBody: {
-    ...textStyle('body-s-regular'),
-    color: colors['text-muted'],
-  },
-  retryText: {
-    ...textStyle('ui-s-semibold'),
-    color: colors['text-accent'],
-    marginTop: spacing[8],
   },
 
   noticeBox: {

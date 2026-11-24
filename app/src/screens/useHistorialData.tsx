@@ -335,8 +335,11 @@ export function useHistorialData(
   const source = options.source ?? (useMocks ? createMockSource(scenario) : apiSource);
   const effectiveHogarId = hogarId ?? (useMocks ? (MOCK_HOGAR_ID ?? MOCK_ID(1)) : null);
 
+  // La fuente más reciente se guarda fuera del render; el efecto de carga la lee al correr.
   const sourceRef = useRef(source);
-  sourceRef.current = source;
+  useEffect(() => {
+    sourceRef.current = source;
+  });
 
   const [state, setState] = useState<HistoryState>({ status: 'loading' });
   const [zones, setZones] = useState<ZoneOption[]>([]);
@@ -345,10 +348,8 @@ export function useHistorialData(
   const silentRef = useRef(false);
 
   useEffect(() => {
-    if (!effectiveHogarId) {
-      setState({ status: 'error', errorKey: 'error.app.no_encontrado' });
-      return;
-    }
+    // Sin hogar no hay nada que pedir; el error se deriva abajo, sin setState aquí.
+    if (!effectiveHogarId) return;
     let cancelled = false;
     if (!silentRef.current) setState({ status: 'loading' });
     const query: HistoryQuery = zonaId ? { periodo, zona_id: zonaId } : { periodo };
@@ -386,5 +387,9 @@ export function useHistorialData(
     setAttempt((n) => n + 1);
   }, []);
 
-  return { state, zones, retry, refresh, refreshing };
+  const visibleState: HistoryState = effectiveHogarId
+    ? state
+    : { status: 'error', errorKey: 'error.app.no_encontrado' };
+
+  return { state: visibleState, zones, retry, refresh, refreshing };
 }

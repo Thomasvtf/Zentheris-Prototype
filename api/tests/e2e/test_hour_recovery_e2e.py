@@ -18,20 +18,27 @@ onboarding. `RecoveryStore` le enseña al almacén las 4 sentencias nuevas, imit
 Y en `lecturas` el ON CONFLICT DO NOTHING concurrente de PostgreSQL: un INSERT que choca con
 claves que otra transacción abierta ya insertó espera a que termine y luego no las cuenta.
 
-**«La consulta» de B-04.** Las consultas de consumo, historial, fuentes y alertas son de las
-fases 6–10 y aún no existen: aquí se representan llamando a `fill_missing_hours(session,
-hogar_id, now)`, que es lo que esas fases deben invocar al inicio de su caso de uso, después de
-la seguridad. Cuando existan, su e2e debe repetir B-04 llamando al endpoint.
+**«La consulta» de B-04.** Aquí se representa llamando a `fill_missing_hours(session, hogar_id,
+now)`, lo que las consultas (fases 6–10) invocan al inicio de su caso de uso después de la
+seguridad. Los e2e del consumo, del historial y de las alertas repiten B-04 por el endpoint real.
 
-Las alertas aún no se evalúan (fase 8, DC-35): la vigilancia de `test_onboarding_e2e` falla si
-alguien llama a alertas o consejos. Cuando la fase 8 enganche las alertas en la recuperación,
-esta vigilancia debe cambiar por la comprobación de A-01/A-02 sobre las horas en vivo.
+**Alertas en vivo (fase 8, DC-35: alertas solo sobre horas en vivo; se evalúan en un SAVEPOINT
+para que un fallo no impida guardar las lecturas).** La recuperación evalúa las alertas y los
+consejos de las horas que acaba de guardar dentro de `session.begin_nested()`
+(`services.live_alerts.evaluate_live_hours`). El almacén lo imita con
+`tests/e2e/alerts_store.py` (`LiveAlertsMixin` y `Savepoint`): las sentencias de la evaluación
+quedan en `db.live_evaluations` y en `db.events` solo la marca `SAVEPOINT_RELEASED` (o
+`SAVEPOINT_REVERTED` si falló). La vigilancia de la fase 5 (ninguna llamada a alertas) se
+reemplaza por las comprobaciones de A-01 y A-02 sobre lo confirmado al final de cada prueba
+(`assert_live_alert_rules`) y por `test_live_evaluation_gets_only_the_new_hours`. El backfill del
+onboarding sigue sin tocar alertas ni consejos (A-02, `test_onboarding_e2e`).
 
 El SQL no se ejecuta: que PostgreSQL haga lo mismo queda pendiente (B-04 sobre Postgres real).
 
-Reglas: RN-IV-05, RN-IV-07, RN-IV-04. Decisiones: DC-34, DC-35, DC-38.
+Reglas: RN-IV-05, RN-IV-07, RN-IV-04, RN-XIV-08. Decisiones: DC-25, DC-34, DC-35, DC-38.
 """
 
+import logging
 import threading
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -56,7 +63,15 @@ from app.services import scheduler as scheduler_service
 from app.services.hour_recovery import fill_missing_hours
 from app.services.scheduler import GenerationSummary, run_hourly_generation
 from tests.data.fake_session import FakeResult
+from tests.e2e.alerts_store import (
+    SAVEPOINT_RELEASED,
+    SAVEPOINT_REVERTED,
+    LiveAlertsMixin,
+    Savepoint,
+    use_test_config,
+)
 from tests.e2e.test_onboarding_e2e import (
+    INTERNAL_DETAIL,
     READINGS_STATEMENT,
     REFERENCE_HOUSEHOLDS,
     WAIT_SECONDS,
@@ -64,12 +79,12 @@ from tests.e2e.test_onboarding_e2e import (
     Store,
     StoreSession,
     body_of,
-    forbid_alerts_and_tips,
     onboard,
     use_household_id,
 )
 from tests.helpers.auth import install_test_jwks, make_test_settings
 from tests.helpers.personalities import PERSONALITY_ORDER
+from tests.services.alerts_fakes import spy_live_evaluation
 from tests.simulator.support import bogota, final_profiles, stable_id
 
 HOURS_OFF = 5
@@ -80,7 +95,8 @@ END = hour_index(T)  # primera hora sin lectura después del backfill (la de las
 START = END - 720  # primera hora del backfill: la frontera de cada sensor
 LOCK_STATEMENT = "LOCK_HOUSEHOLD_RECOVERY_SQL"
 READ_STATEMENTS = (LOCK_STATEMENT, "HOUSEHOLD_PROFILE_SQL", "SENSOR_GAPS_SQL")
-RECOVERY_STATEMENTS = (*READ_STATEMENTS, READINGS_STATEMENT)
+# Con lecturas nuevas, la evaluación en vivo (DC-35) corre en un SAVEPOINT antes del commit.
+RECOVERY_STATEMENTS = (*READ_STATEMENTS, READINGS_STATEMENT, SAVEPOINT_RELEASED)
 LIST_STATEMENT = "HOUSEHOLDS_WITH_SENSORS_SQL"
 
 Key = tuple[UUID, datetime]
@@ -104,11 +120,16 @@ def other_personality(name: str) -> str:
 
 
 class RecoverySession(StoreSession):
-    """Además: `exec` sin parámetros (lo usa el listado) y `close` (lo usa la tarea)."""
+    """Además: `exec` sin parámetros (lo usa el listado), `close` (lo usa la tarea) y
+    `begin_nested` (el SAVEPOINT de la evaluación en vivo, DC-35)."""
 
     def __init__(self, db: Store) -> None:
         super().__init__(db)
         self.closed = False
+        self.nested: list[str] | None = None  # sentencias del SAVEPOINT abierto
+
+    def begin_nested(self) -> Savepoint:
+        return Savepoint(self)
 
     def exec(self, statement: Any, *, params: Params | None = None) -> FakeResult:
         return self.db.run(self, statement, params or {})
@@ -119,11 +140,13 @@ class RecoverySession(StoreSession):
         self.db.end(self)
 
 
-class RecoveryStore(Store):
-    """`Store` del onboarding más las 4 sentencias de la recuperación (ver el módulo)."""
+class RecoveryStore(LiveAlertsMixin, Store):
+    """`Store` del onboarding más las 4 sentencias de la recuperación y las de la evaluación en
+    vivo de alertas y consejos (ver el módulo y `tests/e2e/alerts_store.py`)."""
 
     def __init__(self) -> None:
         super().__init__()
+        self.register_live_alerts()
         self.lock_waiting = threading.Event()  # alguien espera por el candado de un hogar
         for module, name, handler in (
             (readings_data, LOCK_STATEMENT, self._lock_household_recovery),
@@ -270,22 +293,22 @@ class RecoveryStore(Store):
 
 @pytest.fixture
 def new_store(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[], RecoveryStore]]:
-    """Fábrica de almacenes. La vigilancia de alertas anota en el primero (DC-35)."""
+    """Fábrica de almacenes. Al final: nada inesperado y A-01/A-02 en cada uno (DC-35)."""
     stores: list[RecoveryStore] = []
 
     def make() -> RecoveryStore:
         store = RecoveryStore()
-        if not stores:
-            guarded = forbid_alerts_and_tips(monkeypatch, store)
-            assert {"evaluate_alert_rules", "build_tips"} <= set(guarded)
         stores.append(store)
         return store
 
     monkeypatch.setattr(onboarding_service, "datetime", OnboardingClock)
+    use_test_config(monkeypatch)
     install_test_jwks(monkeypatch)
     yield make
     # Los servicios capturan cualquier excepción: lo inesperado se comprueba aquí.
     assert [store.unexpected for store in stores] == [[] for _ in stores]
+    for store in stores:
+        store.assert_live_alert_rules()
 
 
 @pytest.fixture
@@ -434,6 +457,68 @@ def test_b04_skips_inactive_sensors_and_zones(
 
     added = {zone for zone, _hour in set(db.by_zone(hogar_id)) - set(before)}
     assert added == set(zones) - {off_sensor_zone, off_zone}
+
+
+# --- 1b. la evaluación en vivo de alertas (fase 8, DC-35) -----------------------------------
+
+
+@each_personality
+def test_live_evaluation_gets_only_the_new_hours(
+    db: RecoveryStore, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    """DC-35, A-02: la evaluación recibe exactamente las 5 horas nuevas de cada zona.
+
+    El onboarding (backfill) no evalúa nada; la recuperación evalúa dentro de un SAVEPOINT las
+    horas que acaba de guardar, nunca las del backfill; repetirla sin lecturas nuevas no evalúa.
+    """
+    zones = REFERENCE_HOUSEHOLDS[name][1]
+    seen = spy_live_evaluation(monkeypatch)
+    hogar_id = create_household(db, client_for(db), monkeypatch, name)
+    assert seen == [] and db.live_evaluations == []  # el backfill no evalúa (A-02)
+
+    assert recover(db, hogar_id) == HOURS_OFF * len(zones)
+
+    new_hours = [hour_from_index(index) for index in range(END, END + HOURS_OFF)]
+    assert seen == [dict.fromkeys(zones, new_hours)]
+    ((outcome, statements),) = db.live_evaluations
+    assert outcome == SAVEPOINT_RELEASED
+    assert statements[:3] == [
+        "HOUSEHOLD_ZONES_SQL",
+        "HOUSEHOLD_CREATED_AT_SQL",
+        "HOURLY_READINGS_SQL",
+    ]
+
+    assert recover(db, hogar_id) == 0
+    assert len(seen) == 1 and len(db.live_evaluations) == 1
+
+
+@each_personality
+def test_failed_live_evaluation_still_saves_the_readings(
+    db: RecoveryStore,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    name: str,
+) -> None:
+    """DC-35: si la evaluación falla, se revierte solo el SAVEPOINT y las lecturas se guardan.
+
+    Falla la primera sentencia propia de la evaluación (la fecha de alta del hogar): ROLLBACK TO
+    SAVEPOINT, ERROR sin ids ni detalle de la base en el log y commit de las 5 × zonas lecturas.
+    """
+    zones = REFERENCE_HOUSEHOLDS[name][1]
+    hogar_id = create_household(db, client_for(db), monkeypatch, name)
+    db.events.clear()
+    db.fail_once.add("HOUSEHOLD_CREATED_AT_SQL")
+
+    with caplog.at_level(logging.INFO):
+        saved = recover(db, hogar_id)
+
+    assert saved == HOURS_OFF * len(zones)
+    assert db.fail_once == set()  # el fallo sí ocurrió
+    assert db.events == [*READ_STATEMENTS, READINGS_STATEMENT, SAVEPOINT_REVERTED, "commit"]
+    assert_contiguous(db, hogar_id, 720 + HOURS_OFF)
+    assert db.rows("alertas") == [] and db.rows("consejos") == []
+    assert "Evaluación de alertas fallida" in caplog.text
+    assert INTERNAL_DETAIL not in caplog.text and str(hogar_id) not in caplog.text
 
 
 # --- 2. la tarea programada -----------------------------------------------------------------

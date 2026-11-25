@@ -54,7 +54,7 @@ from app.domain.formats import ZONE_NAMES
 from app.domain.simulator import TIMEZONE, DegenerateRealizationError, engine
 from app.domain.zone_rules import BASIC_ZONES, FALLBACK_PERSONALITY, HOUSING_TYPES, ZONE_TYPES
 from app.main import API_PREFIX, create_app
-from app.services import alerts_tips, supabase_admin
+from app.services import alerts_tips, live_alerts, supabase_admin
 from app.services import onboarding as onboarding_service
 from tests.data.fake_session import FakeResult
 from tests.e2e.test_users_e2e import assert_error, call, email_of
@@ -100,12 +100,16 @@ HOUSEHOLD_TABLES = (
     "sensores_zona",
     "lecturas",
 )
+# Tablas de la fase 8 (alertas y consejos) y las metas: el onboarding no las toca (A-02); las
+# usan los almacenes de la recuperación y de las alertas (`tests/e2e/alerts_store.py`).
+ALERT_TABLES = ("metas_consumo", "alertas", "alertas_usuario", "consejos", "consejos_usuario")
 TABLES = (
     "auth_users",
     "usuarios",
     "preferencias_usuario",
     "perfiles_simulacion",
     *HOUSEHOLD_TABLES,
+    *ALERT_TABLES,
 )
 # Filas de un solo hogar con las 4 zonas básicas (el cuerpo por defecto de `body_of`).
 ONE_BASIC_HOUSEHOLD = {
@@ -257,6 +261,8 @@ class Store:
             "nombre": "Hogar anterior",
             "tipo_vivienda": "casa",
             "perfil_simulacion_id": self.profile_id(FALLBACK_PERSONALITY),
+            "permiso_recibir_alertas": True,
+            "created_at": FIRST_HOUR,
         }
         self.committed["hogar_miembros"][membresia_id] = {
             "id": membresia_id,
@@ -304,7 +310,7 @@ class Store:
             raise self.unexpected_use(f"parámetros de {name}: {sorted(params)}")
         self.before.get(name, lambda: None)()
         with self.lock:
-            self.events.append(name)
+            self.record(session, name)
             try:
                 if session.aborted:
                     raise PgError("current transaction is aborted", "25P02")
@@ -316,6 +322,10 @@ class Store:
                 raise self._sqlalchemy_error(statement, params, exc) from exc
         self.after.get(name, lambda: None)()
         return result
+
+    def record(self, _session: StoreSession, name: str) -> None:
+        """Anota la sentencia en `events` (el almacén de la recuperación la redirige)."""
+        self.events.append(name)
 
     def _fail_if_asked(self, name: str) -> None:
         if name in self.fail_once:
@@ -494,6 +504,19 @@ class Store:
                 self.put(session, table, key, None)
             if table in ("zonas", "sensores_zona"):
                 parents = children
+        # Metas, alertas y consejos del hogar, con sus entregas y seguimientos (0002).
+        removed: dict[str, set[Any]] = {}
+        for table, column in (("metas_consumo", "hogar_id"), ("alertas", "hogar_id"),
+                              ("consejos", "hogar_id")):
+            rows = self.view(session, table)
+            removed[table] = {k for k, row in rows.items() if row[column] == params["hogar_id"]}
+            for key in removed[table]:
+                self.put(session, table, key, None)
+        for table, column, parent in (("alertas_usuario", "alerta_id", "alertas"),
+                                      ("consejos_usuario", "consejo_id", "consejos")):
+            for key, row in self.view(session, table).items():
+                if row[column] in removed[parent]:
+                    self.put(session, table, key, None)
         return FakeResult(rowcount=1)
 
     def _insert_household(self, session: StoreSession, params: Params) -> FakeResult:
@@ -520,7 +543,13 @@ class Store:
             "permiso_recibir_alertas": True,
             "permiso_modificar_metas": False,
         }
-        self.put(session, "hogares", hogar_id, {**returning, "perfil_simulacion_id": perfil_id})
+        row = {
+            **returning,
+            "perfil_simulacion_id": perfil_id,
+            # `default now()`: el instante de la transacción, que es el reloj (fijo) del servicio.
+            "created_at": onboarding_service.datetime.now(UTC),
+        }
+        self.put(session, "hogares", hogar_id, row)
         return FakeResult([returning], rowcount=1)
 
     def _insert_zones(self, session: StoreSession, params: Params) -> FakeResult:
@@ -631,6 +660,10 @@ class Store:
         self.events.append("delete_auth_user")
         for table in ("auth_users", "usuarios", "preferencias_usuario"):
             self.committed[table].pop(usuario_id, None)
+        for table in ("alertas_usuario", "consejos_usuario"):  # cascada desde usuarios
+            rows = self.committed[table]
+            for key in [k for k, row in rows.items() if row["usuario_id"] == usuario_id]:
+                del rows[key]
         members = self.committed["hogar_miembros"]
         for key, row in list(members.items()):
             if row["usuario_id"] == usuario_id:
@@ -654,7 +687,7 @@ def forbid_alerts_and_tips(monkeypatch: pytest.MonkeyPatch, store: Store) -> lis
         return fail
 
     guarded = []
-    for module in (alerts_data, tips_data, alert_rules, alerts_tips):
+    for module in (alerts_data, tips_data, alert_rules, alerts_tips, live_alerts):
         for name, value in list(vars(module).items()):
             if callable(value) and getattr(value, "__module__", "") == module.__name__:
                 monkeypatch.setattr(module, name, forbidden(f"{module.__name__}.{name}"))
@@ -670,7 +703,7 @@ def db(monkeypatch: pytest.MonkeyPatch) -> Iterator[Store]:
     monkeypatch.setattr(onboarding_service, "datetime", FixedDatetime)
     # La vigilancia no puede quedar vacía.
     guarded = forbid_alerts_and_tips(monkeypatch, store)
-    assert {"evaluate_alert_rules", "build_tips"} <= set(guarded)
+    assert {"evaluate_alert_rules", "build_tips", "evaluate_live_hours"} <= set(guarded)
     install_test_jwks(monkeypatch)
     yield store
     # El servicio captura cualquier excepción: lo inesperado se comprueba aquí.

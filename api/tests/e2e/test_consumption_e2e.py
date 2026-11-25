@@ -20,14 +20,20 @@ Reloj: el onboarding corre en T (sábado 21/11/2026 22:10, Bogotá) y `datetime.
 servicio de consumo se fija por prueba (`query_at`). Los umbrales salen de `make_test_settings()`
 (no se lee `.env`).
 
-Las alertas y los consejos siguen vigilados (DC-35, fase 8): si algo los llama, la prueba falla.
+Alertas (fase 8, DC-35: alertas solo sobre horas en vivo; se evalúan en un SAVEPOINT para que un
+fallo no impida guardar las lecturas): la recuperación que corre al inicio de la consulta evalúa
+las alertas de las horas que guarda dentro de un SAVEPOINT (ver `tests/e2e/alerts_store.py`); la
+consulta de consumo en sí no las evalúa. Al final de cada prueba se comprueban A-01 y A-02 sobre
+lo confirmado (`assert_live_alert_rules`).
 
 El SQL no se ejecuta: que PostgreSQL haga lo mismo queda pendiente (B-04 y R-01 sobre Postgres
 real).
 
 Reglas: RN-XI-01…09, RN-XII-03, RN-XII-05…07, RN-XVII-01, RN-IV-05, RN-V-01, RN-V-02.
-Decisiones: DC-28, DC-34, DC-35; decisión de Nicolás del 23/11/2026 (si la recuperación falla,
-la consulta responde con los datos guardados).
+Decisiones: DC-28, DC-34, DC-35; decisiones de Nicolás del 23/11/2026 (si la recuperación falla,
+la consulta responde con los datos guardados, RN-IV-05, DC-34; con 7 o más días con dato, un
+promedio 0 es referencia válida en las bandas de zona: crítico si el exceso llega a 0,05 kWh; si
+no, normal).
 """
 
 import logging
@@ -35,7 +41,6 @@ import unicodedata
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal
-from functools import cache
 from typing import Any
 from uuid import UUID
 
@@ -43,22 +48,26 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app.data import alerts as alerts_data
 from app.data import goals as goals_data
-from app.data import households as households_data
 from app.data import memberships as memberships_data
-from app.data import readings as readings_data
 from app.data import tariffs as tariffs_data
 from app.data import users as users_data
-from app.domain import alert_rules
 from app.domain.formats import zone_name
 from app.domain.simulator import TIMEZONE, hour_from_index
 from app.main import API_PREFIX
 from app.services import consumption as consumption_service
 from app.services import hour_recovery
 from app.services import onboarding as onboarding_service
-from app.services import thresholds as thresholds_service
 from tests.contract.test_c01_responses_match_schema import assert_matches_contract
 from tests.data.fake_session import FakeResult
+from tests.e2e.alerts_store import (
+    EVALUATION_ONLY,
+    HOURLY_STATEMENT,
+    SAVEPOINT_RELEASED,
+    ZONES_STATEMENT,
+    use_test_config,
+)
 from tests.e2e.test_hour_recovery_e2e import (
     END,
     HOURS_OFF,
@@ -82,16 +91,13 @@ from tests.e2e.test_onboarding_e2e import (
     REFERENCE_HOUSEHOLDS,
     Params,
     StoreSession,
-    forbid_alerts_and_tips,
 )
-from tests.helpers.auth import auth_header, install_test_jwks, make_test_settings, make_token
+from tests.helpers.auth import auth_header, install_test_jwks, make_token
 from tests.helpers.personalities import PERSONALITY_ORDER
 from tests.simulator.support import stable_id
 
 TAG = "e2e6"
 MEMBERSHIP_STATEMENT = "ACTIVE_MEMBERSHIP_SQL"
-ZONES_STATEMENT = "HOUSEHOLD_ZONES_SQL"
-HOURLY_STATEMENT = "HOURLY_READINGS_SQL"
 PREFERENCES_STATEMENT = "PREFERENCES_SQL"
 GOAL_STATEMENT = "ACTIVE_GOAL_SQL"
 TARIFF_STATEMENT = "CURRENT_TARIFF_SQL"
@@ -109,6 +115,8 @@ PRICE_KWH = Decimal("812.5000")
 GOAL_KWH = Decimal("300.00")
 FORBIDDEN_BODY = {"codigo": "SIN_PERMISO_VER_CONSUMO"}
 COUNTED_STATES = {"normal", "elevado", "critico"}
+# zona_estado.exceso_minimo_kwh de umbrales-estado.v1.json (también zona_participacion).
+ZONE_MIN_EXCESS_KWH = 0.05
 
 Key = tuple[UUID, datetime]
 
@@ -119,17 +127,18 @@ each_personality = pytest.mark.parametrize("name", PERSONALITY_ORDER)
 
 
 class ConsumptionStore(RecoveryStore):
-    """`RecoveryStore` más las lecturas de la guardia y de las consultas de consumo."""
+    """`RecoveryStore` más las lecturas de la guardia y de las consultas de consumo.
+
+    Zonas y lecturas por hora (`HOUSEHOLD_ZONES_SQL`, `HOURLY_READINGS_SQL`) las resuelve ya el
+    almacén de la recuperación, porque también las usa la evaluación en vivo de alertas.
+    """
 
     def __init__(self) -> None:
         super().__init__()
         self.goals: dict[UUID, dict[str, Any]] = {}  # metas_consumo 'activa' por hogar
         self.tariffs: dict[UUID, list[dict[str, Any]]] = {}  # tarifas_hogar por hogar
-        self.hourly_requests: list[set[UUID]] = []  # zonas pedidas en cada HOURLY_READINGS_SQL
         for module, name, handler in (
             (memberships_data, MEMBERSHIP_STATEMENT, self._membership_with_permissions),
-            (households_data, ZONES_STATEMENT, self._household_zones),
-            (readings_data, HOURLY_STATEMENT, self._hourly_readings),
             (users_data, PREFERENCES_STATEMENT, self._preferences),
             (goals_data, GOAL_STATEMENT, self._active_goal),
             (tariffs_data, TARIFF_STATEMENT, self._current_tariff),
@@ -164,47 +173,6 @@ class ConsumptionStore(RecoveryStore):
                 }
             )
         return FakeResult(rows)
-
-    def _household_zones(self, session: StoreSession, params: Params) -> FakeResult:
-        """zonas LEFT JOIN sensores_zona del hogar, ORDER BY nombre, id."""
-        sensor_state = {
-            row["zona_id"]: row["estado"] for row in self.view(session, "sensores_zona").values()
-        }
-        rows = [
-            {
-                "id": zone["id"],
-                "tipo": zone["tipo"],
-                "nombre": zone["nombre"],
-                "estado": zone["estado"],
-                "sensor_estado": sensor_state.get(zone["id"]),
-            }
-            for zone in self.view(session, "zonas").values()
-            if zone["hogar_id"] == params["hogar_id"]
-        ]
-        return FakeResult(sorted(rows, key=lambda row: (row["nombre"], str(row["id"]))))
-
-    def _hourly_readings(self, session: StoreSession, params: Params) -> FakeResult:
-        """lecturas JOIN sensores_zona JOIN zonas; zona del hogar y pedida; hora en [start, end]."""
-        wanted = {UUID(zona_id) for zona_id in params["zona_ids"]}
-        self.hourly_requests.append(wanted)
-        zones = {
-            key: row
-            for key, row in self.view(session, "zonas").items()
-            if row["hogar_id"] == params["hogar_id"] and key in wanted
-        }
-        zone_of_sensor = {
-            row["id"]: row["zona_id"]
-            for row in self.view(session, "sensores_zona").values()
-            if row["zona_id"] in zones
-        }
-        start, end = params["start"], params["end"]
-        rows = [
-            {"zona_id": zone_of_sensor[row["sensor_id"]], "fecha_hora": row["fecha_hora"],
-             "consumo_kwh": row["consumo_kwh"]}
-            for row in self.view(session, "lecturas").values()
-            if row["sensor_id"] in zone_of_sensor and start <= row["fecha_hora"] <= end
-        ]
-        return FakeResult(sorted(rows, key=lambda row: (str(row["zona_id"]), row["fecha_hora"])))
 
     def _preferences(self, session: StoreSession, params: Params) -> FakeResult:
         row = self.view(session, "preferencias_usuario").get(params["usuario_id"])
@@ -268,19 +236,13 @@ class ConsumptionStore(RecoveryStore):
 @pytest.fixture
 def db(monkeypatch: pytest.MonkeyPatch) -> Iterator[ConsumptionStore]:
     store = ConsumptionStore()
-    guarded = forbid_alerts_and_tips(monkeypatch, store)  # DC-35: nadie llama alertas/consejos
-    assert {"evaluate_alert_rules", "build_tips"} <= set(guarded)
     monkeypatch.setattr(onboarding_service, "datetime", OnboardingClock)
-    monkeypatch.setattr(thresholds_service, "get_settings", make_test_settings)
-    # Caché propia de la prueba (la de producción no queda con estos umbrales), en el nombre
-    # que llama el servicio de consumo.
-    fresh = cache(thresholds_service.get_thresholds.__wrapped__)
-    monkeypatch.setattr(thresholds_service, "get_thresholds", fresh)
-    monkeypatch.setattr(consumption_service, "get_thresholds", fresh)
+    use_test_config(monkeypatch)  # umbrales y textos de make_test_settings(), caché propia
     install_test_jwks(monkeypatch)
     yield store
     # Los servicios capturan cualquier excepción: lo inesperado se comprueba aquí.
     assert store.unexpected == []
+    store.assert_live_alert_rules()  # A-01 y A-02 sobre lo que haya creado la recuperación
 
 
 @pytest.fixture
@@ -450,10 +412,16 @@ def test_the_three_queries_answer_the_last_complete_hour(
         assert detail["participacion"]["total_hogar_kw"] == pytest.approx(by_zone["total_kw"])
         assert detail["participacion"]["estado"] == item["estado_participacion"]
         # Una zona que a esa hora no consume nunca (promedio 0, p. ej. el baño del hogar
-        # compacto a las 21:00) no tiene referencia válida: `sin_referencia` (referencia ≤ 0).
+        # compacto a las 21:00): decisión del 23/11/2026 (promedio 0). Con 7 o más días con dato
+        # la referencia 0 es válida en las bandas de zona (estado y participación): crítico si el
+        # exceso (kW − 0) llega al exceso mínimo de 0,05 kWh; si no, normal.
         average = detail["estado_consumo"]["promedio_misma_hora_kw"]
         assert average >= 0
-        expected = {"sin_referencia"} if average == 0 else COUNTED_STATES
+        if average == 0:
+            excess = detail["potencia_kw"] - average
+            expected = {"critico"} if excess >= ZONE_MIN_EXCESS_KWH else {"normal"}
+        else:
+            expected = COUNTED_STATES
         state = detail["estado_consumo"]["estado"]
         assert state in expected
         assert item["estado_participacion"] in expected
@@ -876,27 +844,36 @@ def test_another_household_gets_404_and_is_not_touched(
     assert_contiguous(db, neighbour, 720)
 
 
-# --- 5. la vigilancia de alertas sigue activa (DC-35, fase 8) --------------------------------
+# --- 5. alertas: solo en la recuperación, dentro de su SAVEPOINT (DC-35) --------------------
 
 
-def test_alert_and_tip_watch_is_still_active(
+def test_alerts_are_evaluated_only_inside_the_recovery_savepoint(
     db: ConsumptionStore, client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Las consultas de consumo no evalúan alertas ni consejos (DC-35): solo la fase 8.
+    """La consulta de consumo no evalúa alertas; la recuperación sí, en su SAVEPOINT (DC-35).
 
-    La vigilancia de `forbid_alerts_and_tips` anota cualquier llamada; aquí se comprueba que
-    sigue instalada (llamar a una función vigilada falla y queda anotado) y que una consulta
-    con recuperación no la dispara.
+    Reemplaza la vigilancia de la fase 6 (ninguna llamada a alertas): con apagado de 5 h, la
+    consulta recupera y la evaluación corre una vez, dentro del SAVEPOINT y antes del commit;
+    ninguna sentencia propia de la evaluación sale fuera de él. Una sentencia de la evaluación
+    ejecutada fuera de un SAVEPOINT queda anotada como uso no previsto.
     """
     name = PERSONALITY_ORDER[0]
     hogar_id = new_household(db, client, monkeypatch, name)
     query_at(monkeypatch, LATER)
 
+    db.events.clear()
     ok(get(client, "actual", user_of(name), hogar_id))
     assert db.unexpected == []
+    assert db.events == [MEMBERSHIP_STATEMENT, *RECOVERY_STATEMENTS, "commit", *READS["actual"]]
+    assert RECOVERY_STATEMENTS[-1] == SAVEPOINT_RELEASED
+    assert not EVALUATION_ONLY & set(db.events)
+    ((outcome, statements),) = db.live_evaluations
+    assert outcome == SAVEPOINT_RELEASED
+    assert statements[0] == ZONES_STATEMENT
 
+    session = db.open_session()
     with pytest.raises(AssertionError):
-        alert_rules.evaluate_alert_rules()
-    assert db.unexpected == ["app.domain.alert_rules.evaluate_alert_rules (DC-35)"]
+        alerts_data.list_existing_event_keys(session, hogar_id, ["consumo_critico:x:2026-11-22"])
+    db.end(session)
+    assert db.unexpected == ["EXISTING_EVENT_KEYS_SQL fuera del SAVEPOINT de la recuperación"]
     db.unexpected.clear()  # anotado a propósito: la fixture no debe fallar por esto
-

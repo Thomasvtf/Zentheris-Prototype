@@ -477,12 +477,15 @@ def test_personality_usual_hour_is_normal(
     assert len(zones.zonas) == len(personality.zone_kwh_per_day)  # solo sus zonas
     assert sum(z.participacion_pct for z in zones.zonas) == pytest.approx(100.0)
     for zone in zones.zonas:
-        usual = personality.zone_kwh_for_hour(zone.tipo, hour) > 0
-        assert zone.estado_participacion == ("normal" if usual else "sin_referencia")
+        # Decisión de Nicolás del 23/11/2026: con 7 o más días con dato, un promedio 0 es
+        # referencia válida (crítico si el exceso llega a 0,05 kWh; si no, normal). Una zona sin
+        # consumo habitual a esa hora con consumo 0 tiene exceso 0 < 0,05 kWh → "normal", ya no
+        # "sin_referencia". Con consumo habitual, también "normal" (igual a su promedio).
+        assert zone.estado_participacion == "normal"
         detail = roundtrip(
             service.get_zone_consumption(FakeSession(), USER, hogar_id, ids[zone.tipo], now)
         )
-        assert detail.estado_consumo.estado == ("normal" if usual else "sin_referencia")
+        assert detail.estado_consumo.estado == "normal"
 
 
 # ------------------------------------------------------------------ personalidades (simulador)

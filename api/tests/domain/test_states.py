@@ -426,7 +426,82 @@ def test_zone_total_zero_share_is_sin_referencia() -> None:
     zone = result.zones[ZONE_A]
     assert result.total_kw == 0.0
     assert (zone.share_pct, zone.share_state) == (None, "sin_referencia")
-    assert zone.zone_state == "sin_referencia"  # promedio 0
+    # Promedio 0 con 30 días (decisión de Nicolás del 23/11/2026: con 7 o más días con dato,
+    # un promedio 0 es referencia válida): exceso 0 < 0,05 kWh -> normal.
+    assert zone.zone_state == "normal"
+
+
+# ------------------------------------------------------------------ promedio 0 (23/11/2026)
+ZERO_REFERENCE_BANDS = ("zone_state", "zone_share")
+NO_EXCESS_BANDS = ("current", "cumulative_average", "full_day")
+
+
+def zero_state(value, band_name: str, *, days: int = 30, excess=None, reference=0.0) -> str:
+    t = thresholds()
+    return S.relative_state(value, reference, getattr(t, band_name),
+                            min_days_with_data=t.min_days_with_data, days_with_data=days,
+                            excess_kwh=excess)
+
+
+@pytest.mark.parametrize("band_name", ZERO_REFERENCE_BANDS)
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(0.0, "normal"), (0.049999, "normal"), (0.05, "critico"), (0.8, "critico")],
+)
+def test_zero_reference_with_minimum_excess(band_name: str, value: float, expected: str) -> None:
+    """Decisión del 23/11/2026 (promedio 0): referencia exactamente 0 con >= 7 días;
+    exceso >= 0,05 kWh -> crítico; si no, normal.
+
+    Se aparta de motor_estados_ref.py (referencia <= 0 -> sin_referencia).
+    """
+    assert zero_state(value, band_name) == expected
+
+
+@pytest.mark.parametrize("band_name", ZERO_REFERENCE_BANDS)
+def test_zero_reference_uses_given_excess(band_name: str) -> None:
+    assert zero_state(10.0, band_name, excess=0.01) == "normal"
+    assert zero_state(0.0, band_name, excess=0.05) == "critico"
+
+
+@pytest.mark.parametrize("band_name", ZERO_REFERENCE_BANDS)
+def test_zero_reference_needs_seven_days(band_name: str) -> None:
+    assert zero_state(0.8, band_name, days=6) == "sin_referencia"
+    assert zero_state(0.8, band_name, days=7) == "critico"
+
+
+@pytest.mark.parametrize("band_name", ZERO_REFERENCE_BANDS + NO_EXCESS_BANDS)
+def test_negative_or_missing_reference_is_sin_referencia(band_name: str) -> None:
+    assert zero_state(0.8, band_name, reference=-0.1) == "sin_referencia"
+    assert zero_state(0.8, band_name, reference=None) == "sin_referencia"
+    assert zero_state(None, band_name) == "sin_datos"
+
+
+@pytest.mark.parametrize("band_name", NO_EXCESS_BANDS)
+def test_zero_reference_without_minimum_excess_is_sin_referencia(band_name: str) -> None:
+    assert zero_state(0.8, band_name) == "sin_referencia"
+    assert zero_state(0.0, band_name) == "sin_referencia"
+
+
+def test_zone_with_zero_average_and_consumption_is_critical() -> None:
+    """Zona que nunca consume a esa hora (promedio 0) y hoy consume 0,3 kWh -> crítico
+    (decisión del 23/11/2026, promedio 0)."""
+    a = history(lambda offset, hour: 0.3 if (offset, hour) == (0, 9) else 0.0)
+    b = history(constant(1.0))
+    result = S.evaluate_zones({ZONE_A: a, ZONE_B: b}, {ZONE_A, ZONE_B}, at(DAY, 9), thresholds())
+    zone = result.zones[ZONE_A]
+    assert zone.average_kw == 0.0
+    assert zone.variation_pct is None  # sin % contra 0
+    assert zone.zone_state == "critico"
+    assert zone.zone_message_code == "zona_estado.critico"
+    assert zone.share_state == "critico"  # habitual 0 %; exceso = 0,3 kWh
+
+
+def test_zone_with_zero_average_and_small_consumption_is_normal() -> None:
+    a = history(lambda offset, hour: 0.04 if (offset, hour) == (0, 9) else 0.0)
+    b = history(constant(1.0))
+    result = S.evaluate_zones({ZONE_A: a, ZONE_B: b}, {ZONE_A, ZONE_B}, at(DAY, 9), thresholds())
+    assert (result.zones[ZONE_A].zone_state, result.zones[ZONE_A].share_state) == (
+        "normal", "normal")
 
 
 def test_zone_needs_seven_days() -> None:
@@ -500,11 +575,9 @@ def test_personality_reference_is_normal(personality: PersonalityAverages) -> No
     zones = S.evaluate_zones(series, set(series), at(DAY, hour), thresholds())
     for zone_type in personality.zone_kwh_per_day:
         result = zones.zones[stable_id("zona", personality.name, zone_type)]
-        # Referencia 0 kWh (curva habitual en 0 a esa hora): la referencia la trata como
-        # sin_referencia (motor_estados_ref: referencia <= 0).
-        usual = personality.zone_kwh_for_hour(zone_type, hour) > 0
-        expected = "normal" if usual else "sin_referencia"
-        assert (result.zone_state, result.share_state) == (expected, expected), zone_type
+        # Referencia 0 kWh (curva habitual en 0 a esa hora) y hoy 0: normal (decisión del
+        # 23/11/2026, promedio 0; motor_estados_ref daba sin_referencia con referencia <= 0).
+        assert (result.zone_state, result.share_state) == ("normal", "normal"), zone_type
     assert sum(z.share_pct for z in zones.zones.values()) == pytest.approx(100.0)
 
 
@@ -587,8 +660,9 @@ def simulated_readings(name: str) -> dict[UUID, dict[datetime, float]]:
 def test_simulated_usual_hours_are_mostly_normal(personality: PersonalityAverages) -> None:
     """A la hora habitual (sin alterar), la mayoría de estados de hogar y de zona son normales.
 
-    Las horas en que la zona suele consumir 0 kWh (curva en 0) quedan sin_referencia, como en la
-    referencia (referencia <= 0); se excluyen del conteo y se comprueba que solo pasen ahí.
+    Las horas en que la zona suele consumir 0 kWh (curva en 0) siguen la decisión del
+    23/11/2026 (promedio 0):
+    crítico si hoy consume 0,05 kWh o más; si no, normal. Se excluyen del conteo.
     """
     readings = simulated_readings(personality.name)
     household, zone_states = [], []
@@ -597,7 +671,8 @@ def test_simulated_usual_hours_are_mostly_normal(personality: PersonalityAverage
         zones = S.evaluate_zones(readings, set(readings), at(DAY, hour), thresholds())
         for zone in zones.zones.values():
             if zone.average_kw == 0:
-                assert (zone.zone_state, zone.share_state) == ("sin_referencia",) * 2
+                expected = "critico" if zone.power_kw >= 0.05 else "normal"
+                assert zone.zone_state == expected
                 continue
             zone_states += [zone.zone_state, zone.share_state]
     assert household.count("normal") > len(household) / 2
@@ -642,3 +717,77 @@ def test_simulated_zone_elevated_and_critical(
     changed[zone_id][at(DAY, hour)] = change(reference)
     zones = S.evaluate_zones(changed, set(changed), at(DAY, hour), thresholds())
     assert zones.zones[zone_id].zone_state == expected
+
+
+# ------------------------------------------------------------------ estado de zona por hora (fase 8)
+def test_evaluate_zone_hours_matches_evaluate_zones() -> None:
+    """Misma lógica que `evaluate_zones(...).zone_state` (RN-XI-06) para cada (zona, hora)."""
+    def a_values(offset, hour):
+        return {(0, 9): 0.8, (0, 10): 0.27}.get((offset, hour), 0.2)
+    series = {ZONE_A: history(a_values), ZONE_B: history(constant(0.5))}
+    hours = [at(DAY, 9), at(DAY, 10), at(DAY, 11)]
+    result = S.evaluate_zone_hours(series, {ZONE_A: hours, ZONE_B: hours}, thresholds())
+    for item in result:
+        expected = S.evaluate_zones(series, set(series), item.hour_start, thresholds())
+        zone = expected.zones[item.zona_id]
+        assert (item.state, item.power_kw) == (zone.zone_state, zone.power_kw)
+    states = {(item.zona_id, item.hour_start): item.state for item in result}
+    assert states[ZONE_A, at(DAY, 9)] == "critico"
+    assert states[ZONE_A, at(DAY, 10)] == "elevado"  # +35 %, exceso 0,07
+    assert states[ZONE_A, at(DAY, 11)] == "normal"
+
+
+def test_evaluate_zone_hours_order_by_hour_then_zone() -> None:
+    series = {ZONE_B: history(constant(0.5)), ZONE_A: history(constant(0.2))}
+    result = S.evaluate_zone_hours(
+        series, {ZONE_B: [at(DAY, 10), at(DAY, 9)], ZONE_A: [at(DAY, 10, UTC), at(DAY, 9)]},
+        thresholds())
+    assert [(r.hour_start, r.zona_id) for r in result] == [
+        (at(DAY, 9), ZONE_A), (at(DAY, 9), ZONE_B), (at(DAY, 10), ZONE_A), (at(DAY, 10), ZONE_B)]
+
+
+def test_evaluate_zone_hours_zone_without_series_is_sin_datos() -> None:
+    result = S.evaluate_zone_hours({}, {ZONE_C: [at(DAY, 9)]}, thresholds())
+    assert result == [S.ZoneHourState(ZONE_C, at(DAY, 9), None, "sin_datos")]
+
+
+def test_evaluate_zone_hours_missing_hour_and_few_days() -> None:
+    series = {ZONE_A: history(constant(0.3), skip=frozenset({(0, 9)})),
+              ZONE_B: history(constant(0.3), days=6)}
+    result = S.evaluate_zone_hours(series, {ZONE_A: [at(DAY, 9)], ZONE_B: [at(DAY, 9)]},
+                                   thresholds())
+    assert [(r.zona_id, r.power_kw, r.state) for r in result] == [
+        (ZONE_A, None, "sin_datos"), (ZONE_B, 0.3, "sin_referencia")]
+
+
+def test_evaluate_zone_hours_zero_average_follows_d1() -> None:
+    series = {ZONE_A: history(lambda offset, hour: 0.3 if (offset, hour) == (0, 3) else 0.0)}
+    result = S.evaluate_zone_hours(series, {ZONE_A: [at(DAY, 3), at(DAY, 4)]}, thresholds())
+    assert [r.state for r in result] == ["critico", "normal"]
+
+
+def test_evaluate_zone_hours_empty() -> None:
+    assert S.evaluate_zone_hours({ZONE_A: history(constant(0.3))}, {}, thresholds()) == []
+
+
+@each_personality
+@pytest.mark.parametrize(("factor", "expected"), [(1.0, "normal"), (1.3, "elevado"),
+                                                  (1.6, "critico")])
+def test_evaluate_zone_hours_personality_curve(
+    personality: PersonalityAverages, factor: float, expected: str
+) -> None:
+    """Referencia = curva real de la zona; la hora +30 % es elevado y +60 % crítico (límites
+    inclusivos), salvo que el exceso no llegue a 0,05 kWh (piso)."""
+    zone, hour = peak_zone_hour(personality)
+    reference = personality.zone_kwh_for_hour(zone, hour)
+    if reference * (factor - 1) < thresholds().zone_state.min_excess_kwh:
+        expected = "normal"
+    series = personality_series(
+        personality, hour, lambda z, ref: ref * factor if z == zone else ref)
+    zona_id = stable_id("zona", personality.name, zone)
+    hours = {zid: [at(DAY, hour)] for zid in series}
+    result = {r.zona_id: r for r in S.evaluate_zone_hours(series, hours, thresholds())}
+    assert result[zona_id].state == expected
+    assert result[zona_id].power_kw == pytest.approx(reference * factor)
+    others = {r.state for zid, r in result.items() if zid != zona_id}
+    assert others <= {"normal"}

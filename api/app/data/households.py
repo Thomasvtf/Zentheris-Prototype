@@ -6,6 +6,7 @@ docs/MAPA-DE-INTEGRACION.md). Sentencias constantes con parámetros con nombre; 
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -300,3 +301,23 @@ def _to_zone_row(row: Mapping[str, Any]) -> ZoneRow:
         estado=row["estado"],
         sensor_estado=row["sensor_estado"],
     )
+
+
+# DC-32 y RN-XIV-07 (cierre de mes): fecha de alta del hogar (un mes que terminó antes no se cierra).
+HOUSEHOLD_CREATED_AT_SQL = text(
+    """
+    select created_at
+      from hogares
+     where id = :hogar_id
+    """
+)
+
+
+def get_household_created_at(session: Session, hogar_id: UUID) -> datetime | None:
+    """`hogares.created_at` de `hogar_id` (con zona horaria); None si no existe (DC-32, RN-XIV-07).
+
+    Sin commit.
+    """
+    result = session.exec(HOUSEHOLD_CREATED_AT_SQL, params={"hogar_id": hogar_id})
+    row = result.mappings().first()
+    return None if row is None else row["created_at"]

@@ -11,7 +11,14 @@ datos guardados). Hace commit o rollback sobre la sesión que recibe.
 Solo se generan lecturas de los sensores de las zonas del hogar (RN-IV-07). Además, solo de los
 sensores con estado 'activo' en zonas con estado 'activa' (filtro de `get_sensor_gaps`): decidido
 por Nicolás (23/11/2026), los sensores pausados y las zonas inactivas no reciben lecturas nuevas.
-No genera alertas ni consejos (DC-35, fase 8).
+
+Alertas y consejos (fase 8; DC-35: alertas solo sobre horas en vivo; se evalúan en un SAVEPOINT
+para que un fallo no impida guardar las lecturas): las horas que guarda la recuperación son las
+únicas generadas en vivo, así que aquí, antes del commit y solo sobre ellas, se evalúan las
+alertas de consumo, el cierre de mes (DC-32) y los consejos (`live_alerts.evaluate_live_hours`).
+Nunca sobre el backfill del onboarding. La evaluación va en un SAVEPOINT
+(`session.begin_nested()`): si falla, se revierte solo el savepoint, queda un ERROR sin datos y
+las lecturas se guardan igual.
 
 Concurrencia: cada recuperación toma primero el candado del hogar (`lock_household_recovery`,
 pg_advisory_xact_lock), así que dos recuperaciones simultáneas del mismo hogar (tarea de arranque
@@ -21,20 +28,24 @@ transacción, también los que devuelven 0.
 """
 
 import logging
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from time import perf_counter
+from typing import Any
 from uuid import UUID
 
 from sqlmodel import Session
 
 from app.data import readings as readings_data
 from app.data import simulation_profiles as profiles_data
+from app.data.readings import SensorGapRow
 from app.domain.simulator import (
     SensorGaps,
     generate_readings_for_gaps,
     recovery_end_hour,
     validate_or_raise,
 )
+from app.services import live_alerts
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +66,8 @@ def fill_missing_hours(session: Session, hogar_id: UUID, now: datetime | None = 
     """Genera y guarda las horas que faltan del hogar hasta la última hora completa.
 
     RN-IV-05, DC-34. Devuelve cuántas lecturas nuevas guardó (las que ya existían no cuentan).
+    Si guardó alguna, antes del commit evalúa las alertas, el cierre de mes y los consejos de
+    esas horas en vivo dentro de un SAVEPOINT (DC-35); un fallo ahí no impide guardarlas.
     Llámese al INICIO del caso de uso, antes de cualquier escritura o bloqueo propio: termina la
     transacción de `session` (commit si guardó algo; rollback si no, para soltar el candado).
     Hogar inexistente o sin horas faltantes: 0, sin insertar. Cualquier fallo revierte lo
@@ -129,9 +142,10 @@ def _fill(session: Session, hogar_id: UUID, now: datetime) -> int:
             inserted,
             len(readings),
         )
-    # TODO(DC-35): gracias al candado, `readings` son exactamente las horas nuevas que guarda
-    # esta transacción (generadas en vivo, nunca el backfill). La fase 8 evaluará las alertas y
-    # los consejos solo sobre ellas, aquí, antes del commit.
+    if inserted:
+        # DC-35: gracias al candado, `readings` son exactamente las horas nuevas que guarda
+        # esta transacción (generadas en vivo, nunca el backfill).
+        _evaluate_alerts(session, hogar_id, _live_hours_by_zone_type(readings, gaps))
     session.commit()
     if inserted:
         logger.info(
@@ -140,6 +154,36 @@ def _fill(session: Session, hogar_id: UUID, now: datetime) -> int:
             (perf_counter() - started) * 1000,
         )
     return inserted
+
+
+def _live_hours_by_zone_type(
+    readings: Sequence[Mapping[str, Any]], gaps: Sequence[SensorGapRow]
+) -> dict[str, list[datetime]]:
+    """Inicios de hora generados por tipo de zona (`sensor_id` → `zona_tipo` con los huecos)."""
+    zone_of_sensor = {gap.sensor_id: gap.zona_tipo for gap in gaps}
+    hours: dict[str, set[datetime]] = {}
+    for row in readings:
+        zone = zone_of_sensor.get(row["sensor_id"])
+        if zone is not None:
+            hours.setdefault(zone, set()).add(row["fecha_hora"])
+    return {zone: sorted(moments) for zone, moments in hours.items()}
+
+
+def _evaluate_alerts(
+    session: Session, hogar_id: UUID, live_hours: Mapping[str, Sequence[datetime]]
+) -> None:
+    """Alertas y consejos de las horas en vivo dentro de un SAVEPOINT (DC-35).
+
+    Si la evaluación falla, el SAVEPOINT se revierte (solo lo de alertas y consejos), se
+    registra un ERROR sin ids ni mensajes de la base y la recuperación sigue hasta su commit:
+    las lecturas se guardan igual. Si la reversión del SAVEPOINT también falla (conexión
+    perdida), el commit siguiente fallará y la recuperación entera se revierte.
+    """
+    try:
+        with session.begin_nested():
+            live_alerts.evaluate_live_hours(session, hogar_id, live_hours)
+    except Exception as exc:  # noqa: BLE001 - las lecturas se guardan aunque fallen las alertas
+        _log_failure("Evaluación de alertas fallida", exc)
 
 
 def _rollback(session: Session) -> None:

@@ -21,10 +21,12 @@ from app.routers import (
     system,
     users,
 )
-from app.services import scheduler
+from app.services import backend_texts, scheduler, thresholds
 
 API_PREFIX = "/api/v1"
 APP_LOG_HANDLER = "app.console"
+CONFIG_FILE_ERROR = "Archivo de configuración inválido ({variable}): la API no arranca."
+logger = logging.getLogger(__name__)
 ROUTERS = (
     system,
     users,
@@ -70,16 +72,39 @@ def _configure_logging() -> None:
     """
     # httpx escribe en INFO la URL de cada llamada a Supabase (lleva el id del usuario).
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    logger = logging.getLogger("app")
-    if logger.level == logging.NOTSET:
-        logger.setLevel(logging.INFO)
-    if any(handler.get_name() == APP_LOG_HANDLER for handler in logger.handlers):
+    app_logger = logging.getLogger("app")
+    if app_logger.level == logging.NOTSET:
+        app_logger.setLevel(logging.INFO)
+    if any(handler.get_name() == APP_LOG_HANDLER for handler in app_logger.handlers):
         return
     handler = logging.StreamHandler()
     handler.set_name(APP_LOG_HANDLER)
     handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
     handler.addFilter(lambda _record: not logging.getLogger().handlers)
-    logger.addHandler(handler)
+    app_logger.addHandler(handler)
+
+
+def _load_config_files() -> None:
+    """Carga y valida al arrancar los archivos de `config_files/` que usan los servicios.
+
+    Umbrales (RN-XI-07, `RUTA_UMBRALES`) y textos del backend (RN-XI-09, DC-24,
+    `RUTA_TEXTOS_BACKEND`): si uno falta o está mal, la app no arranca, en vez de fallar
+    después en cada consulta o perder alertas en la evaluación en vivo. Ambos cargadores
+    guardan el resultado, así que los servicios reciben lo mismo que se validó aquí. El error
+    nombra la variable, no el contenido del archivo ni el detalle de la excepción.
+    Los módulos se usan como módulos para que las pruebas reemplacen sus funciones.
+    """
+    loaders = (
+        ("RUTA_UMBRALES", thresholds.get_thresholds),
+        ("RUTA_TEXTOS_BACKEND", backend_texts.get_backend_texts),
+    )
+    for variable, load in loaders:
+        try:
+            load()
+        except (OSError, ValueError) as exc:
+            message = CONFIG_FILE_ERROR.format(variable=variable)
+            logger.error("%s Tipo de error: %s.", message, type(exc).__name__)
+            raise RuntimeError(message) from None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -91,9 +116,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         """RN-IV-05, DC-34: la generación horaria corre mientras el servidor está activo.
 
+        Antes valida los archivos de configuración: con uno inválido no arranca el planificador.
         Solo lo ejecutan uvicorn y `with TestClient(...)`; importar el módulo no arranca nada.
         `scheduler` se usa como módulo para que las pruebas reemplacen sus funciones.
         """
+        _load_config_files()
         running = scheduler.start_scheduler(settings)
         try:
             yield

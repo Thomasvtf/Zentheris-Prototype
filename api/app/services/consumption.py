@@ -28,7 +28,7 @@ RN-XIII-05); el cargo fijo solo entra en la proyección de Mes con filtro Genera
 DC-30); `tarifa_vigente` indica si hay tarifa hoy.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
@@ -36,14 +36,12 @@ from sqlmodel import Session
 
 from app.data import goals as goals_data
 from app.data import households as households_data
-from app.data import readings as readings_data
 from app.data import tariffs as tariffs_data
 from app.data import users as users_data
 from app.data.households import ZoneRow
 from app.domain import history, states
 from app.domain.formats import zone_name
 from app.domain.simulator import TIMEZONE
-from app.domain.zone_rules import counts_for_total
 from app.errors import NOT_FOUND_MESSAGE, ApiError, CodigoError, NotImplementedOperation
 from app.schemas.common import IntervaloHora
 from app.schemas.consumption import (
@@ -66,9 +64,10 @@ from app.schemas.consumption import (
 )
 from app.schemas.households import Zona
 from app.services import hour_recovery
+from app.services._readings import counting_zones as _counting_zones
+from app.services._readings import read_series as _read_series
 from app.services.thresholds import get_thresholds
 
-ReadingsByZone = dict[UUID, dict[datetime, float]]
 ONE_HOUR = timedelta(hours=1)
 
 __all__ = [
@@ -293,32 +292,12 @@ def _recover(session: Session, hogar_id: UUID, now: datetime | None) -> datetime
     return moment
 
 
-def _counting_zones(zones: Iterable[ZoneRow]) -> list[ZoneRow]:
-    """Zonas que suman al total del hogar (RN-XI-01, RN-XI-05)."""
-    return [zone for zone in zones if counts_for_total(zone.estado, zone.sensor_estado)]
-
-
 def _find_zone(zones: Iterable[ZoneRow], zona_id: UUID) -> ZoneRow:
     """La zona `zona_id` entre las del hogar; 404 NO_ENCONTRADO si no es del hogar."""
     for zone in zones:
         if zone.id == zona_id:
             return zone
     raise ApiError(404, CodigoError.NO_ENCONTRADO, NOT_FOUND_MESSAGE)
-
-
-def _read_series(
-    session: Session, hogar_id: UUID, zone_ids: Sequence[UUID], start: datetime, end: datetime
-) -> ReadingsByZone:
-    """Lecturas de las zonas en [start, end] como `{zona: {inicio de hora: kWh}}`.
-
-    Cada zona pedida aparece aunque no tenga lecturas (serie vacía: el dominio la trata como sin
-    dato, nunca como cero).
-    """
-    series: ReadingsByZone = {zona_id: {} for zona_id in zone_ids}
-    for row in readings_data.get_hourly_readings(session, hogar_id, zone_ids, start, end):
-        if row.zona_id in series:
-            series[row.zona_id][row.fecha_hora] = row.consumo_kwh
-    return series
 
 
 def _alphabetical(zone: ZoneRow) -> tuple[str, str]:

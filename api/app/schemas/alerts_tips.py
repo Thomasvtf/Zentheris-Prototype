@@ -8,7 +8,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CategoriaAlerta(StrEnum):
@@ -34,11 +34,22 @@ class Alerta(BaseModel):
 
 
 class AlertasMarcar(BaseModel):
-    """Esquema `AlertasMarcar` del contrato."""
+    """Esquema `AlertasMarcar` del contrato.
+
+    `uniqueItems: true`: Pydantic no lo comprueba por su cuenta, así que se publica en el OpenAPI
+    y un id repetido se rechaza aquí (422 `VALIDACION`, sin repetir el valor enviado).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    alerta_ids: list[UUID] = Field(min_length=1)
+    alerta_ids: list[UUID] = Field(min_length=1, json_schema_extra={"uniqueItems": True})
+
+    @field_validator("alerta_ids")
+    @classmethod
+    def _reject_repeated_ids(cls, value: list[UUID]) -> list[UUID]:
+        if len(set(value)) != len(value):
+            raise ValueError("Los ids no pueden repetirse.")
+        return value
 
 
 class Consejo(BaseModel):

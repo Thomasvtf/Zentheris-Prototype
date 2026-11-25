@@ -239,6 +239,16 @@ def test_thresholds_file_is_the_reference_copy() -> None:
     assert raw_thresholds() == docs == reference_engine().U
 
 
+ZONE_BLOCKS = ("zona_estado", "zona_participacion")
+
+
+def zero_average_decision(block: str, value, reference, days: int) -> bool:
+    """Diferencia a propósito con la referencia (decisión del 23/11/2026, D-11): en una zona con
+    promedio 0 y 7 o más días con dato, las reglas (RN-XI-03) dan una referencia válida, no
+    «sin referencia» como el motor de referencia. Esos casos los prueba tests/domain/test_states.py."""
+    return block in ZONE_BLOCKS and value is not None and reference == 0.0 and days >= 7
+
+
 @pytest.mark.parametrize("block", BLOCKS)
 def test_relative_state_matches_reference(block: str) -> None:
     ref = reference_engine()
@@ -248,6 +258,8 @@ def test_relative_state_matches_reference(block: str) -> None:
             assert S.var_pct(value, reference) == ref.var_pct(value, reference)
             for days in DAYS:
                 for excess in EXCESSES:
+                    if zero_average_decision(block, value, reference, days):
+                        continue
                     expected = ref.estado_relativo(value, reference, block, excess, days)
                     got = state(value, reference, block, days=days, excess=excess)
                     assert got == expected, (value, reference, days, excess)

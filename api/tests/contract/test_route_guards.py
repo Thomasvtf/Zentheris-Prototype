@@ -43,7 +43,8 @@ USER = "current_user"
 MEMBER = "membership"
 ADMIN = "require_admin"
 
-# Tabla de la hoja de interfaces de la fase 2 (sección «routers/»).
+# Guardia esperado por operación (RN-I-03, RN-X-08, RN-XVII-01…05; seguridad de cada operación
+# en el contrato).
 EXPECTED_GUARD: dict[str, str] = {
     # Sistema
     "obtenerSalud": NONE,

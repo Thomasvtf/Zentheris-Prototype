@@ -1,21 +1,42 @@
 """Arranque y apagado de la app: la tarea programada de generación horaria (RN-IV-05, DC-34).
 
-`create_app` registra un `lifespan` que llama `scheduler.start_scheduler(settings)` al arrancar y
-`scheduler.stop_scheduler(<lo devuelto>)` al apagar. Las funciones del planificador se reemplazan
+`create_app` registra un `lifespan` que, al arrancar, carga y valida los umbrales (RN-XI-07) y
+los textos del backend (RN-XI-09, DC-24) y luego llama `scheduler.start_scheduler(settings)`; al
+apagar, `scheduler.stop_scheduler(<lo devuelto>)`. Las funciones del planificador se reemplazan
 por dobles: ninguna prueba abre hilos ni conexiones reales.
 """
 
+import json
+import logging
+from collections.abc import Iterator
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.main import create_app
-from app.services import scheduler
+from app.services import backend_texts, scheduler, thresholds
 
 HEALTH_PATH = "/api/v1/salud"
+# Marca dentro de los archivos inválidos: no debe salir en el error ni en el log.
+PRIVATE_MARK = "CONTENIDO-DEL-ARCHIVO-NO-DEBE-SALIR"
+
+
+# Los cargadores reales (con caché), guardados antes de que una prueba los reemplace.
+CACHED_LOADERS = (thresholds.get_thresholds, backend_texts.get_backend_texts)
+
+
+@pytest.fixture(autouse=True)
+def fresh_config_loaders() -> Iterator[None]:
+    """Cada prueba lee los archivos de nuevo: los cargadores guardan el resultado por proceso."""
+    for loader in CACHED_LOADERS:
+        loader.cache_clear()
+    yield
+    for loader in CACHED_LOADERS:
+        loader.cache_clear()
 
 
 @dataclass
@@ -125,3 +146,99 @@ def test_stop_runs_even_if_the_body_fails(
         raise RuntimeError("fallo de prueba")
 
     assert double.stops == [running_scheduler]
+
+
+# --- validación de los archivos de configuración al arrancar ----------------------------------
+
+
+def point_to(monkeypatch: pytest.MonkeyPatch, variable: str, path: Path) -> None:
+    """Hace que `get_settings()` (la que leen los cargadores) apunte `variable` a `path`."""
+    monkeypatch.setenv(variable, str(path))
+    get_settings.cache_clear()
+
+
+def test_startup_loads_the_real_thresholds_and_backend_texts(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, running_scheduler: object
+) -> None:
+    install(monkeypatch, running_scheduler)
+
+    with TestClient(create_app(settings)) as client:
+        assert client.get(HEALTH_PATH).status_code == 200
+        # Quedan cargados: los servicios reciben lo mismo que se validó al arrancar.
+        assert thresholds.get_thresholds.cache_info().currsize == 1
+        assert backend_texts.get_backend_texts.cache_info().currsize == 1
+
+
+def test_config_files_are_validated_before_the_scheduler_starts(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, running_scheduler: object
+) -> None:
+    calls: list[str] = []
+    real_thresholds = thresholds.get_thresholds
+    real_texts = backend_texts.get_backend_texts
+    monkeypatch.setattr(
+        thresholds, "get_thresholds", lambda: calls.append("umbrales") or real_thresholds()
+    )
+    monkeypatch.setattr(
+        backend_texts, "get_backend_texts", lambda: calls.append("textos") or real_texts()
+    )
+    monkeypatch.setattr(
+        scheduler, "start_scheduler", lambda _settings: calls.append("planificador")
+    )
+    monkeypatch.setattr(scheduler, "stop_scheduler", lambda _running: None)
+
+    with TestClient(create_app(settings)):
+        pass
+
+    assert calls == ["umbrales", "textos", "planificador"]
+
+
+INVALID_FILES = {
+    "umbrales sin claves": ("RUTA_UMBRALES", json.dumps({"marca": PRIVATE_MARK})),
+    "umbrales que no son JSON": ("RUTA_UMBRALES", f"{{{PRIVATE_MARK}"),
+    "textos sin plantillas": ("RUTA_TEXTOS_BACKEND", json.dumps({"alertas": PRIVATE_MARK})),
+    "textos que no son JSON": ("RUTA_TEXTOS_BACKEND", f"[{PRIVATE_MARK}"),
+}
+
+
+@pytest.mark.parametrize(("variable", "content"), INVALID_FILES.values(), ids=INVALID_FILES)
+def test_an_invalid_config_file_stops_the_startup_without_exposing_it(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    settings: Settings,
+    running_scheduler: object,
+    variable: str,
+    content: str,
+) -> None:
+    invalid = tmp_path / "invalido.json"
+    invalid.write_text(content, encoding="utf-8")
+    point_to(monkeypatch, variable, invalid)
+    double = install(monkeypatch, running_scheduler)
+
+    with (
+        caplog.at_level(logging.ERROR, logger="app.main"),
+        pytest.raises(RuntimeError) as raised,
+        TestClient(create_app(settings)),
+    ):
+        pytest.fail("la app no debía arrancar")
+
+    assert variable in str(raised.value)
+    assert PRIVATE_MARK not in str(raised.value)
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__
+    assert any(variable in record.getMessage() for record in caplog.records)
+    assert PRIVATE_MARK not in caplog.text
+    assert double.starts == []
+    assert double.stops == []
+
+
+def test_a_missing_config_file_stops_the_startup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, settings: Settings, running_scheduler: object
+) -> None:
+    point_to(monkeypatch, "RUTA_TEXTOS_BACKEND", tmp_path / "no-existe.json")
+    double = install(monkeypatch, running_scheduler)
+
+    with pytest.raises(RuntimeError, match="RUTA_TEXTOS_BACKEND"), TestClient(create_app(settings)):
+        pytest.fail("la app no debía arrancar")
+
+    assert double.starts == []

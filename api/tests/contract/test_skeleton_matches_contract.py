@@ -243,10 +243,7 @@ def test_min_properties_matches_contract(name: str) -> None:
 
 
 # `uniqueItems` tampoco entra en `canon`: Pydantic no lo publica ni lo comprueba por su cuenta.
-UNIQUE_ITEMS_PENDING = {
-    # TODO(marcarAlertasLeidas): falta publicar `uniqueItems` al implementar la operación.
-    ("AlertasMarcar", "alerta_ids"),
-}
+UNIQUE_ITEMS_PENDING: set[tuple[str, str]] = set()
 
 
 @pytest.mark.parametrize(
@@ -255,7 +252,7 @@ UNIQUE_ITEMS_PENDING = {
         pytest.param(
             name,
             field,
-            marks=pytest.mark.skip(reason="TODO(marcarAlertasLeidas)")
+            marks=pytest.mark.skip(reason="TODO(uniqueItems)")
             if (name, field) in UNIQUE_ITEMS_PENDING
             else (),
         )
@@ -282,8 +279,8 @@ SAMPLE_ID = "00000000-0000-0000-0000-000000000001"
 SAMPLE_USER_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 
 
-# Operaciones ya implementadas (fase 3 · Usuario; fase 4 · Onboarding; fase 6 · Consumo): no
-# responden 501.
+# Operaciones ya implementadas (fase 3 · Usuario; fase 4 · Onboarding; fase 6 · Consumo;
+# fase 7 · Historial; fase 8 · Alertas y consejos): no responden 501.
 IMPLEMENTED_OPERATIONS = frozenset(
     {
         "obtenerUsuarioActual",
@@ -299,6 +296,11 @@ IMPLEMENTED_OPERATIONS = frozenset(
         "obtenerConsumoZonas",
         "obtenerConsumoZona",
         "obtenerHistorial",
+        "listarAlertas",
+        "contarAlertasNoLeidas",
+        "marcarAlertasLeidas",
+        "listarConsejos",
+        "actualizarEstadoConsejo",
     }
 )
 

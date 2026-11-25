@@ -11,7 +11,9 @@ propio planificador y la tarea corre en todas. Es seguro: el candado por hogar d
 ON CONFLICT DO NOTHING descarta cualquier repetido; solo se gasta trabajo de más. Por eso en
 Render la API debe arrancarse con un solo worker.
 
-No genera alertas (fase 8, DC-35) ni hace el cierre de mes (fase 8).
+Alertas, consejos y cierre de mes (fase 8, DC-35, DC-32): los evalúa la propia recuperación de
+cada hogar sobre las horas que acaba de generar (`hour_recovery`, dentro de un SAVEPOINT); así la
+tarea horaria también dispara el cierre de mes cuando genera la hora 23:00 del último día.
 """
 
 import logging

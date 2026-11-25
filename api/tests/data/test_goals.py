@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.sql.elements import TextClause
 
 from app.data import goals
-from app.data.goals import ActiveGoalRow, get_active_goal
+from app.data.goals import ActiveGoalRow, get_active_goal, get_goal_active_on
 from tests.data.fake_session import FakeSession, assert_bound_only, normalized_sql
 from tests.helpers.personalities import load_personalities
 
@@ -98,3 +98,44 @@ def test_active_goal_does_not_commit_and_has_no_python_formatting() -> None:
     sql = str(goals.ACTIVE_GOAL_SQL)
     assert "{" not in sql
     assert "%" not in sql
+
+
+# ------------------------------------------------------------------ meta vigente un día (DC-32, RN-XIV-07)
+
+MONTH_LAST_DAY = date(2026, 10, 31)
+
+
+def test_goal_active_on_binds_household_and_day() -> None:
+    hogar_id = uuid4()
+    session = FakeSession()
+
+    assert get_goal_active_on(session, hogar_id, MONTH_LAST_DAY) is None  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert statement is goals.GOAL_ACTIVE_ON_SQL
+    assert isinstance(statement, TextClause)
+    assert params == {"hogar_id": hogar_id, "day": MONTH_LAST_DAY}
+    assert_bound_only(statement, params)
+    assert session.commits == 0
+
+
+def test_goal_active_on_sql_uses_the_validity_range_and_not_the_state() -> None:
+    """DC-32 y RN-XIV-07 (cierre de mes): [fecha_inicio, fecha_fin) contiene el día; la meta pudo cerrarse después."""
+    sql = normalized_sql(goals.GOAL_ACTIVE_ON_SQL)
+    assert "where hogar_id = :hogar_id" in sql
+    assert "fecha_inicio <= :day" in sql
+    assert "(fecha_fin is null or fecha_fin > :day)" in sql
+    assert "estado" not in sql
+    assert sql.endswith("order by fecha_inicio desc, created_at desc, id desc limit 1")
+
+
+def test_goal_active_on_maps_the_row() -> None:
+    goal_id = uuid4()
+    session = FakeSession([_goal_row(id=str(goal_id))])
+
+    goal = get_goal_active_on(session, uuid4(), MONTH_LAST_DAY)  # type: ignore[arg-type]
+
+    assert goal == ActiveGoalRow(
+        id=goal_id, tipo="ahorro", valor_kwh_mensual=float(MONTHLY_KWH), fecha_inicio=START
+    )
+    assert type(goal.valor_kwh_mensual) is float

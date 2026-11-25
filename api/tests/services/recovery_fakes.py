@@ -6,13 +6,22 @@ escriben en `FakeRecoveryDatabase`. Los huecos se calculan como la consulta real
 hora en hora desde su primera lectura hasta `until` inclusive. El candado se anota en la sesión
 y se suelta con su commit, rollback o cierre, como pg_advisory_xact_lock. El simulador es el real, con los
 perfiles oficiales de `docs/datos/perfiles/`. No demuestra compatibilidad con PostgreSQL.
+
+Fase 8 (DC-35: alertas solo sobre horas en vivo, evaluadas en un SAVEPOINT para que un fallo no
+impida guardar las lecturas). `FakeSession.begin_nested()` lo imita (guarda lo pendiente y lo
+restaura si el bloque lanza) y, salvo `real_alerts=True`, `live_alerts.evaluate_live_hours` se
+reemplaza por un espía que anota
+cada llamada en `evaluations`, deja una «alerta» pendiente en la sesión (`pending_alerts`, que el
+commit pasa a `saved_alerts`) y lanza `evaluation_failure` si está puesto. Las pruebas de las
+alertas reales usan `tests/services/alerts_fakes.py`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime, timedelta
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 from uuid import UUID
 
 import pytest
@@ -24,6 +33,8 @@ from app.data.readings import SensorGapRow
 from app.data.simulation_profiles import SimulationProfileRow
 from app.domain.simulator import generate_backfill, hour_from_index
 from app.domain.simulator.engine import simulate_household, to_reading_rows
+from app.services import live_alerts
+from app.services.live_alerts import LiveEvaluationSummary
 from tests.helpers.personalities import load_personalities
 from tests.simulator.support import bogota, final_profiles, idx, stable_id
 
@@ -81,14 +92,17 @@ class FakeSession:
         self.fail_commit: Exception | None = None
         self.fail_rollback: Exception | None = None
         self.locks: set[UUID] = set()  # candados de recuperación tomados en la transacción
+        self.pending_alerts: list[UUID] = []  # lo que deja el espía de alertas
+        self.savepoints = 0
+        self.savepoint_rollbacks = 0
 
     def commit(self) -> None:
         self.db.calls.append("commit")
         if self.fail_commit is not None:
             raise self.fail_commit
         self.db.saved.update(self.pending)
-        self.pending.clear()
-        self.locks.clear()
+        self.db.saved_alerts.extend(self.pending_alerts)
+        self.end_transaction()
         self.commits += 1
 
     def rollback(self) -> None:
@@ -96,13 +110,60 @@ class FakeSession:
         self.rollbacks += 1
         if self.fail_rollback is not None:
             raise self.fail_rollback
-        self.pending.clear()
-        self.locks.clear()
+        self.end_transaction()
 
     def close(self) -> None:
-        self.pending.clear()
-        self.locks.clear()
+        self.end_transaction()
         self.closed = True
+
+    def begin_nested(self) -> FakeSavepoint:
+        """SAVEPOINT: si el bloque lanza, se restaura lo pendiente de antes (y sigue lanzando)."""
+        self.db.calls.append("savepoint")
+        self.savepoints += 1
+        return FakeSavepoint(self)
+
+    # --- lo que guarda y restaura un SAVEPOINT (las subclases añaden su estado) -------
+    def snapshot(self) -> Any:
+        return dict(self.pending), list(self.pending_alerts)
+
+    def restore(self, state: Any) -> None:
+        pending, alerts = state
+        self.pending = dict(pending)
+        self.pending_alerts = list(alerts)
+
+    def end_transaction(self) -> None:
+        self.pending.clear()
+        self.pending_alerts.clear()
+        self.locks.clear()
+
+
+class FakeSavepoint:
+    """Contexto de `begin_nested()`: revierte solo lo hecho dentro del bloque si lanza."""
+
+    def __init__(self, session: FakeSession) -> None:
+        self.session = session
+        self.state: Any = None
+
+    def __enter__(self) -> Self:
+        self.state = self.session.snapshot()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool:
+        db = self.session.db
+        if exc_type is None:
+            db.calls.append("release")
+            return False
+        db.calls.append("savepoint_rollback")
+        self.session.savepoint_rollbacks += 1
+        if db.savepoint_rollback_failure is not None:
+            raise db.savepoint_rollback_failure
+        self.session.restore(self.state)
+        return False  # la excepción sigue: la captura hour_recovery
 
 
 class FakeRecoveryDatabase:
@@ -117,6 +178,11 @@ class FakeRecoveryDatabase:
         self.failing_households: dict[UUID, Exception] = {}  # perfil que falla por hogar
         self.sessions: list[FakeSession] = []
         self.list_failure: Exception | None = None
+        # Espía de `live_alerts.evaluate_live_hours` (fase 8): (hogar, horas por zona).
+        self.evaluations: list[tuple[UUID, dict[str, list[datetime]]]] = []
+        self.evaluation_failure: Exception | None = None
+        self.savepoint_rollback_failure: Exception | None = None
+        self.saved_alerts: list[UUID] = []
 
     # --- preparación ---------------------------------------------------------------
     def add_household(self, household: FakeHousehold, now: datetime = NOW) -> FakeHousehold:
@@ -199,6 +265,21 @@ class FakeRecoveryDatabase:
             inserted += 1
         return inserted
 
+    def evaluate_live_hours(
+        self,
+        session: FakeSession,
+        hogar_id: UUID,
+        live_hours_by_zone_type: Any,
+    ) -> LiveEvaluationSummary:
+        """Espía: anota la llamada, deja una «alerta» pendiente y falla si se pidió."""
+        self.calls.append("alerts")
+        hours = {zone: list(moments) for zone, moments in live_hours_by_zone_type.items()}
+        self.evaluations.append((hogar_id, hours))
+        session.pending_alerts.append(hogar_id)
+        if self.evaluation_failure is not None:
+            raise self.evaluation_failure
+        return LiveEvaluationSummary(alerts=1, tips=0)
+
     def list_household_ids_with_active_sensors(self, session: FakeSession) -> list[UUID]:
         self.calls.append("list")
         if self.list_failure is not None:
@@ -214,8 +295,15 @@ def by_key(rows: Sequence[dict[str, Any]]) -> dict[Key, dict[str, Any]]:
     return {_key(row): row for row in rows}
 
 
-def install_fake_recovery_database(monkeypatch: pytest.MonkeyPatch) -> FakeRecoveryDatabase:
-    db = FakeRecoveryDatabase()
+def install_fake_recovery_database(
+    monkeypatch: pytest.MonkeyPatch,
+    db: FakeRecoveryDatabase | None = None,
+    real_alerts: bool = False,
+) -> FakeRecoveryDatabase:
+    """Instala los dobles de la recuperación. Con `real_alerts=False`, espía de las alertas."""
+    db = FakeRecoveryDatabase() if db is None else db
+    if not real_alerts:
+        monkeypatch.setattr(live_alerts, "evaluate_live_hours", db.evaluate_live_hours)
     monkeypatch.setattr(profiles_data, "get_household_profile", db.get_household_profile)
     monkeypatch.setattr(readings_data, "lock_household_recovery", db.lock_household_recovery)
     monkeypatch.setattr(readings_data, "get_sensor_gaps", db.get_sensor_gaps)

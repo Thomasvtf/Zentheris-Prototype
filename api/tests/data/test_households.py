@@ -5,6 +5,7 @@ comprueba el SQL generado, el FOR UPDATE y que los valores viajan como parámetr
 """
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -18,6 +19,7 @@ from app.data.households import (
     ZoneRow,
     ZoneToInsert,
     delete_household,
+    get_household_created_at,
     insert_household,
     insert_main_source,
     insert_zone_sensors,
@@ -426,3 +428,26 @@ def test_household_zones_do_not_commit_and_have_no_python_formatting() -> None:
     sql = str(households.HOUSEHOLD_ZONES_SQL)
     assert "{" not in sql
     assert "%" not in sql
+
+
+# ------------------------------------------------------------------ alta del hogar (DC-32, RN-XIV-07)
+
+
+def test_household_created_at_binds_the_household() -> None:
+    hogar_id = uuid4()
+    created_at = datetime(2026, 10, 3, 17, 12, tzinfo=UTC)
+    session = FakeSession([{"created_at": created_at}])
+
+    assert get_household_created_at(session, hogar_id) == created_at  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert statement is households.HOUSEHOLD_CREATED_AT_SQL
+    assert isinstance(statement, TextClause)
+    assert params == {"hogar_id": hogar_id}
+    assert_bound_only(statement, params)
+    assert normalized_sql(statement) == "select created_at from hogares where id = :hogar_id"
+    assert session.commits == 0
+
+
+def test_household_created_at_missing_household_is_none() -> None:
+    assert get_household_created_at(FakeSession([]), uuid4()) is None  # type: ignore[arg-type]

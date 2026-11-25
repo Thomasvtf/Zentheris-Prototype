@@ -11,8 +11,11 @@ Eso prueba que el guardia no bloquea, no que la operación devuelva 200: el 200 
 valores ocultos de P-07 se prueban cuando cada servicio exista.
 
 Operaciones ya implementadas (`IMPLEMENTED_OPERATIONS`, fase 6: las 3 de consumo actual; fase
-7: `obtenerHistorial`): con la guardia superada responden 200 con un cuerpo válido según el
-contrato. Para que lleguen al servicio sin base, `call_api` instala los dobles de `app.data` de
+7: `obtenerHistorial`; fase 8: las 5 de alertas y consejos): con la guardia superada responden 200
+con un cuerpo válido según el contrato. Para las de alertas y consejos, `call_api` reemplaza las
+funciones de `data/alerts.py` y `data/tips.py` por dobles mínimos (sin alertas; un consejo
+pendiente con el `consejo_id` de la ruta) y entrega una sesión que admite `commit`; su
+contenido se prueba en `test_alerts_e2e.py`. Para que lleguen al servicio sin base, `call_api` instala los dobles de `app.data` de
 `tests/services/consumption_fakes.py` (un hogar con una zona, sin lecturas ni tarifas; incluye
 `tariffs_data.list_tariffs_between`; la recuperación de horas es un espía) y los umbrales de
 `make_test_settings()`. La prueba sigue siendo de la guardia: el contenido de la respuesta se
@@ -26,6 +29,7 @@ Matriz: docs/pruebas/matriz-pruebas-backend-v1.md (P-01…P-06).
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -40,7 +44,12 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
+from app.data import alerts as alerts_data
+from app.data import tips as tips_data
+from app.data.database import get_session
 from app.data.memberships import ActiveMembershipRow
+from app.data.tips import UserTipRow
+from app.domain.simulator import TIMEZONE
 from app.errors import NOT_FOUND_MESSAGE, UNAUTHORIZED_MESSAGE
 from app.main import API_PREFIX, create_app
 from app.services import consumption as consumption_service
@@ -56,6 +65,7 @@ from tests.helpers.auth import (
     make_token,
     override_db_session,
 )
+from tests.services.consumption_fakes import FakeSession as CountingSession
 from tests.services.consumption_fakes import install_fake_consumption_database
 
 # --- Contrato -------------------------------------------------------------------------------
@@ -197,7 +207,17 @@ FOREIGN_PRIVATE_KEY = ec.generate_private_key(ec.SECP256R1())
 
 # Operaciones con servicio real: la guardia superada da 200 (no el 501 del esqueleto).
 IMPLEMENTED_OPERATIONS: frozenset[str] = frozenset(
-    {"obtenerConsumoActual", "obtenerConsumoZonas", "obtenerConsumoZona", "obtenerHistorial"}
+    {
+        "obtenerConsumoActual",
+        "obtenerConsumoZonas",
+        "obtenerConsumoZona",
+        "obtenerHistorial",
+        "listarAlertas",
+        "contarAlertasNoLeidas",
+        "marcarAlertasLeidas",
+        "listarConsejos",
+        "actualizarEstadoConsejo",
+    }
 )
 
 ERROR_BODY_KEYS = {"codigo", "mensaje", "detalles"}
@@ -326,6 +346,10 @@ def call_api(e2e_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> CallApi
         install_fake_memberships(monkeypatch, rows)
         if op_id in IMPLEMENTED_OPERATIONS:
             install_implemented_operation_data(monkeypatch)
+            # Las escrituras de la fase 8 hacen commit: sesión que lo admite (y lo cuenta).
+            monkeypatch.setitem(
+                e2e_client.app.dependency_overrides, get_session, committing_session
+            )
         op = OPERATIONS[op_id]
         values = {
             name: str(hogar) if name == "hogar_id" else str(OTHER_PATH_IDS[name])
@@ -362,6 +386,48 @@ def install_implemented_operation_data(monkeypatch: pytest.MonkeyPatch) -> None:
     fresh = cache(thresholds_service.get_thresholds.__wrapped__)
     monkeypatch.setattr(thresholds_service, "get_thresholds", fresh)
     monkeypatch.setattr(consumption_service, "get_thresholds", fresh)
+    install_alert_and_tip_data(monkeypatch)
+
+
+def committing_session() -> Iterator[CountingSession]:
+    yield CountingSession()
+
+
+def install_alert_and_tip_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dobles mínimos de `data/alerts.py` y `data/tips.py` (fase 8), filtrando por hogar.
+
+    `HOGAR_ID` no tiene alertas; tiene un consejo pendiente con el `consejo_id` de la ruta, así
+    `actualizarEstadoConsejo` no da 404. La recuperación de horas ya es un espía.
+    """
+    tip = UserTipRow(
+        id=OTHER_PATH_IDS["consejo_id"],
+        categoria="general",
+        prioridad="baja",
+        titulo="Consejo de prueba",
+        descripcion="Descripción de prueba",
+        zona_id=None,
+        zona_tipo=None,
+        estado="pendiente",
+        completada_en=None,
+        created_at=datetime(2026, 11, 20, tzinfo=TIMEZONE),
+    )
+
+    def get_user_tip(_s: object, _u: UUID, hogar_id: UUID, consejo_id: UUID) -> UserTipRow | None:
+        return tip if (hogar_id, consejo_id) == (HOGAR_ID, tip.id) else None
+
+    def update_user_tip_status(_s: object, _u: UUID, hogar_id: UUID, consejo_id: UUID,
+                               *_args: object) -> bool:
+        return (hogar_id, consejo_id) == (HOGAR_ID, tip.id)
+
+    for module, name, value in (
+        (alerts_data, "list_user_alerts", lambda *_args: []),
+        (alerts_data, "count_unread_alerts", lambda *_args: 0),
+        (alerts_data, "mark_alerts_read", lambda *_args: 0),
+        (tips_data, "list_user_tips", lambda *_args: []),
+        (tips_data, "get_user_tip", get_user_tip),
+        (tips_data, "update_user_tip_status", update_user_tip_status),
+    ):
+        monkeypatch.setattr(module, name, value)
 
 
 def member(hogar_id: UUID = HOGAR_ID, **permissions: bool) -> ActiveMembershipRow:

@@ -1,7 +1,10 @@
 """Pruebas de app.services.hour_recovery con `app.data.*` falso en memoria (sin base ni red).
 
 B-04 de servicio · Servidor apagado 5 h y luego una consulta: 5 h × zonas nuevas, idénticas a
-las de una generación continua. RN-IV-05, DC-34, RN-IV-07; DC-35 (no genera alertas).
+las de una generación continua. RN-IV-05, DC-34, RN-IV-07. Fase 8 (DC-35): las alertas se
+evalúan solo sobre las horas recién generadas, dentro de un SAVEPOINT; si esa evaluación falla,
+las lecturas se guardan igual. Aquí `live_alerts.evaluate_live_hours` es un espía (las alertas
+reales se prueban en tests/alerts y tests/services/test_live_alerts_service.py).
 Matriz: docs/pruebas/matriz-pruebas-backend-v1.md. Los dobles están en `recovery_fakes.py`.
 """
 
@@ -47,10 +50,10 @@ def db(monkeypatch: pytest.MonkeyPatch) -> FakeRecoveryDatabase:
 
 @pytest.fixture
 def no_alerts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """DC-35: la recuperación no toca alertas (fase 8)."""
+    """La recuperación no escribe alertas por su cuenta: solo a través de `evaluate_live_hours`."""
 
     def forbidden(*args: object, **kwargs: object) -> None:
-        raise AssertionError("la recuperación no debe generar alertas")
+        raise AssertionError("la recuperación solo genera alertas con evaluate_live_hours")
 
     for name in dir(alerts_data):
         if name.startswith(("insert", "create")):
@@ -80,8 +83,11 @@ def test_five_hours_off_store_exactly_the_continuous_rows(
     assert db.rows_of(household) == by_key(household.continuous(END + HOURS_OFF))
     assert session.commits == 1
     assert session.rollbacks == 0
-    # El candado va primero, con el mismo hogar, y el commit lo suelta.
-    assert db.calls == ["lock", "profile", "gaps", "insert", "commit"]
+    # El candado va primero, con el mismo hogar, y el commit lo suelta. Las alertas se evalúan
+    # después de insertar y antes del commit, dentro de un SAVEPOINT (DC-35).
+    assert db.calls == [
+        "lock", "profile", "gaps", "insert", "savepoint", "alerts", "release", "commit"
+    ]
     assert db.locked == [household.id]
     assert not session.locks
 
@@ -311,3 +317,88 @@ def test_success_logs_count_and_time_without_ids(
     assert "total_ms=" in message
     assert str(household.id) not in message
     assert not any(str(sensor) in message for sensor in household.sensors.values())
+
+
+# ------------------------------------------------------------------ alertas en vivo (DC-35)
+
+
+@each_personality
+def test_alerts_are_evaluated_only_on_the_new_hours(db: FakeRecoveryDatabase, name: str) -> None:
+    """DC-35, A-02: la evaluación recibe exactamente las horas generadas, por tipo de zona."""
+    household = db.add_household(FakeHousehold(name))
+
+    service.fill_missing_hours(db.session(), household.id, LATER)
+
+    ((hogar_id, hours),) = db.evaluations
+    assert hogar_id == household.id
+    off_hours = [hour_from_index(index) for index in range(END, END + HOURS_OFF)]
+    assert hours == {zone: off_hours for zone in household.sensors}  # solo sus zonas
+    assert min(min(moments) for moments in hours.values()) == FIRST_OFF_HOUR  # nada del backfill
+    assert len(db.saved_alerts) == 1  # lo de la evaluación se confirma con las lecturas
+
+
+def test_without_new_hours_there_is_no_evaluation(db: FakeRecoveryDatabase) -> None:
+    household = db.add_household(FakeHousehold("Consumo familiar"))
+    session = db.session()
+    service.fill_missing_hours(session, household.id, LATER)
+    db.evaluations.clear()
+
+    assert service.fill_missing_hours(session, household.id, LATER) == 0
+    assert db.evaluations == []
+    assert service.fill_missing_hours(session, household.id, NOW + timedelta(minutes=49)) == 0
+    assert db.evaluations == []
+
+
+def test_hour_by_hour_evaluates_each_new_hour_once(db: FakeRecoveryDatabase) -> None:
+    household = db.add_household(FakeHousehold("Consumo intermedio"))
+    session = db.session()
+    for hour in range(1, HOURS_OFF + 1):
+        service.fill_missing_hours(session, household.id, NOW + timedelta(hours=hour))
+    evaluated = [moments for _, hours in db.evaluations for moments in hours.values()]
+    assert len(db.evaluations) == HOURS_OFF
+    assert {moment for moments in evaluated for moment in moments} == {
+        hour_from_index(index) for index in range(END, END + HOURS_OFF)
+    }
+    assert all(len(moments) == 1 for moments in evaluated)
+
+
+@each_personality
+def test_a_failing_evaluation_keeps_the_readings(
+    db: FakeRecoveryDatabase, caplog: pytest.LogCaptureFixture, name: str
+) -> None:
+    """DC-35: falla la evaluación de alertas → se revierte solo el SAVEPOINT; las lecturas se guardan."""
+    household = db.add_household(FakeHousehold(name))
+    db.evaluation_failure = OperationalError("INSERT", {}, PgError(f"{SECRET} {household.id}"))
+    session = db.session()
+    caplog.set_level(logging.INFO, logger="app.services.hour_recovery")
+
+    saved = service.fill_missing_hours(session, household.id, LATER)
+
+    assert saved == HOURS_OFF * len(household.sensors)
+    assert db.rows_of(household) == by_key(household.continuous(END + HOURS_OFF))
+    assert db.saved_alerts == []  # lo hecho dentro del SAVEPOINT se revirtió
+    assert session.savepoint_rollbacks == 1
+    assert session.commits == 1 and session.rollbacks == 0
+    assert db.calls[-4:] == ["savepoint", "alerts", "savepoint_rollback", "commit"]
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1
+    message = errors[0].getMessage()
+    assert "Evaluación de alertas fallida" in message
+    assert "tipo=OperationalError sqlstate=40001" in message
+    assert SECRET not in caplog.text and str(household.id) not in caplog.text
+    assert "Horas recuperadas" in caplog.text
+
+
+def test_a_failing_evaluation_does_not_break_the_query(
+    db: FakeRecoveryDatabase, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Con `fill_missing_hours_or_continue` tampoco hay WARNING de recuperación fallida."""
+    household = db.add_household(FakeHousehold("Consumo compacto"))
+    db.evaluation_failure = ValueError(f"plantilla rota {household.id}")
+
+    saved = service.fill_missing_hours_or_continue(db.session(), household.id, LATER)
+
+    assert saved == HOURS_OFF * len(household.sensors)
+    assert service.RECOVERY_SKIPPED_MESSAGE not in caplog.text
+    assert "Evaluación de alertas fallida: tipo=ValueError" in caplog.text
+    assert str(household.id) not in caplog.text

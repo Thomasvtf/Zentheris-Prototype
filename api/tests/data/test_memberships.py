@@ -21,12 +21,15 @@ from app.data import memberships
 from app.data.memberships import (
     ActiveMembershipExistsError,
     ActiveMembershipRow,
+    AlertMemberRow,
     MembershipSummaryRow,
     close_membership,
     count_other_active_members,
     get_active_membership,
     get_active_membership_of_user,
+    get_alert_permission,
     insert_admin_membership,
+    list_alert_members,
 )
 from tests.data.fake_session import FakeSession as QueuedFakeSession
 from tests.data.fake_session import assert_bound_only, normalized_sql
@@ -470,3 +473,109 @@ def test_active_user_index_name_matches_the_migration() -> None:
 
     expected = f"create unique index {memberships.ACTIVE_USER_INDEX}\n"
     assert expected in migration.read_text(encoding="utf-8")
+
+
+# ------------------------------------------------- destinatarios (RN-VI-02, RN-XIV-06, RN-XV-06)
+
+
+def test_alert_members_send_only_the_household_as_parameter() -> None:
+    hogar_id = uuid4()
+    session = QueuedFakeSession()
+
+    assert list_alert_members(session, hogar_id) == []  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert statement is memberships.ALERT_MEMBERS_SQL
+    assert isinstance(statement, TextClause)
+    assert params == {"hogar_id": hogar_id}
+    assert_bound_only(statement, params)
+    assert session.commits == 0
+
+
+def test_alert_members_sql_reads_active_members_with_default_switches() -> None:
+    """RN-VI-02, RN-XIV-06, R-01: activos con usuario; sin preferencias, interruptores en true."""
+    sql = normalized_sql(memberships.ALERT_MEMBERS_SQL)
+    assert "coalesce(p.notif_consumo, true) as notif_consumo" in sql
+    assert "coalesce(p.notif_consejos, true) as notif_consejos" in sql
+    assert "m.fecha_ingreso" in sql
+    assert "left join preferencias_usuario p on p.usuario_id = m.usuario_id" in sql
+    assert "where m.hogar_id = :hogar_id" in sql
+    assert "m.estado = 'activo'" in sql
+    assert "m.usuario_id is not null" in sql
+    assert sql.endswith("order by m.usuario_id")
+
+
+def test_alert_members_are_mapped_in_order() -> None:
+    admin, member = uuid4(), uuid4()
+    admin_joined = datetime(2026, 11, 1, 5, 0, tzinfo=UTC)
+    member_joined = datetime(2026, 11, 20, 17, 30, tzinfo=UTC)
+    session = QueuedFakeSession(
+        [
+            {
+                "usuario_id": str(admin),
+                "rol": "administrador",
+                "notif_consumo": True,
+                "notif_consejos": False,
+                "fecha_ingreso": admin_joined,
+            },
+            {
+                "usuario_id": member,
+                "rol": "miembro",
+                "notif_consumo": False,
+                "notif_consejos": True,
+                "fecha_ingreso": member_joined,
+            },
+        ]
+    )
+
+    rows = list_alert_members(session, uuid4())  # type: ignore[arg-type]
+
+    assert rows == [
+        AlertMemberRow(admin, "administrador", True, False, admin_joined),
+        AlertMemberRow(member, "miembro", False, True, member_joined),
+    ]
+    assert isinstance(rows[0].usuario_id, UUID)
+
+
+def test_alert_members_keep_the_join_date_with_its_time_zone() -> None:
+    """RN-VI-02 (sin efecto retroactivo), RN-XV-06: fecha_ingreso llega tal cual, con zona."""
+    joined = datetime(2026, 11, 23, 14, 5, 9, tzinfo=UTC)
+    session = QueuedFakeSession(
+        [
+            {
+                "usuario_id": uuid4(),
+                "rol": "miembro",
+                "notif_consumo": True,
+                "notif_consejos": True,
+                "fecha_ingreso": joined,
+            }
+        ]
+    )
+
+    (row,) = list_alert_members(session, uuid4())  # type: ignore[arg-type]
+
+    assert row.fecha_ingreso == joined
+    assert row.fecha_ingreso.utcoffset() is not None
+
+
+def test_alert_permission_binds_the_household() -> None:
+    hogar_id = uuid4()
+    session = QueuedFakeSession([{"permiso_recibir_alertas": False}])
+
+    assert get_alert_permission(session, hogar_id) is False  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert statement is memberships.ALERT_PERMISSION_SQL
+    assert params == {"hogar_id": hogar_id}
+    assert_bound_only(statement, params)
+    assert normalized_sql(statement) == (
+        "select permiso_recibir_alertas from hogares where id = :hogar_id"
+    )
+
+
+def test_alert_permission_true_and_missing_household() -> None:
+    assert get_alert_permission(
+        QueuedFakeSession([{"permiso_recibir_alertas": True}]),  # type: ignore[arg-type]
+        uuid4(),
+    )
+    assert get_alert_permission(QueuedFakeSession([]), uuid4()) is None  # type: ignore[arg-type]

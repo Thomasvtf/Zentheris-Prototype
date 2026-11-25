@@ -171,16 +171,28 @@ def relative_state(
     days_with_data: int,
     excess_kwh: float | None = None,
 ) -> State:
-    """Estado frente a una referencia (consumo actual, acumulado, zona, participación, día)."""
+    """Estado frente a una referencia (consumo actual, acumulado, zona, participación, día).
+
+    Referencia exactamente 0 (decisión de Nicolás del 23/11/2026: con 7 o más días con dato, un
+    promedio 0 es referencia válida): con `min_days_with_data` días o más y en una banda con
+    exceso mínimo (`zona_estado`, `zona_participacion`), el estado es `critico` si el exceso
+    (`excess_kwh` o `value − reference`) es >= `min_excess_kwh` y `normal` si no. Esto se aparta de `docs/datos/motor_estados_ref.py`, que da `sin_referencia`
+    con referencia <= 0. En las bandas sin exceso mínimo (consumo actual, acumulado, día
+    completo) la referencia 0 sigue siendo `sin_referencia`, igual que la referencia negativa o
+    None en cualquier banda.
+    """
     if value is None:
         return "sin_datos"
-    if days_with_data < min_days_with_data or reference is None or reference <= 0:
+    if days_with_data < min_days_with_data or reference is None or reference < 0:
         return "sin_referencia"
+    excess = value - reference if excess_kwh is None else excess_kwh
+    if reference == 0:
+        if band.min_excess_kwh is None:
+            return "sin_referencia"
+        return "critico" if excess >= band.min_excess_kwh else "normal"
     pct = var_pct(value, reference)
-    if band.min_excess_kwh is not None:
-        excess = value - reference if excess_kwh is None else excess_kwh
-        if excess < band.min_excess_kwh:
-            return "normal"
+    if band.min_excess_kwh is not None and excess < band.min_excess_kwh:
+        return "normal"
     return classify(pct, band)
 
 
@@ -521,6 +533,31 @@ def _share(
     return share, state
 
 
+def _zone_state(
+    power: float | None,
+    zone_series: Mapping[int, float],
+    day: int,
+    hour: int,
+    thresholds: StateThresholds,
+) -> tuple[float | None, State]:
+    """(referencia publicada, estado) de la zona en la hora (RN-XI-06, banda `zona_estado`).
+
+    Promedio de la misma hora de la zona en los `window_days` días anteriores, publicado solo con
+    `min_days_with_data` días (`valid`), y `relative_state`. Única implementación, compartida por
+    `evaluate_zones` y `evaluate_zone_hours`.
+    """
+    average, days = same_hour_average_by_index(zone_series, day, hour, thresholds.window_days)
+    reference = valid(average, days, thresholds)
+    state = relative_state(
+        power,
+        reference,
+        thresholds.zone_state,
+        min_days_with_data=thresholds.min_days_with_data,
+        days_with_data=days,
+    )
+    return reference, state
+
+
 def _not_counting(zona_id: UUID) -> ZoneEvaluation:
     """Zona que no suma al total: sin dato en todo (decisión del 23/11/2026)."""
     return ZoneEvaluation(
@@ -561,15 +598,7 @@ def evaluate_zones(
             continue
         power = zone_series.get(index)
         share, share_state = _share(power, total, zone_series, totals, day, hour, thresholds)
-        average, days = same_hour_average_by_index(zone_series, day, hour, thresholds.window_days)
-        reference = valid(average, days, thresholds)
-        zone_state = relative_state(
-            power,
-            reference,
-            thresholds.zone_state,
-            min_days_with_data=thresholds.min_days_with_data,
-            days_with_data=days,
-        )
+        reference, zone_state = _zone_state(power, zone_series, day, hour, thresholds)
         zones[zona_id] = ZoneEvaluation(
             zona_id=zona_id,
             power_kw=power,
@@ -581,3 +610,42 @@ def evaluate_zones(
             zone_message_code=f"zona_estado.{zone_state}",
         )
     return ZonesEvaluation(total_kw=total, zones=zones)
+
+
+# ------------------------------------------------------------------ estado de zona por hora
+@dataclass(frozen=True)
+class ZoneHourState:
+    zona_id: UUID
+    hour_start: datetime
+    power_kw: float | None
+    state: State
+
+
+def evaluate_zone_hours(
+    readings_by_zone: Mapping[UUID, HourlySeries],
+    hour_starts_by_zone: Mapping[UUID, Collection[datetime]],
+    thresholds: StateThresholds,
+) -> list[ZoneHourState]:
+    """Estado de zona (RN-XI-06, banda `zona_estado`) de cada (zona, hora) pedida.
+
+    Misma lógica que `evaluate_zones(...).zone_state`: promedio de la misma hora de la zona en los
+    `window_days` días anteriores, mínimo `min_days_with_data`, y `relative_state` (con la
+    decisión del 23/11/2026, promedio 0); ambas usan `_zone_state`.
+    Cada serie se indexa una sola vez. Una zona sin serie da `sin_datos`; una hora repetida (la
+    misma hora en otra zona horaria) se evalúa una vez. Orden: hora ascendente y luego zona_id.
+    """
+    result: list[ZoneHourState] = []
+    for zona_id, hour_starts in hour_starts_by_zone.items():
+        series = by_index(readings_by_zone.get(zona_id, {}))
+        seen: set[int] = set()
+        for hour_start in hour_starts:
+            index = hour_index(hour_start)
+            if index in seen:
+                continue
+            seen.add(index)
+            day, hour = divmod(index, HOURS_PER_DAY)
+            power = series.get(index)
+            _, state = _zone_state(power, series, day, hour, thresholds)
+            result.append(ZoneHourState(zona_id, hour_start, power, state))
+    result.sort(key=lambda item: (hour_index(item.hour_start), item.zona_id))
+    return result

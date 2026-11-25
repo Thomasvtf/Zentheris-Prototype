@@ -230,3 +230,75 @@ def _violates_active_user_index(exc: IntegrityError) -> bool:
     if constraint_name is not None:
         return constraint_name == ACTIVE_USER_INDEX
     return ACTIVE_USER_INDEX in str(exc.orig)
+
+
+# RN-VI-02, RN-XIV-06 (entrega) y RN-VI-03, RN-XV-06 (consejos), R-01: miembros activos del hogar
+# con sus interruptores de notificación. Sin fila de preferencias, los interruptores valen true
+# (valor por defecto de la tabla). Entra por ix_miembros_hogar_estado. fecha_ingreso deja al
+# servicio excluir a quien ingresó después del evento (RN-VI-02: sin efecto retroactivo;
+# RN-XV-06: no recibe consejos anteriores).
+ALERT_MEMBERS_SQL = text(
+    """
+    select m.usuario_id,
+           m.rol,
+           coalesce(p.notif_consumo, true) as notif_consumo,
+           coalesce(p.notif_consejos, true) as notif_consejos,
+           m.fecha_ingreso
+      from hogar_miembros m
+      left join preferencias_usuario p on p.usuario_id = m.usuario_id
+     where m.hogar_id = :hogar_id
+       and m.estado = 'activo'
+       and m.usuario_id is not null
+     order by m.usuario_id
+    """
+)
+
+# RN-VI-02, RN-XVII: el permiso general «recibir alertas» del hogar.
+ALERT_PERMISSION_SQL = text(
+    """
+    select permiso_recibir_alertas
+      from hogares
+     where id = :hogar_id
+    """
+)
+
+
+@dataclass(frozen=True)
+class AlertMemberRow:
+    """Miembro activo, su fecha de ingreso y sus interruptores del momento (RN-VI-02, RN-XV-06)."""
+
+    usuario_id: UUID
+    rol: Literal["administrador", "miembro"]
+    notif_consumo: bool
+    notif_consejos: bool
+    fecha_ingreso: datetime  # hogar_miembros.fecha_ingreso (timestamptz not null)
+
+
+def list_alert_members(session: Session, hogar_id: UUID) -> list[AlertMemberRow]:
+    """Miembros con estado 'activo' de `hogar_id` y sus interruptores (RN-VI-02, RN-VI-03, R-01).
+
+    LEFT JOIN a preferencias_usuario: sin fila, notif_consumo y notif_consejos valen True. Incluye
+    `fecha_ingreso` (con zona horaria) para no entregar eventos anteriores al ingreso (RN-VI-02,
+    RN-XV-06). Orden por usuario_id. El servicio decide los destinatarios (alert_rules.alert_recipients). Sin commit.
+    """
+    result = session.exec(ALERT_MEMBERS_SQL, params={"hogar_id": hogar_id})
+    return [
+        AlertMemberRow(
+            usuario_id=as_uuid(row["usuario_id"]),
+            rol=row["rol"],
+            notif_consumo=bool(row["notif_consumo"]),
+            notif_consejos=bool(row["notif_consejos"]),
+            fecha_ingreso=row["fecha_ingreso"],
+        )
+        for row in result.mappings().all()
+    ]
+
+
+def get_alert_permission(session: Session, hogar_id: UUID) -> bool | None:
+    """`hogares.permiso_recibir_alertas` de `hogar_id`; None si el hogar no existe (RN-VI-02).
+
+    Sin commit.
+    """
+    result = session.exec(ALERT_PERMISSION_SQL, params={"hogar_id": hogar_id})
+    row = result.mappings().first()
+    return None if row is None else bool(row["permiso_recibir_alertas"])

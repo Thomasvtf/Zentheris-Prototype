@@ -20,7 +20,10 @@ consumo de la fase 6 (`obtenerConsumoActual`, `obtenerConsumoZonas`, `obtenerCon
 RN-XI-01, RN-XI-03 a RN-XI-08, RN-XVII-01, RN-IV-05, DC-34, con el servicio real sobre datos en
 memoria construidos con los promedios de las personalidades; y `obtenerHistorial` (fase 7):
 RN-XIII-01 a RN-XIII-06, RN-XVII-02, RN-I-03, RN-IV-05, DC-29 a DC-31, DC-34 (v0.2.9:
-`PuntoSerie.zonas` solo con el filtro General, en el orden de `participacion_zonas`).
+`PuntoSerie.zonas` solo con el filtro General, en el orden de `participacion_zonas`); y las 5
+operaciones de alertas y consejos (fase 8: `listarAlertas`, `contarAlertasNoLeidas`,
+`marcarAlertasLeidas`, `listarConsejos`, `actualizarEstadoConsejo`) con el servicio reemplazado
+por un doble: RN-XIV-01 a RN-XIV-05, RN-XV-02 a RN-XV-06, RN-XII-02, RN-I-03, RN-VI-05.
 Las demás: TODO(C-01).
 """
 
@@ -55,9 +58,23 @@ from app.domain import states
 from app.domain.formats import zone_name
 from app.domain.simulator import TIMEZONE
 from app.domain.zone_rules import BASIC_ZONES, PERSONALITIES, ZONE_TYPES
+from app.errors import NOT_FOUND_MESSAGE, ApiError, CodigoError
 from app.main import API_PREFIX, create_app
+from app.schemas.alerts_tips import (
+    Alerta,
+    AlertasLista,
+    AlertasMarcadas,
+    AlertasMarcar,
+    AlertasNoLeidas,
+    CategoriaAlerta,
+    Consejo,
+    ConsejoEstadoActualizar,
+    ConsejosLista,
+)
+from app.services import alerts_tips as alerts_tips_service
 from app.services import consumption as consumption_service
 from app.services import hour_recovery, supabase_admin
+from app.services.backend_texts import get_backend_texts
 from tests.helpers.auth import (
     TEST_SUPABASE_URL,
     auth_header,
@@ -108,9 +125,18 @@ CONSUMPTION_OPERATIONS = frozenset(
     {"obtenerConsumoActual", "obtenerConsumoZonas", "obtenerConsumoZona"}
 )
 HISTORY_OPERATION = "obtenerHistorial"
+ALERTS_OPERATIONS = frozenset(
+    {
+        "listarAlertas",
+        "contarAlertasNoLeidas",
+        "marcarAlertasLeidas",
+        "listarConsejos",
+        "actualizarEstadoConsejo",
+    }
+)
 # Operaciones con C-01 real: las de la fase 3, el onboarding, la salud (sin autenticación), las
-# consultas de consumo de la fase 6 y el historial de la fase 7.
-COVERED_OPERATIONS = PHASE_OPERATIONS | CONSUMPTION_OPERATIONS | {
+# consultas de consumo de la fase 6, el historial de la fase 7 y las alertas y consejos de la 8.
+COVERED_OPERATIONS = PHASE_OPERATIONS | CONSUMPTION_OPERATIONS | ALERTS_OPERATIONS | {
     "obtenerSalud",
     "crearHogarOnboarding",
     HISTORY_OPERATION,
@@ -873,7 +899,7 @@ def test_cases_cover_every_declared_response_of_the_phase() -> None:
         for code in OPERATIONS[operation_id][2]["responses"]
         if (operation_id, str(code)) not in UNREACHABLE_RANGES | COVERED_BY_OWN_TEST
     }
-    cases = CASES + ONBOARDING_CASES + CONSUMPTION_CASES + HISTORY_CASES
+    cases = CASES + ONBOARDING_CASES + CONSUMPTION_CASES + HISTORY_CASES + ALERTS_CASES
     covered = {(case.operation_id, case.status) for case in cases}
     assert covered == declared
     assert len({(c.operation_id, c.name) for c in cases}) == len(cases)
@@ -1864,6 +1890,483 @@ def test_history_failed_hour_recovery_answers_200_with_stored_data(
         assert world.session.rollbacks == 1
     assert hour_recovery.RECOVERY_SKIPPED_MESSAGE in caplog.messages
     assert not [r for r in caplog.records if INTERNAL_DETAIL in r.getMessage()]
+
+
+# --- alertas y consejos (fase 8) ----------------------------------------------------------
+# Las 5 operaciones con el servicio reemplazado por un doble (monkeypatch de
+# `app.services.alerts_tips`): aquí se prueba la capa HTTP (validación de la entrada, guardas de
+# membresía y permiso, sesión de la petición y cuerpo contra el contrato). El servicio real, con
+# la recuperación de horas antes de leer (decisión de Nicolás del 23/11/2026: si la recuperación
+# falla, la consulta responde con lo guardado; RN-IV-05, DC-34), está probado en
+# `tests/services/test_alerts_tips_service.py`, y la evaluación en vivo en
+# `tests/services/test_live_alerts_service.py`. Los textos de ejemplo son las plantillas del
+# catálogo del backend (`get_backend_texts`), no inventados.
+
+ALERTS_SERVICE_FUNCTIONS = {
+    "listarAlertas": "list_alerts",
+    "contarAlertasNoLeidas": "count_unread_alerts",
+    "marcarAlertasLeidas": "mark_alerts_read",
+    "listarConsejos": "list_tips",
+    "actualizarEstadoConsejo": "update_tip_status",
+}
+_GUARDED_CODES = frozenset({"NO_AUTENTICADO", "NO_ENCONTRADO", "VALIDACION"})
+ALERTS_ERROR_CODES = {
+    "listarAlertas": _GUARDED_CODES | {"SIN_PERMISO_RECIBIR_ALERTAS"},
+    "contarAlertasNoLeidas": _GUARDED_CODES | {"SIN_PERMISO_RECIBIR_ALERTAS"},
+    "marcarAlertasLeidas": _GUARDED_CODES | {"SIN_PERMISO_RECIBIR_ALERTAS"},
+    "listarConsejos": _GUARDED_CODES,
+    "actualizarEstadoConsejo": _GUARDED_CODES,
+}
+ALERTS_ZONE_ID = UUID("33333333-4444-4555-8666-777777777777")
+ALERTS_ZONE_TYPE = "cocina"
+ALERTS_CREATED_AT = datetime(2026, 11, 23, 14, 5, tzinfo=TIMEZONE)
+ALERTS_READ_AT = datetime(2026, 11, 23, 15, 0, tzinfo=TIMEZONE)
+FOREIGN_ID = "00000000-0000-4000-8000-000000000000"  # id que no es del usuario ni del hogar
+
+
+def sample_id(kind: int, index: int) -> UUID:
+    return UUID(f"{kind:08d}-0000-4000-8000-{index:012d}")
+
+
+FIRST_TIP_ID = sample_id(2, 0)
+COMPLETED_TIP_ID = sample_id(2, 2)
+
+
+def sample_alerts() -> list[Alerta]:
+    """Una alerta por plantilla del catálogo (las 7 reglas de DC-25), alternando zona y lectura:
+    cubre cada categoría y severidad del catálogo, y `zona_id` y `leida_en` con dato y null."""
+    templates = sorted(get_backend_texts().alerts.values(), key=lambda t: t.regla_origen)
+    alerts = []
+    for index, template in enumerate(templates):
+        zonal = index % 2 == 0
+        alerts.append(
+            Alerta(
+                id=sample_id(1, index),
+                categoria=CategoriaAlerta(template.categoria),
+                severidad=template.severidad,  # type: ignore[arg-type]
+                titulo=template.titulo,
+                mensaje=template.mensaje,
+                zona_id=ALERTS_ZONE_ID if zonal else None,
+                zona_nombre=zone_name(ALERTS_ZONE_TYPE) if zonal else None,
+                creada_en=ALERTS_CREATED_AT - timedelta(hours=index),
+                leida_en=None if index % 3 else ALERTS_READ_AT,
+            )
+        )
+    return alerts
+
+
+def sample_tips() -> list[Consejo]:
+    """Un consejo del catálogo por prioridad (alta, media, baja); el último, completado."""
+    by_priority = {
+        t.prioridad: t for t in sorted(get_backend_texts().tips, key=lambda t: t.regla_origen)
+    }
+    tips = []
+    for index, priority in enumerate(("alta", "media", "baja")):
+        template = by_priority[priority]
+        completed = index == 2
+        tips.append(
+            Consejo(
+                id=sample_id(2, index),
+                categoria="general" if template.zona is None else "zona",
+                prioridad=template.prioridad,  # type: ignore[arg-type]
+                titulo=template.titulo,
+                descripcion=template.descripcion,
+                zona_id=None if template.zona is None else ALERTS_ZONE_ID,
+                zona_nombre=None if template.zona is None else zone_name(template.zona),
+                estado="completada" if completed else "pendiente",
+                completada_en=ALERTS_READ_AT if completed else None,
+                creado_en=ALERTS_CREATED_AT - timedelta(days=index),
+            )
+        )
+    return tips
+
+
+@dataclass
+class AlertsWorld:
+    """Membresías de la prueba, filas que devuelve el doble del servicio y llamadas recibidas.
+
+    Los dobles tienen la firma posicional del servicio real: un argumento de más o de menos es un
+    TypeError (500) y la prueba falla.
+    """
+
+    session: RecordingSession
+    memberships: list[ActiveMembershipRow]
+    alerts: list[Alerta] = field(default_factory=sample_alerts)
+    tips: list[Consejo] = field(default_factory=sample_tips)
+    guard_sessions: list[object] = field(default_factory=list)
+    calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = field(default_factory=list)
+
+    def list_alerts(
+        self,
+        session: object,
+        user_id: UUID,
+        hogar_id: UUID,
+        categoria: CategoriaAlerta | None,
+        limite: int,
+        **kw: Any,
+    ) -> AlertasLista:
+        self.calls.append(("list_alerts", (session, user_id, hogar_id, categoria, limite), kw))
+        found = [a for a in self.alerts if categoria is None or a.categoria == categoria]
+        return AlertasLista(alertas=found[:limite])
+
+    def count_unread_alerts(
+        self, session: object, user_id: UUID, hogar_id: UUID, **kw: Any
+    ) -> AlertasNoLeidas:
+        self.calls.append(("count_unread_alerts", (session, user_id, hogar_id), kw))
+        return AlertasNoLeidas(cantidad=sum(a.leida_en is None for a in self.alerts))
+
+    def mark_alerts_read(
+        self, session: object, user_id: UUID, hogar_id: UUID, payload: AlertasMarcar, **kw: Any
+    ) -> AlertasMarcadas:
+        self.calls.append(("mark_alerts_read", (session, user_id, hogar_id, payload), kw))
+        wanted = set(payload.alerta_ids)  # los ajenos o ya leídos se ignoran
+        return AlertasMarcadas(
+            marcadas=sum(a.id in wanted and a.leida_en is None for a in self.alerts)
+        )
+
+    def list_tips(
+        self, session: object, user_id: UUID, hogar_id: UUID, **kw: Any
+    ) -> ConsejosLista:
+        self.calls.append(("list_tips", (session, user_id, hogar_id), kw))
+        return ConsejosLista(consejos=list(self.tips))
+
+    def update_tip_status(
+        self,
+        session: object,
+        user_id: UUID,
+        hogar_id: UUID,
+        consejo_id: UUID,
+        payload: ConsejoEstadoActualizar,
+        **kw: Any,
+    ) -> Consejo:
+        self.calls.append(
+            ("update_tip_status", (session, user_id, hogar_id, consejo_id, payload), kw)
+        )
+        tip = next((t for t in self.tips if t.id == consejo_id), None)
+        if tip is None:  # sin fila en consejos_usuario (RN-XV-06)
+            raise ApiError(404, CodigoError.NO_ENCONTRADO, NOT_FOUND_MESSAGE)
+        completed_at = ALERTS_READ_AT if payload.estado == "completada" else None
+        return tip.model_copy(update={"estado": payload.estado, "completada_en": completed_at})
+
+
+@pytest.fixture
+def alerts_world(monkeypatch: pytest.MonkeyPatch, store: FakeStore) -> AlertsWorld:
+    world = AlertsWorld(session=store.session, memberships=[make_membership_row(USER_ID, HOGAR_ID)])
+
+    def fake_get_active_membership(
+        session: object, usuario_id: UUID, hogar_id: UUID
+    ) -> ActiveMembershipRow | None:
+        world.guard_sessions.append(session)
+        return next(
+            (m for m in world.memberships if m.usuario_id == usuario_id and m.hogar_id == hogar_id),
+            None,
+        )
+
+    monkeypatch.setattr(memberships_data, "get_active_membership", fake_get_active_membership)
+    for name in ALERTS_SERVICE_FUNCTIONS.values():
+        assert hasattr(alerts_tips_service, name), name
+        monkeypatch.setattr(alerts_tips_service, name, getattr(world, name))
+    return world
+
+
+# Preparaciones de los casos (reciben el `AlertsWorld`).
+def without_alerts(world: AlertsWorld) -> None:
+    world.alerts.clear()
+
+
+def without_tips(world: AlertsWorld) -> None:
+    world.tips.clear()  # sin pendientes: card «Todo bajo control»
+
+
+def without_alerts_permission(world: AlertsWorld) -> None:
+    world.memberships[:] = [make_membership_row(USER_ID, HOGAR_ID, recibir_alertas=False)]
+
+
+def admin_without_any_permission(world: AlertsWorld) -> None:
+    """El administrador recibe alertas aunque sus permisos guardados sean false (RN-XII-02)."""
+    world.memberships[:] = [
+        make_membership_row(
+            USER_ID,
+            HOGAR_ID,
+            rol="administrador",
+            ver_consumo_actual=False,
+            ver_historial=False,
+            recibir_alertas=False,
+        )
+    ]
+
+
+def member_without_any_permission(world: AlertsWorld) -> None:
+    """Los consejos solo exigen membresía activa: sin ningún permiso, igual responden."""
+    world.memberships[:] = [
+        make_membership_row(
+            USER_ID, HOGAR_ID, ver_consumo_actual=False, ver_historial=False, recibir_alertas=False
+        )
+    ]
+
+
+def without_alerts_membership(world: AlertsWorld) -> None:
+    world.memberships.clear()
+
+
+@dataclass(frozen=True)
+class AlertsCase:
+    name: str
+    operation_id: str
+    status: int
+    setup: Callable[[AlertsWorld], None] | None = None
+    authenticated: bool = True
+    codigo: str | None = None
+    hogar_id: str | None = None  # por defecto, el hogar de la prueba
+    consejo_id: str | None = None  # por defecto, el primer consejo del usuario
+    query: tuple[tuple[str, str], ...] = ()
+    body: Any = NO_BODY  # por defecto, el cuerpo válido de la operación (si tiene)
+
+
+DEFAULT_ALERTS_BODIES: dict[str, Any] = {
+    "marcarAlertasLeidas": {"alerta_ids": [str(sample_id(1, i)) for i in range(3)]},
+    "actualizarEstadoConsejo": {"estado": "completada"},
+}
+
+
+def _guard_cases(operation_id: str, *, permission: bool) -> list[AlertsCase]:
+    def case(name: str, status: int, **kw: Any) -> AlertsCase:
+        return AlertsCase(name, operation_id, status, **kw)
+
+    cases = [
+        case("sin-token", 401, authenticated=False, codigo="NO_AUTENTICADO"),
+        case("sin-membresia", 404, setup=without_alerts_membership, codigo="NO_ENCONTRADO"),
+        case("hogar-ajeno", 404, hogar_id=str(OTHER_HOUSEHOLD_ID), codigo="NO_ENCONTRADO"),
+        case("hogar-no-uuid", 422, hogar_id="no-es-un-uuid", codigo="VALIDACION"),
+    ]
+    if permission:
+        cases += [
+            case(
+                "sin-permiso",
+                403,
+                setup=without_alerts_permission,
+                codigo="SIN_PERMISO_RECIBIR_ALERTAS",
+            ),
+            case("admin-sin-permisos", 200, setup=admin_without_any_permission),
+        ]
+    else:
+        cases.append(case("miembro-sin-permisos", 200, setup=member_without_any_permission))
+    return cases
+
+
+def _alerts_cases() -> tuple[AlertsCase, ...]:
+    def listing(name: str, status: int, query: tuple[tuple[str, str], ...], **kw: Any) -> AlertsCase:
+        return AlertsCase(name, "listarAlertas", status, query=query, **kw)
+
+    def mark(name: str, status: int, body: Any, **kw: Any) -> AlertsCase:
+        return AlertsCase(name, "marcarAlertasLeidas", status, body=body, **kw)
+
+    def tip(name: str, status: int, **kw: Any) -> AlertsCase:
+        return AlertsCase(name, "actualizarEstadoConsejo", status, **kw)
+
+    return (
+        # listarAlertas (RN-XIV-01, RN-XIV-04, RN-XIV-05)
+        listing("todas", 200, ()),
+        *(
+            listing(f"categoria-{c.value}", 200, (("categoria", c.value),))
+            for c in CategoriaAlerta
+        ),
+        listing("limite-1", 200, (("limite", "1"),)),
+        listing("limite-100", 200, (("limite", "100"),)),
+        listing("filtro-y-limite", 200, (("categoria", "consumo"), ("limite", "2"))),
+        listing("sin-alertas", 200, (), setup=without_alerts),
+        *_guard_cases("listarAlertas", permission=True),
+        listing("limite-0", 422, (("limite", "0"),), codigo="VALIDACION"),
+        listing("limite-101", 422, (("limite", "101"),), codigo="VALIDACION"),
+        listing("limite-no-entero", 422, (("limite", "diez"),), codigo="VALIDACION"),
+        listing("categoria-invalida", 422, (("categoria", "sobreconsumo"),), codigo="VALIDACION"),
+        # contarAlertasNoLeidas (RN-XII-02)
+        AlertsCase("con-no-leidas", "contarAlertasNoLeidas", 200),
+        AlertsCase("sin-alertas", "contarAlertasNoLeidas", 200, setup=without_alerts),
+        *_guard_cases("contarAlertasNoLeidas", permission=True),
+        # marcarAlertasLeidas (RN-XIV-03, RN-VI-05)
+        mark("marca", 200, DEFAULT_ALERTS_BODIES["marcarAlertasLeidas"]),
+        mark("ids-ajenos-se-ignoran", 200, {"alerta_ids": [FOREIGN_ID]}),
+        *_guard_cases("marcarAlertasLeidas", permission=True),
+        mark("lista-vacia", 422, {"alerta_ids": []}, codigo="VALIDACION"),
+        mark("ids-repetidos", 422, {"alerta_ids": [FOREIGN_ID, FOREIGN_ID]}, codigo="VALIDACION"),
+        mark("campo-de-mas", 422, {"alerta_ids": [FOREIGN_ID], "todas": True}, codigo="VALIDACION"),
+        mark("sin-alerta-ids", 422, {}, codigo="VALIDACION"),
+        mark("id-no-uuid", 422, {"alerta_ids": ["no-es-un-uuid"]}, codigo="VALIDACION"),
+        mark("alerta-ids-no-lista", 422, {"alerta_ids": FOREIGN_ID}, codigo="VALIDACION"),
+        # listarConsejos (RN-VI-03, RN-XV-02 a RN-XV-05)
+        AlertsCase("con-consejos", "listarConsejos", 200),
+        AlertsCase("todo-bajo-control", "listarConsejos", 200, setup=without_tips),
+        *_guard_cases("listarConsejos", permission=False),
+        # actualizarEstadoConsejo (RN-XV-03, RN-XV-06, RN-VI-05)
+        tip("completa", 200, body={"estado": "completada"}),
+        tip("desmarca", 200, consejo_id=str(COMPLETED_TIP_ID), body={"estado": "pendiente"}),
+        *_guard_cases("actualizarEstadoConsejo", permission=False),
+        tip("consejo-ajeno", 404, consejo_id=FOREIGN_ID, codigo="NO_ENCONTRADO"),
+        tip("estado-invalido", 422, body={"estado": "hecho"}, codigo="VALIDACION"),
+        tip(
+            "campo-de-mas",
+            422,
+            body={"estado": "completada", "completada_en": None},
+            codigo="VALIDACION",
+        ),
+        tip("sin-estado", 422, body={}, codigo="VALIDACION"),
+        tip("consejo-no-uuid", 422, consejo_id="no-es-un-uuid", codigo="VALIDACION"),
+    )
+
+
+ALERTS_CASES: tuple[AlertsCase, ...] = _alerts_cases()
+# Casos que la guardia corta antes de llegar al servicio (los 422 tampoco llegan).
+ALERTS_GUARD_STOPS = frozenset({"sin-token", "sin-permiso", "sin-membresia", "hogar-ajeno"})
+
+
+def _body_of(case: AlertsCase) -> Any:
+    return case.body if case.body is not NO_BODY else DEFAULT_ALERTS_BODIES.get(case.operation_id)
+
+
+def alerts_url(case: AlertsCase) -> str:
+    _method, path, _op = OPERATIONS[case.operation_id]
+    url = API_PREFIX + path.format(
+        hogar_id=case.hogar_id or str(HOGAR_ID), consejo_id=case.consejo_id or str(FIRST_TIP_ID)
+    )
+    return url + ("?" + urlencode(case.query) if case.query else "")
+
+
+def send_alerts(client: TestClient, case: AlertsCase) -> Any:
+    method, _path, _op = OPERATIONS[case.operation_id]
+    headers = auth_header(make_token(USER_ID, CORREO)) if case.authenticated else {}
+    kwargs: dict[str, Any] = {"headers": headers}
+    body = _body_of(case)
+    if body is not None:
+        kwargs["json"] = body
+    return client.request(method.upper(), alerts_url(case), **kwargs)
+
+
+def expected_service_args(case: AlertsCase, world: AlertsWorld) -> tuple[Any, ...]:
+    """Lo que el router debe pasar al servicio: la sesión de la petición, el usuario del token, el
+    hogar de la ruta y la entrada ya validada (sin `now`: lo decide el servicio)."""
+    base: tuple[Any, ...] = (world.session, USER_ID, HOGAR_ID)
+    query = dict(case.query)
+    body = _body_of(case)
+    if case.operation_id == "listarAlertas":
+        categoria = query.get("categoria")
+        limite = int(query.get("limite", 50))  # default del contrato
+        return (*base, None if categoria is None else CategoriaAlerta(categoria), limite)
+    if case.operation_id == "marcarAlertasLeidas":
+        return (*base, AlertasMarcar(alerta_ids=[UUID(i) for i in body["alerta_ids"]]))
+    if case.operation_id == "actualizarEstadoConsejo":
+        consejo_id = UUID(case.consejo_id or str(FIRST_TIP_ID))
+        return (*base, consejo_id, ConsejoEstadoActualizar(estado=body["estado"]))
+    return base
+
+
+@pytest.mark.parametrize("case", ALERTS_CASES, ids=lambda c: f"{c.operation_id}-{c.status}-{c.name}")
+def test_alerts_tips_response_matches_contract_schema(
+    case: AlertsCase, client: TestClient, alerts_world: AlertsWorld
+) -> None:
+    world = alerts_world
+    if case.setup is not None:
+        case.setup(world)
+    response = send_alerts(client, case)
+    assert response.status_code == case.status, response.text
+    assert_matches_contract(case.operation_id, response)
+    assert all(s is world.session for s in world.guard_sessions)
+    assert world.session.commits == 0  # el router no confirma: lo hace el servicio
+    if case.status == 200 or case.name == "consejo-ajeno":
+        assert world.guard_sessions == [world.session]
+        ((name, args, kwargs),) = world.calls
+        assert name == ALERTS_SERVICE_FUNCTIONS[case.operation_id]
+        assert kwargs == {}
+        assert args[0] is world.session  # la misma sesión que usó la guardia
+        assert args == expected_service_args(case, world)
+    if case.status == 200:
+        return
+    assert response.json()["codigo"] == case.codigo
+    assert (response.headers.get("WWW-Authenticate") == "Bearer") == (case.status == 401)
+    if case.status == 422 or case.name in ALERTS_GUARD_STOPS:
+        assert world.calls == []  # no llegó al servicio
+
+
+def test_alerts_tips_cases_cover_every_code_of_the_operations() -> None:
+    for operation_id, expected in ALERTS_ERROR_CODES.items():
+        cases = [c for c in ALERTS_CASES if c.operation_id == operation_id]
+        assert {c.codigo for c in cases} - {None} == expected, operation_id
+        assert any(c.status == 200 for c in cases), operation_id
+
+
+def test_sample_rows_cover_nulls_and_every_value_of_the_catalog() -> None:
+    """Las filas de ejemplo ejercitan los nulos y los enum que salen del catálogo del backend."""
+    alerts, tips = sample_alerts(), sample_tips()
+    assert {a.categoria for a in alerts} == set(CategoriaAlerta)
+    assert {a.severidad for a in alerts} == {"informativa", "advertencia", "critica"}
+    assert {a.zona_id is None for a in alerts} == {True, False}
+    assert {a.leida_en is None for a in alerts} == {True, False}
+    assert [t.prioridad for t in tips] == ["alta", "media", "baja"]
+    assert {t.estado for t in tips} == {"pendiente", "completada"}
+
+
+def test_tips_never_answer_403(client: TestClient, alerts_world: AlertsWorld) -> None:
+    """El contrato no declara 403 en los consejos: sin `recibir_alertas` responden 200."""
+    without_alerts_permission(alerts_world)
+    for operation_id in ("listarConsejos", "actualizarEstadoConsejo"):
+        response = send_alerts(client, AlertsCase("x", operation_id, 200))
+        assert response.status_code == 200, (operation_id, response.text)
+
+
+def test_list_alerts_body_is_the_service_result_in_its_order(
+    client: TestClient, alerts_world: AlertsWorld
+) -> None:
+    """El router no reordena ni recorta: devuelve las alertas del servicio tal cual."""
+    response = send_alerts(client, AlertsCase("x", "listarAlertas", 200))
+    body = response.json()["alertas"]
+    assert [a["id"] for a in body] == [str(a.id) for a in alerts_world.alerts]
+    assert body == [a.model_dump(mode="json") for a in alerts_world.alerts]
+
+
+def test_unread_count_and_marked_are_the_service_numbers(
+    client: TestClient, alerts_world: AlertsWorld
+) -> None:
+    unread = sum(a.leida_en is None for a in alerts_world.alerts)
+    assert unread > 0
+    response = send_alerts(client, AlertsCase("x", "contarAlertasNoLeidas", 200))
+    assert response.json() == {"cantidad": unread}
+    ids = [str(a.id) for a in alerts_world.alerts]
+    response = send_alerts(
+        client, AlertsCase("x", "marcarAlertasLeidas", 200, body={"alerta_ids": ids})
+    )
+    assert response.json() == {"marcadas": unread}
+
+
+def test_repeated_alert_ids_are_422_without_echoing_them(
+    client: TestClient, alerts_world: AlertsWorld
+) -> None:
+    """`AlertasMarcar.alerta_ids` tiene `uniqueItems: true`: un id repetido es 422 `VALIDACION`
+    con la ubicación del campo y sin repetir el valor enviado."""
+    repeated = str(sample_id(1, 1))
+    response = send_alerts(
+        client,
+        AlertsCase("x", "marcarAlertasLeidas", 422, body={"alerta_ids": [repeated, repeated]}),
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert body["codigo"] == "VALIDACION"
+    assert [c["ubicacion"] for c in body["detalles"]["campos"]] == [["body", "alerta_ids"]]
+    assert repeated not in response.text
+    assert alerts_world.calls == []
+
+
+@pytest.mark.parametrize(("estado", "completed"), [("completada", True), ("pendiente", False)])
+def test_update_tip_status_body_is_the_updated_tip(
+    estado: str, completed: bool, client: TestClient, alerts_world: AlertsWorld
+) -> None:
+    """RN-XV-03: `completada` trae `completada_en`; `pendiente` lo deja null."""
+    response = send_alerts(
+        client, AlertsCase("x", "actualizarEstadoConsejo", 200, body={"estado": estado})
+    )
+    body = response.json()
+    assert body["id"] == str(FIRST_TIP_ID)
+    assert body["estado"] == estado
+    assert (body["completada_en"] is not None) is completed
 
 
 # --- operaciones pendientes ---------------------------------------------------------------

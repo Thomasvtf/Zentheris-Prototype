@@ -19,7 +19,10 @@ escritas (no con el dominio): serie, total, participación, pico (DC-31), tramo 
 
 Reloj: el onboarding corre en T (sábado 21/11/2026 22:10, Bogotá; backfill del 22/10 22:00 al
 21/11 21:00) y `datetime.now()` del servicio se fija por prueba (`query_at`). Umbrales de
-`make_test_settings()` (no se lee `.env`). Las alertas y los consejos siguen vigilados (DC-35).
+`make_test_settings()` (no se lee `.env`). Alertas (fase 8, DC-35: alertas solo sobre horas en
+vivo; se evalúan en un SAVEPOINT para que un fallo no impida guardar las lecturas): la
+recuperación del inicio de la consulta las evalúa en su SAVEPOINT sobre las horas que guarda; al
+final de cada prueba se comprueban A-01 y A-02 sobre lo confirmado (`tests/e2e/alerts_store.py`).
 
 El SQL no se ejecuta: que PostgreSQL haga lo mismo queda pendiente (B-04 y R-01 sobre Postgres
 real).
@@ -35,7 +38,6 @@ import statistics
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from functools import cache
 from typing import Any
 from uuid import UUID
 
@@ -50,9 +52,9 @@ from app.main import API_PREFIX
 from app.services import consumption as consumption_service
 from app.services import hour_recovery
 from app.services import onboarding as onboarding_service
-from app.services import thresholds as thresholds_service
 from tests.contract.test_c01_responses_match_schema import assert_matches_contract
 from tests.data.fake_session import FakeResult
+from tests.e2e.alerts_store import use_test_config
 from tests.e2e.test_consumption_e2e import (
     FAILURES,
     HOURLY_STATEMENT,
@@ -81,9 +83,8 @@ from tests.e2e.test_onboarding_e2e import (
     ROUNDING_KWH,
     Params,
     StoreSession,
-    forbid_alerts_and_tips,
 )
-from tests.helpers.auth import auth_header, install_test_jwks, make_test_settings, make_token
+from tests.helpers.auth import auth_header, install_test_jwks, make_token
 from tests.helpers.personalities import PERSONALITY_ORDER, load_personalities
 from tests.simulator.support import final_profiles, stable_id
 
@@ -176,16 +177,12 @@ class HistoryStore(ConsumptionStore):
 @pytest.fixture
 def db(monkeypatch: pytest.MonkeyPatch) -> Iterator[HistoryStore]:
     store = HistoryStore()
-    guarded = forbid_alerts_and_tips(monkeypatch, store)  # DC-35: nadie llama alertas/consejos
-    assert {"evaluate_alert_rules", "build_tips"} <= set(guarded)
     monkeypatch.setattr(onboarding_service, "datetime", OnboardingClock)
-    monkeypatch.setattr(thresholds_service, "get_settings", make_test_settings)
-    fresh = cache(thresholds_service.get_thresholds.__wrapped__)
-    monkeypatch.setattr(thresholds_service, "get_thresholds", fresh)
-    monkeypatch.setattr(consumption_service, "get_thresholds", fresh)
+    use_test_config(monkeypatch)  # umbrales y textos de make_test_settings(), caché propia
     install_test_jwks(monkeypatch)
     yield store
     assert store.unexpected == []
+    store.assert_live_alert_rules()  # A-01 y A-02 sobre lo que haya creado la recuperación
 
 
 @pytest.fixture

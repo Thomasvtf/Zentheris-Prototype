@@ -26,6 +26,12 @@ descendientes (consumo, historial y alertas):
   `unexpected`), y `assert_live_alert_rules()` comprueba al final de cada prueba A-01 (una alerta
   por regla, zona y día) y A-02 (toda alerta y todo consejo nacen de una hora EN VIVO; nunca del
   backfill del onboarding).
+- **«Nuevo miembro» (fase 9)**: aceptar una invitación crea su alerta en la MISMA transacción, fuera
+  de cualquier SAVEPOINT (RN-X-06, RN-XIV-07 (4)). Por eso las 4 sentencias de
+  `NEW_MEMBER_STATEMENTS` se admiten fuera del SAVEPOINT solo en una transacción que ya insertó
+  una membresía 'miembro'; y `assert_live_alert_rules()` exige que esa alerta nazca de su
+  membresía (`nuevo_miembro:<membresia_id>`, mismo hogar, `created_at` = `fecha_ingreso`), no de
+  una hora.
 
 El SQL no se ejecuta: que PostgreSQL haga lo mismo queda pendiente (A-01…A-05 y R-01 sobre
 Postgres real).
@@ -80,6 +86,11 @@ EVALUATION_ONLY = frozenset(
         "INSERT_TIP_ASSIGNMENTS_SQL",
     }
 )
+# RN-X-06: el aviso «Nuevo miembro» las usa al aceptar, fuera del SAVEPOINT (ver el módulo).
+NEW_MEMBER_STATEMENTS = frozenset(
+    {"ALERT_MEMBERS_SQL", "ALERT_PERMISSION_SQL", "INSERT_ALERT_SQL", "INSERT_ALERT_DELIVERIES_SQL"}
+)
+NEW_MEMBER_RULE = "nuevo_miembro"
 CONSUMPTION_RULES = ("consumo_elevado", "consumo_critico")
 MONTH_CLOSE_RULES = ("cierre_mes_dentro", "cierre_mes_encima")
 NOTICE_RULES = ("nuevo_consejo_zona", "nuevo_consejo_general")
@@ -196,11 +207,21 @@ class LiveAlertsMixin:
         """Dentro de un SAVEPOINT la sentencia va a su evaluación; fuera, a `events`."""
         nested = vars(session).get("nested")  # una StoreSession simple no tiene SAVEPOINT
         if nested is None:
-            if name in EVALUATION_ONLY:
+            if name in NEW_MEMBER_STATEMENTS and self._inserted_a_member(session):
+                self.events.append(name)  # «Nuevo miembro» al aceptar (RN-X-06)
+            elif name in EVALUATION_ONLY:
                 raise self.unexpected_use(f"{name} fuera del SAVEPOINT de la recuperación")
             self.events.append(name)
         else:
             nested.append(name)
+
+    def _inserted_a_member(self, session: StoreSession) -> bool:
+        """¿Esta transacción insertó una membresía 'miembro' (aceptar una invitación)?"""
+        committed = self.committed["hogar_miembros"]
+        return any(
+            row is not None and row["rol"] == "miembro" and key not in committed
+            for key, row in session.changes["hogar_miembros"].items()
+        )
 
     def commit(self, session: StoreSession) -> None:
         """Además anota qué lecturas publicó el onboarding (el backfill), para A-02."""
@@ -651,6 +672,14 @@ class LiveAlertsMixin:
                 assert any(
                     z in sensor_of and self._is_live(sensor_of[z], hour) for z in zones
                 ), ("A-02", alert)
+            elif rule == NEW_MEMBER_RULE:
+                # RN-X-06, DC-25: nace de aceptar una invitación (su membresía), no de una hora.
+                rule_name, membresia_id = alert["clave_evento"].split(":")
+                member = self.committed["hogar_miembros"].get(UUID(membresia_id))
+                assert rule_name == NEW_MEMBER_RULE and member is not None, alert
+                assert member["hogar_id"] == alert["hogar_id"], alert
+                assert member["fecha_ingreso"] == alert["created_at"], alert
+                assert (alert["zona_id"], alert["categoria"]) == (None, "informacion"), alert
             elif rule in NOTICE_RULES:
                 rule_name, consejo_id = alert["clave_evento"].split(":")
                 tip = tips[UUID(consejo_id)]

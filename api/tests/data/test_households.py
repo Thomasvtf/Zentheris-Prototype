@@ -1,12 +1,13 @@
 """Pruebas de app.data.households sin base real (RN-IX-09, DC-36; RN-X-03, DC-38).
 
 El borrado en cascada real (I-04) necesita Postgres: está en tests/integrity. Aquí se
-comprueba el SQL generado, el FOR UPDATE y que los valores viajan como parámetros.
+comprueba el SQL generado, el FOR NO KEY UPDATE y que los valores viajan como parámetros.
 """
 
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,6 +20,7 @@ from app.data.households import (
     ZoneRow,
     ZoneToInsert,
     delete_household,
+    get_household,
     get_household_created_at,
     insert_household,
     insert_main_source,
@@ -27,6 +29,7 @@ from app.data.households import (
     list_household_ids_with_active_sensors,
     list_household_zones,
     lock_household,
+    update_permissions,
 )
 from tests.data.fake_session import FakeResult, FakeSession, assert_bound_only, normalized_sql
 from tests.helpers.personalities import ZONE_KEYS
@@ -44,7 +47,7 @@ DEFAULT_PERMISSIONS = {
 }
 
 
-def test_lock_household_selects_the_row_for_update() -> None:
+def test_lock_household_selects_the_row_for_no_key_update() -> None:
     hogar_id = uuid4()
     session = FakeSession()
 
@@ -56,7 +59,7 @@ def test_lock_household_selects_the_row_for_update() -> None:
     assert params == {"hogar_id": hogar_id}
     assert_bound_only(statement, params)
     sql = normalized_sql(statement)
-    assert sql == "select id from hogares where id = :hogar_id for update"
+    assert sql == "select id from hogares where id = :hogar_id for no key update"
 
 
 def test_delete_household_deletes_only_that_household() -> None:
@@ -451,3 +454,125 @@ def test_household_created_at_binds_the_household() -> None:
 
 def test_household_created_at_missing_household_is_none() -> None:
     assert get_household_created_at(FakeSession([]), uuid4()) is None  # type: ignore[arg-type]
+
+
+# --- Fase 9: hogar y permisos generales (RN-II-03, RN-X-08, RN-XVII) --------------------------
+
+PERMISSION_KEYS = ("ver_consumo_actual", "ver_historial", "recibir_alertas", "modificar_metas")
+
+
+def _household_db_row(hogar_id: UUID | str, **overrides: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "id": hogar_id,
+        "nombre": "Casa de prueba",
+        "tipo_vivienda": "apartamento",
+        **DEFAULT_PERMISSIONS,
+    }
+    row.update(overrides)
+    return row
+
+
+def test_get_household_binds_the_household_and_maps_permissions() -> None:
+    hogar_id = uuid4()
+    session = FakeSession([_household_db_row(str(hogar_id), permiso_modificar_metas=True)])
+
+    row = get_household(session, hogar_id)  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert statement is households.HOUSEHOLD_SQL
+    assert params == {"hogar_id": hogar_id}
+    assert_bound_only(statement, params)
+    assert normalized_sql(statement) == (
+        "select id, nombre, tipo_vivienda, permiso_ver_consumo_actual, permiso_ver_historial, "
+        "permiso_recibir_alertas, permiso_modificar_metas from hogares where id = :hogar_id"
+    )
+    assert row == HouseholdRow(
+        id=hogar_id,
+        nombre="Casa de prueba",
+        tipo_vivienda="apartamento",
+        permiso_ver_consumo_actual=True,
+        permiso_ver_historial=True,
+        permiso_recibir_alertas=True,
+        permiso_modificar_metas=True,
+    )
+    assert session.commits == 0
+
+
+def test_get_household_returns_none_without_row() -> None:
+    assert get_household(FakeSession(), uuid4()) is None  # type: ignore[arg-type]
+
+
+def test_permission_keys_map_to_the_hogares_columns() -> None:
+    assert dict(households.PERMISSION_COLUMNS) == {key: f"permiso_{key}" for key in PERMISSION_KEYS}
+    assert set(households.PERMISSION_COLUMNS.values()) == set(DEFAULT_PERMISSIONS)
+
+
+def test_update_permissions_is_one_constant_statement_with_coalesce() -> None:
+    sql = normalized_sql(households.UPDATE_PERMISSIONS_SQL)
+
+    assert isinstance(households.UPDATE_PERMISSIONS_SQL, TextClause)
+    assert "{" not in str(households.UPDATE_PERMISSIONS_SQL)
+    assert "%" not in str(households.UPDATE_PERMISSIONS_SQL)
+    for key in PERMISSION_KEYS:
+        assert f"permiso_{key} = coalesce(:{key}, permiso_{key})" in sql
+    assert "where id = :hogar_id returning id, nombre, tipo_vivienda," in sql
+
+
+def test_update_permissions_sends_only_the_changed_values_and_nulls_for_the_rest() -> None:
+    hogar_id = uuid4()
+    session = FakeSession([_household_db_row(hogar_id, permiso_recibir_alertas=False)])
+
+    row = update_permissions(session, hogar_id, {"recibir_alertas": False})  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert statement is households.UPDATE_PERMISSIONS_SQL
+    assert params == {
+        "hogar_id": hogar_id,
+        "ver_consumo_actual": None,
+        "ver_historial": None,
+        "recibir_alertas": False,
+        "modificar_metas": None,
+    }
+    assert_bound_only(statement, params)
+    assert row is not None
+    assert row.permiso_recibir_alertas is False
+    assert row.permiso_ver_historial is True
+    assert session.commits == 0
+
+
+def test_update_permissions_with_every_key() -> None:
+    hogar_id = uuid4()
+    changes = dict.fromkeys(PERMISSION_KEYS, True)
+    session = FakeSession([_household_db_row(hogar_id, permiso_modificar_metas=True)])
+
+    row = update_permissions(session, hogar_id, changes)  # type: ignore[arg-type]
+
+    _statement, params = session.calls[0]
+    assert params == {"hogar_id": hogar_id, **changes}
+    assert row is not None
+    assert row.permiso_modificar_metas is True
+
+
+def test_update_permissions_returns_none_without_household() -> None:
+    assert update_permissions(FakeSession(), uuid4(), {"ver_historial": False}) is None  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {},
+        {"permiso_ver_historial": True},
+        {"ver_historial": True, "nombre": "Otro"},
+        {"ver_historial": None},
+        {"ver_historial": 1},
+        {"ver_historial": "true"},
+    ],
+    ids=["vacío", "nombre de columna", "clave desconocida", "nulo", "entero", "texto"],
+)
+def test_update_permissions_rejects_invalid_changes_without_sql(changes: dict[str, Any]) -> None:
+    session = FakeSession()
+
+    with pytest.raises(ValueError):
+        update_permissions(session, uuid4(), changes)  # type: ignore[arg-type]
+
+    assert session.calls == []

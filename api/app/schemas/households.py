@@ -6,9 +6,9 @@ Generado una vez desde docs/api/zentheris-api.yaml y revisado a mano."""
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from app.schemas.common import Rol, TipoVivienda, TipoZona
+from app.schemas.common import PartialUpdate, Rol, TipoVivienda, TipoZona
 
 
 class Permisos(BaseModel):
@@ -20,10 +20,11 @@ class Permisos(BaseModel):
     modificar_metas: bool
 
 
-class PermisosActualizar(BaseModel):
-    """Esquema `PermisosActualizar` del contrato."""
+class PermisosActualizar(PartialUpdate):
+    """Esquema `PermisosActualizar` del contrato (`minProperties: 1`).
 
-    model_config = ConfigDict(extra="forbid")
+    Cada campo es booleano y no admite null: solo se cambian los permisos enviados.
+    """
 
     ver_consumo_actual: bool = Field(default=None)
     ver_historial: bool = Field(default=None)

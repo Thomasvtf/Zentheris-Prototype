@@ -5,8 +5,9 @@ HH:00 en Bogotá; clave de evento; textos de `config_files/textos-backend.es-CO.
 """
 
 import copy
+import html
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -231,3 +232,170 @@ def test_backend_texts_use_only_declared_variables() -> None:
         variables = dict.fromkeys(declared["consejos.*.descripcion"], "x")
         F.render_backend_text(tip.titulo, {})
         F.render_backend_text(tip.descripcion, variables)
+
+
+# ------------------------------------------------------------------ correo de invitación
+# RN-IX-03, DC-04: correos.invitacion de textos-backend (10 claves aprobadas).
+EMAIL_KEYS = ("asunto", "preheader", "saludo", "cuerpo", "boton", "vigencia", "sin_cuenta",
+              "enlace_alterno", "seguridad", "pie")
+INVITATION_LINK = "https://zentheris.app/invitacion?token=abc_DEF-123&x=1"
+
+
+def email_texts() -> F.BackendTexts:
+    return F.parse_backend_texts(raw_backend_texts())
+
+
+def raw_email() -> dict[str, str]:
+    return raw_backend_texts()["correos"]["invitacion"]
+
+
+def test_parse_backend_texts_reads_the_invitation_email() -> None:
+    email = email_texts().invitation_email
+    assert email == F.EmailTemplate(**{key: raw_email()[key] for key in EMAIL_KEYS})
+    assert email.asunto == "{invitador} te invitó a {hogar} en Zentheris"
+
+
+def test_email_template_has_the_ten_keys() -> None:
+    assert tuple(F.EmailTemplate.__dataclass_fields__) == EMAIL_KEYS
+
+
+@pytest.mark.parametrize("key", EMAIL_KEYS)
+@pytest.mark.parametrize("damage", ["pop", "empty", "number"])
+def test_parse_backend_texts_requires_every_email_key(key: str, damage: str) -> None:
+    def change(raw: dict[str, Any]) -> None:
+        section = raw["correos"]["invitacion"]
+        if damage == "pop":
+            section.pop(key)
+        else:
+            section[key] = "" if damage == "empty" else 3
+
+    with pytest.raises(ValueError):
+        F.parse_backend_texts(_broken(change))
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda raw: raw.pop("correos"),
+        lambda raw: raw.update(correos=[]),
+        lambda raw: raw["correos"].pop("invitacion"),
+        lambda raw: raw["correos"].update(invitacion="texto"),
+    ],
+)
+def test_parse_backend_texts_requires_the_email_section(change) -> None:
+    with pytest.raises(ValueError):
+        F.parse_backend_texts(_broken(change))
+
+
+@pytest.mark.parametrize(
+    ("day", "expected"),
+    [
+        (date(2026, 12, 2), "2 de diciembre de 2026"),
+        (date(2027, 1, 9), "9 de enero de 2027"),
+        (date(2026, 9, 30), "30 de septiembre de 2026"),
+        (date(2028, 2, 29), "29 de febrero de 2028"),
+        (date(2026, 5, 1), "1 de mayo de 2026"),
+        (date(2026, 11, 15), "15 de noviembre de 2026"),
+    ],
+)
+def test_format_long_date(day: date, expected: str) -> None:
+    assert F.format_long_date(day) == expected
+
+
+def render_email(**changes: Any) -> F.RenderedEmail:
+    arguments: dict[str, Any] = {
+        "invitador": "Ana Pérez",
+        "hogar": "Casa Pérez",
+        "correo": "luis@example.com",
+        "expira_en": datetime(2026, 12, 2, 15, 30, tzinfo=UTC),
+        "enlace": INVITATION_LINK,
+    }
+    arguments.update(changes)
+    return F.render_invitation_email(email_texts(), **arguments)
+
+
+def fill(template: str, **values: str) -> str:
+    for name, value in values.items():
+        template = template.replace("{" + name + "}", value)
+    assert "{" not in template
+    return template
+
+
+def test_render_invitation_email_text() -> None:
+    email = render_email()
+    raw = raw_email()
+    values = {"invitador": "Ana Pérez", "hogar": "Casa Pérez", "correo": "luis@example.com",
+              "fecha_vencimiento": "2 de diciembre de 2026", "enlace": INVITATION_LINK}
+    assert email.asunto == "Ana Pérez te invitó a Casa Pérez en Zentheris"
+    paragraphs = [
+        fill(raw["saludo"], **values),
+        fill(raw["cuerpo"], **values),
+        f"{raw['boton']}: {INVITATION_LINK}",
+        fill(raw["vigencia"], **values),
+        fill(raw["sin_cuenta"], **values),
+        fill(raw["enlace_alterno"], **values),
+        fill(raw["seguridad"], **values),
+        fill(raw["pie"], **values),
+    ]
+    assert email.texto == "\n\n".join(paragraphs)
+    assert "Esta invitación vence en 7 días, el 2 de diciembre de 2026." in email.texto
+
+
+def test_render_invitation_email_html() -> None:
+    email = render_email()
+    raw = raw_email()
+    assert f'<a href="{html.escape(INVITATION_LINK, quote=True)}">{raw["boton"]}</a>' in email.html
+    assert "&amp;x=1" in email.html and "&x=1" not in email.html
+    assert raw["preheader"] in email.html
+    assert "display:none" in email.html
+    order = ["Hola,", "Ana Pérez te invitó a unirte a Casa Pérez", raw["boton"],
+             "2 de diciembre de 2026", "luis@example.com", "copia y pega", raw["seguridad"],
+             raw["pie"]]
+    positions = [email.html.index(html.escape(piece)) for piece in order]
+    assert positions == sorted(positions)
+    assert "{" not in email.html and "{" not in email.texto
+
+
+@pytest.mark.parametrize(
+    ("expira_en", "expected"),
+    [
+        (datetime(2026, 12, 3, 4, 59, tzinfo=UTC), "2 de diciembre de 2026"),  # 23:59 Bogotá
+        (datetime(2026, 12, 3, 5, 0, tzinfo=UTC), "3 de diciembre de 2026"),  # 00:00 Bogotá
+        (datetime(2027, 1, 1, 2, 0, tzinfo=UTC), "31 de diciembre de 2026"),
+        (datetime(2026, 12, 2, 23, 59, tzinfo=TIMEZONE), "2 de diciembre de 2026"),
+    ],
+)
+def test_render_invitation_email_date_in_bogota(expira_en: datetime, expected: str) -> None:
+    email = render_email(expira_en=expira_en)
+    assert f"el {expected}." in email.texto
+    assert f"el {expected}." in email.html
+
+
+def test_render_invitation_email_rejects_naive_date() -> None:
+    with pytest.raises(ValueError):
+        render_email(expira_en=datetime(2026, 12, 2, 15, 30, tzinfo=UTC).replace(tzinfo=None))
+
+
+def test_render_invitation_email_escapes_user_values() -> None:
+    evil_name = '<script>alert("x")</script> O\'Neil & Co'
+    evil_home = '"><img src=x onerror=alert(1)>'
+    email = render_email(invitador=evil_name, hogar=evil_home,
+                         enlace='https://z.app/i?t=1"onclick="x')
+    assert "<script>" not in email.html
+    assert "<img" not in email.html
+    assert 'onclick="x' not in email.html
+    assert html.escape(evil_name, quote=True) in email.html
+    assert html.escape(evil_home, quote=True) in email.html
+    assert '<a href="https://z.app/i?t=1&quot;onclick=&quot;x">' in email.html
+    # El texto plano y el asunto llevan el valor tal cual.
+    assert evil_name in email.texto and evil_home in email.asunto
+
+
+def test_render_invitation_email_keeps_braces_in_values() -> None:
+    email = render_email(invitador="{hogar}", hogar="{correo}")
+    assert email.asunto == "{hogar} te invitó a {correo} en Zentheris"
+
+
+def test_render_invitation_email_subject_is_one_line() -> None:
+    email = render_email(invitador="Ana\r\nBcc: otro@example.com")
+    assert "\n" not in email.asunto and "\r" not in email.asunto

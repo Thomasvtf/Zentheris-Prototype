@@ -7,7 +7,7 @@ y el mapeo de la fila a ActiveMembershipRow.
 
 import re
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -22,14 +22,23 @@ from app.data.memberships import (
     ActiveMembershipExistsError,
     ActiveMembershipRow,
     AlertMemberRow,
+    MemberRow,
+    MembershipRow,
     MembershipSummaryRow,
     close_membership,
+    count_active_members,
     count_other_active_members,
     get_active_membership,
     get_active_membership_of_user,
     get_alert_permission,
+    get_household_membership,
+    get_user_membership_in_household,
     insert_admin_membership,
+    insert_member_membership,
+    is_active_member_email,
+    list_active_members,
     list_alert_members,
+    set_membership_role,
 )
 from tests.data.fake_session import FakeSession as QueuedFakeSession
 from tests.data.fake_session import assert_bound_only, normalized_sql
@@ -579,3 +588,323 @@ def test_alert_permission_true_and_missing_household() -> None:
         uuid4(),
     )
     assert get_alert_permission(QueuedFakeSession([]), uuid4()) is None  # type: ignore[arg-type]
+
+
+# --- Fase 9: gestión de miembros (RN-II-01, RN-II-02, RN-II-04, RN-X-05..07, DC-36) ------------
+
+PHASE9_STATEMENTS = (
+    memberships.ACTIVE_MEMBERS_SQL,
+    memberships.COUNT_ACTIVE_MEMBERS_SQL,
+    memberships.HOUSEHOLD_MEMBERSHIP_SQL,
+    memberships.HOUSEHOLD_MEMBERSHIP_FOR_UPDATE_SQL,
+    memberships.USER_MEMBERSHIP_IN_HOUSEHOLD_SQL,
+    memberships.USER_MEMBERSHIP_IN_HOUSEHOLD_FOR_UPDATE_SQL,
+    memberships.SET_MEMBERSHIP_ROLE_SQL,
+    memberships.INSERT_MEMBER_MEMBERSHIP_SQL,
+    memberships.ACTIVE_MEMBER_EMAIL_SQL,
+)
+NOW_P9 = datetime(2026, 11, 25, 15, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("statement", PHASE9_STATEMENTS)
+def test_phase9_statements_are_constants_without_python_formatting(statement: Any) -> None:
+    assert isinstance(statement, TextClause)
+    assert "{" not in str(statement)
+    assert "%" not in str(statement)
+
+
+def _membership_row(**overrides: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "membresia_id": uuid4(),
+        "hogar_id": uuid4(),
+        "usuario_id": uuid4(),
+        "rol": "miembro",
+        "estado": "activo",
+    }
+    row.update(overrides)
+    return row
+
+
+def test_list_active_members_filters_orders_and_maps() -> None:
+    hogar_id = uuid4()
+    admin = {
+        "membresia_id": str(uuid4()),
+        "usuario_id": str(uuid4()),
+        "nombre_completo": "Persona administradora",
+        "avatar_url": None,
+        "rol": "administrador",
+        "fecha_ingreso": datetime(2026, 11, 1, 8, 0, tzinfo=timezone(timedelta(hours=-5))),
+    }
+    member = {
+        "membresia_id": uuid4(),
+        "usuario_id": uuid4(),
+        "nombre_completo": "Persona miembro",
+        "avatar_url": "abc/avatar.png",
+        "rol": "miembro",
+        "fecha_ingreso": NOW_P9,
+    }
+    session = QueuedFakeSession([admin, member])
+
+    rows = list_active_members(session, hogar_id)  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert params == {"hogar_id": hogar_id}
+    assert_bound_only(statement, params)
+    sql = normalized_sql(statement)
+    assert "join usuarios u on u.id = m.usuario_id" in sql
+    assert "where m.hogar_id = :hogar_id and m.estado = 'activo'" in sql
+    assert sql.endswith(
+        "order by case when m.rol = 'administrador' then 0 else 1 end, m.fecha_ingreso, m.id"
+    )
+    assert rows == [
+        MemberRow(
+            membresia_id=UUID(admin["membresia_id"]),
+            usuario_id=UUID(admin["usuario_id"]),
+            nombre_completo="Persona administradora",
+            avatar_url=None,
+            rol="administrador",
+            fecha_ingreso=admin["fecha_ingreso"],
+        ),
+        MemberRow(
+            membresia_id=member["membresia_id"],
+            usuario_id=member["usuario_id"],
+            nombre_completo="Persona miembro",
+            avatar_url="abc/avatar.png",
+            rol="miembro",
+            fecha_ingreso=NOW_P9,
+        ),
+    ]
+    assert rows[0].fecha_ingreso.utcoffset() == timedelta(hours=-5)
+
+
+@pytest.mark.parametrize(("rows", "expected"), [([{"total": 4}], 4), ([], 0)])
+def test_count_active_members(rows: list[dict[str, Any]], expected: int) -> None:
+    hogar_id = uuid4()
+    session = QueuedFakeSession(rows)
+
+    total = count_active_members(session, hogar_id)  # type: ignore[arg-type]
+
+    assert total == expected
+    assert isinstance(total, int)
+    statement, params = session.calls[0]
+    assert params == {"hogar_id": hogar_id}
+    assert_bound_only(statement, params)
+    assert normalized_sql(statement) == (
+        "select count(*) as total from hogar_miembros where hogar_id = :hogar_id "
+        "and estado = 'activo'"
+    )
+
+
+@pytest.mark.parametrize(
+    ("for_update", "statement"),
+    [
+        (False, memberships.HOUSEHOLD_MEMBERSHIP_SQL),
+        (True, memberships.HOUSEHOLD_MEMBERSHIP_FOR_UPDATE_SQL),
+    ],
+)
+def test_get_household_membership_filters_by_household_and_locks_on_demand(
+    for_update: bool, statement: Any
+) -> None:
+    hogar_id, membresia_id = uuid4(), uuid4()
+    session = QueuedFakeSession(
+        [_membership_row(membresia_id=str(membresia_id), hogar_id=str(hogar_id), estado="inactivo")]
+    )
+
+    row = get_household_membership(
+        session,  # type: ignore[arg-type]
+        hogar_id,
+        membresia_id,
+        for_update=for_update,
+    )
+
+    executed, params = session.calls[0]
+    assert executed is statement
+    assert params == {"hogar_id": hogar_id, "membresia_id": membresia_id}
+    assert_bound_only(executed, params)
+    sql = normalized_sql(executed)
+    assert "where id = :membresia_id and hogar_id = :hogar_id" in sql
+    assert "estado = 'activo'" not in sql  # cualquier estado
+    assert sql.endswith(" for update") is for_update
+    assert row is not None
+    assert row.membresia_id == membresia_id
+    assert row.hogar_id == hogar_id
+    assert row.estado == "inactivo"
+
+
+def test_get_household_membership_maps_null_user_of_a_deleted_account() -> None:
+    """DC-36: una membresía cerrada de una cuenta eliminada tiene usuario_id nulo."""
+    session = QueuedFakeSession([_membership_row(usuario_id=None, estado="inactivo")])
+
+    row = get_household_membership(session, uuid4(), uuid4())  # type: ignore[arg-type]
+
+    assert row is not None
+    assert row.usuario_id is None
+    assert isinstance(row, MembershipRow)
+
+
+def test_get_household_membership_returns_none_for_another_household() -> None:
+    assert get_household_membership(QueuedFakeSession([]), uuid4(), uuid4()) is None  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("for_update", "statement"),
+    [
+        (False, memberships.USER_MEMBERSHIP_IN_HOUSEHOLD_SQL),
+        (True, memberships.USER_MEMBERSHIP_IN_HOUSEHOLD_FOR_UPDATE_SQL),
+    ],
+)
+def test_get_user_membership_in_household_filters_active_and_locks_on_demand(
+    for_update: bool, statement: Any
+) -> None:
+    hogar_id, usuario_id = uuid4(), uuid4()
+    stored = _membership_row(hogar_id=hogar_id, usuario_id=str(usuario_id), rol="administrador")
+    session = QueuedFakeSession([stored])
+
+    row = get_user_membership_in_household(
+        session,  # type: ignore[arg-type]
+        hogar_id,
+        usuario_id,
+        for_update=for_update,
+    )
+
+    executed, params = session.calls[0]
+    assert executed is statement
+    assert params == {"hogar_id": hogar_id, "usuario_id": usuario_id}
+    assert_bound_only(executed, params)
+    sql = normalized_sql(executed)
+    assert "where hogar_id = :hogar_id and usuario_id = :usuario_id and estado = 'activo'" in sql
+    assert sql.endswith(" for update") is for_update
+    assert row == MembershipRow(
+        membresia_id=stored["membresia_id"],
+        hogar_id=hogar_id,
+        usuario_id=usuario_id,
+        rol="administrador",
+        estado="activo",
+    )
+
+
+def test_get_user_membership_in_household_returns_none_without_row() -> None:
+    assert (
+        get_user_membership_in_household(QueuedFakeSession([]), uuid4(), uuid4())  # type: ignore[arg-type]
+        is None
+    )
+
+
+@pytest.mark.parametrize("rol", ["administrador", "miembro"])
+def test_set_membership_role_updates_an_active_membership(rol: str) -> None:
+    membresia_id = uuid4()
+    session = QueuedFakeSession()
+
+    assert set_membership_role(session, membresia_id, rol) is None  # type: ignore[arg-type,func-returns-value]
+
+    statement, params = session.calls[0]
+    assert params == {"membresia_id": membresia_id, "rol": rol}
+    # assert_bound_only no sirve aquí: "miembro" es subcadena de "hogar_miembros".
+    assert set(statement._bindparams) == {"membresia_id", "rol"}
+    assert normalized_sql(statement) == (
+        "update hogar_miembros set rol = :rol where id = :membresia_id and estado = 'activo'"
+    )
+    assert session.commits == 0
+
+
+@pytest.mark.parametrize("rol", ["dueño", "", "Administrador"])
+def test_set_membership_role_rejects_unknown_roles_without_sql(rol: str) -> None:
+    session = QueuedFakeSession()
+
+    with pytest.raises(ValueError):
+        set_membership_role(session, uuid4(), rol)  # type: ignore[arg-type]
+
+    assert session.calls == []
+
+
+def _insert_member(session: QueuedFakeSession, **overrides: Any) -> UUID:
+    values: dict[str, Any] = {
+        "hogar_id": uuid4(),
+        "usuario_id": uuid4(),
+        "fecha_ingreso": NOW_P9,
+    }
+    values.update(overrides)
+    return insert_member_membership(session, **values)  # type: ignore[arg-type]
+
+
+def test_insert_member_membership_sql_params_and_returned_id() -> None:
+    hogar_id, usuario_id, new_id = uuid4(), uuid4(), uuid4()
+    session = QueuedFakeSession([{"id": str(new_id)}])
+
+    result = _insert_member(session, hogar_id=hogar_id, usuario_id=usuario_id)
+
+    assert result == new_id
+    assert isinstance(result, UUID)
+    statement, params = session.calls[0]
+    assert params == {"hogar_id": hogar_id, "usuario_id": usuario_id, "fecha_ingreso": NOW_P9}
+    assert_bound_only(statement, params)
+    assert normalized_sql(statement) == (
+        "insert into hogar_miembros (hogar_id, usuario_id, rol, estado, fecha_ingreso) "
+        "values (:hogar_id, :usuario_id, 'miembro', 'activo', :fecha_ingreso) returning id"
+    )
+    assert session.commits == 0
+
+
+@pytest.mark.parametrize(
+    "orig",
+    [
+        _FakeDriverError("23505", diag=_FakeDiag("uq_miembros_usuario_activo")),
+        _FakeDriverError("23505", message=_unique_message("uq_miembros_usuario_activo")),
+    ],
+    ids=["diag", "sin diag"],
+)
+def test_insert_member_membership_raises_when_user_already_has_a_household(
+    orig: Exception,
+) -> None:
+    """RN-II-01: dos aceptaciones simultáneas del mismo usuario en hogares distintos."""
+    usuario_id = uuid4()
+    session = QueuedFakeSession(_integrity_error(orig))
+
+    with pytest.raises(ActiveMembershipExistsError) as exc_info:
+        _insert_member(session, usuario_id=usuario_id)
+
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
+    assert str(usuario_id) not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "orig",
+    [
+        _FakeDriverError("23505", diag=_FakeDiag("uq_miembros_admin_activo")),
+        _FakeDriverError("23514"),
+        _FakeDriverError("23503", diag=_FakeDiag("hogar_miembros_usuario_id_fkey")),
+        psycopg2.errors.UniqueViolation(),
+    ],
+    ids=["otro índice", "trigger de 5 miembros", "FK de usuarios", "psycopg2 sin datos"],
+)
+def test_insert_member_membership_reraises_any_other_integrity_error(orig: Exception) -> None:
+    error = _integrity_error(orig)
+    session = QueuedFakeSession(error)
+
+    with pytest.raises(IntegrityError) as exc_info:
+        _insert_member(session)
+
+    assert exc_info.value is error
+
+
+@pytest.mark.parametrize(("rows", "expected"), [([{"existe": 1}], True), ([], False)])
+def test_is_active_member_email_joins_auth_users_with_lower(
+    rows: list[dict[str, Any]], expected: bool
+) -> None:
+    hogar_id = uuid4()
+    correo = "Miembro.Prueba@Example.COM"
+    session = QueuedFakeSession(rows)
+
+    assert is_active_member_email(session, hogar_id, correo) is expected  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert params == {"hogar_id": hogar_id, "correo": correo}
+    assert_bound_only(statement, params)
+    sql = normalized_sql(statement)
+    assert sql.startswith("select 1 as existe from hogar_miembros m")
+    assert "join auth.users au on au.id = m.usuario_id" in sql
+    assert "where m.hogar_id = :hogar_id and m.estado = 'activo'" in sql
+    assert "and lower(au.email) = lower(:correo)" in sql
+    assert sql.endswith("limit 1")
+    assert session.commits == 0

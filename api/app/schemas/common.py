@@ -5,8 +5,9 @@ Generado una vez desde docs/api/zentheris-api.yaml y revisado a mano."""
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class EstadoConsumo(StrEnum):
@@ -93,3 +94,19 @@ class IntervaloHora(BaseModel):
 
     inicio: datetime
     fin: datetime
+
+
+class PartialUpdate(BaseModel):
+    """Base de los cuerpos PATCH con `minProperties: 1` y `additionalProperties: false`.
+
+    `{}` da 422 `VALIDACION` y el JSON Schema publicado lleva `minProperties: 1`. La usan
+    `UsuarioActualizar`, `PreferenciasActualizar` y `PermisosActualizar`.
+    """
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"minProperties": 1})
+
+    @model_validator(mode="after")
+    def _require_at_least_one_field(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("Envía al menos un campo.")
+        return self

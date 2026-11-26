@@ -16,12 +16,16 @@ from sqlmodel import Session
 from app.data._convert import as_uuid
 
 # RN-IX-09, DC-36: bloquea la fila del hogar para serializar altas y bajas de miembros.
+# `for no key update`: dos llamadas a lock_household siguen chocando entre sí (serializa todos los
+# flujos que lo usan), pero no choca con el `FOR KEY SHARE` que toman los INSERT con FK a hogares
+# (lecturas y alertas en vivo), por ejemplo mientras create_invitation envía el correo. El DELETE
+# del hogar toma su propio bloqueo al ejecutarse.
 LOCK_HOUSEHOLD_SQL = text(
     """
     select id
       from hogares
      where id = :hogar_id
-       for update
+       for no key update
     """
 )
 
@@ -35,9 +39,11 @@ DELETE_HOUSEHOLD_SQL = text(
 
 
 def lock_household(session: Session, hogar_id: UUID) -> None:
-    """`SELECT ... FOR UPDATE` sobre el hogar hasta el fin de la transacción (RN-IX-09, DC-36).
+    """`SELECT ... FOR NO KEY UPDATE` sobre el hogar hasta el fin de la transacción (RN-IX-09).
 
-    Evita que dos bajas simultáneas dejen el hogar sin miembros sin borrarlo. Sin commit.
+    Primer nivel del orden de bloqueo (hogar → membresía → usuario). Evita que dos bajas
+    simultáneas dejen el hogar sin miembros sin borrarlo (DC-36) y serializa la gestión de
+    miembros e invitaciones, sin frenar los INSERT con FK a hogares (lecturas, alertas). Sin commit.
     """
     session.exec(LOCK_HOUSEHOLD_SQL, params={"hogar_id": hogar_id})
 
@@ -279,7 +285,7 @@ def list_household_zones(session: Session, hogar_id: UUID) -> list[ZoneRow]:
 
 
 def _to_household_row(row: Mapping[str, Any]) -> HouseholdRow:
-    """Convierte la fila de INSERT_HOUSEHOLD_SQL en HouseholdRow."""
+    """Convierte una fila de hogares con sus 4 permisos (alta, lectura o cambio) en HouseholdRow."""
     hogar_id = row["id"]
     return HouseholdRow(
         id=as_uuid(hogar_id),
@@ -321,3 +327,81 @@ def get_household_created_at(session: Session, hogar_id: UUID) -> datetime | Non
     result = session.exec(HOUSEHOLD_CREATED_AT_SQL, params={"hogar_id": hogar_id})
     row = result.mappings().first()
     return None if row is None else row["created_at"]
+
+
+# --- Fase 9: hogar y permisos generales (RN-II-03, RN-X-08, RN-XVII) ---------------------------
+
+# Clave del cambio (campo de PermisosActualizar) → columna de hogares. Lista blanca fija.
+PERMISSION_COLUMNS: Mapping[str, str] = {
+    "ver_consumo_actual": "permiso_ver_consumo_actual",
+    "ver_historial": "permiso_ver_historial",
+    "recibir_alertas": "permiso_recibir_alertas",
+    "modificar_metas": "permiso_modificar_metas",
+}
+
+# RN-II-03, RN-XVII, R-01: el hogar con sus 4 permisos generales.
+HOUSEHOLD_SQL = text(
+    """
+    select id,
+           nombre,
+           tipo_vivienda,
+           permiso_ver_consumo_actual,
+           permiso_ver_historial,
+           permiso_recibir_alertas,
+           permiso_modificar_metas
+      from hogares
+     where id = :hogar_id
+    """
+)
+
+# RN-II-03, RN-X-08: cambio parcial de los permisos en una sentencia fija; un parámetro nulo
+# conserva el valor de la columna (coalesce).
+UPDATE_PERMISSIONS_SQL = text(
+    """
+    update hogares
+       set permiso_ver_consumo_actual = coalesce(:ver_consumo_actual, permiso_ver_consumo_actual),
+           permiso_ver_historial = coalesce(:ver_historial, permiso_ver_historial),
+           permiso_recibir_alertas = coalesce(:recibir_alertas, permiso_recibir_alertas),
+           permiso_modificar_metas = coalesce(:modificar_metas, permiso_modificar_metas)
+     where id = :hogar_id
+    returning id,
+              nombre,
+              tipo_vivienda,
+              permiso_ver_consumo_actual,
+              permiso_ver_historial,
+              permiso_recibir_alertas,
+              permiso_modificar_metas
+    """
+)
+
+
+def get_household(session: Session, hogar_id: UUID) -> HouseholdRow | None:
+    """El hogar con sus 4 permisos generales (RN-II-03, RN-XVII); None si no existe. Sin commit."""
+    result = session.exec(HOUSEHOLD_SQL, params={"hogar_id": hogar_id})
+    row = result.mappings().first()
+    return None if row is None else _to_household_row(row)
+
+
+def update_permissions(
+    session: Session, hogar_id: UUID, changes: Mapping[str, bool]
+) -> HouseholdRow | None:
+    """Cambia solo los permisos presentes en `changes` y devuelve el hogar (RN-II-03, RN-X-08).
+
+    Claves permitidas: ver_consumo_actual, ver_historial, recibir_alertas y modificar_metas
+    (columnas `permiso_*`). Una sentencia constante con `coalesce(:param, columna)`: las claves
+    ausentes viajan como nulo y conservan su valor. ValueError si `changes` está vacío, trae una
+    clave desconocida o un valor que no es booleano. None si el hogar no existe. Sin commit.
+    """
+    if not changes:
+        raise ValueError("No hay cambios que aplicar.")
+    unknown = set(changes) - set(PERMISSION_COLUMNS)
+    if unknown:
+        raise ValueError(f"Permisos no permitidos: {sorted(unknown)}")
+    not_bool = {key for key, value in changes.items() if not isinstance(value, bool)}
+    if not_bool:
+        raise ValueError(f"Permisos sin valor booleano: {sorted(not_bool)}")
+    params: dict[str, Any] = {key: changes.get(key) for key in PERMISSION_COLUMNS}
+    params["hogar_id"] = hogar_id
+    result = session.exec(UPDATE_PERMISSIONS_SQL, params=params)
+    row = result.mappings().first()
+    return None if row is None else _to_household_row(row)

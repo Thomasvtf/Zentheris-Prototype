@@ -4,8 +4,8 @@
 memoria. Solo se reemplaza lo más bajo:
 
 - `get_session` entrega una `RecordingSession` por petición: trabaja sobre una copia de las
-  tablas y solo la publica en `commit()` (si la petición falla antes, la copia se descarta,
-  como un rollback). Cualquier otro uso de la sesión (SQL) falla.
+  tablas y solo la publica en `commit()`; `rollback()` (y una petición que falla antes) la
+  descarta. Cualquier otro uso de la sesión (SQL) falla.
 - Las funciones de `app.data.users`, `app.data.memberships`, `app.data.households` y
   `app.services.supabase_admin` leen y escriben ese almacén en memoria, que respeta las reglas
   de las tablas de `supabase/migrations/` (0002 y 0003): ficha 1:1 con `auth.users`,
@@ -13,8 +13,11 @@ memoria. Solo se reemplaza lo más bajo:
   ('meta', 'promedio'), una membresía activa por usuario (`uq_miembros_usuario_activo`), un
   administrador activo por hogar, membresía activa siempre con usuario, cascada de `hogares`
   a `hogar_miembros` y de `auth.users` a `usuarios`/`preferencias_usuario` con
-  `hogar_miembros.usuario_id` en nulo (DC-36). Supabase Auth y Storage escriben fuera de la
-  transacción de la petición (son otro servicio).
+  `hogar_miembros.usuario_id` en nulo (DC-36). Desde la fase 9, `eliminarCuenta` bloquea la
+  ficha (`lock_user_profile`, último nivel del orden hogar → membresía → usuario) y la borra
+  dentro de la transacción (`delete_user_profile`: cascada a preferencias y `SET NULL` en
+  `hogar_miembros.usuario_id`). Supabase Auth y Storage escriben fuera de la transacción de la
+  petición (son otro servicio).
 
 Sin base, sin red y sin secretos. Cada respuesta se valida con `jsonschema` contra el
 contrato `docs/api/zentheris-api.yaml` (ayudantes de C-01). Huecos del contrato que se
@@ -182,6 +185,11 @@ class RecordingSession:
         self.commits += 1
         self.db.events.append(("commit",))
 
+    def rollback(self) -> None:
+        """Descarta lo pendiente: la sesión vuelve a ver lo confirmado."""
+        self.working = copy.deepcopy(self.db.committed)
+        self.db.events.append(("rollback",))
+
     def __getattr__(self, name: str) -> Any:
         raise AssertionError(f"RecordingSession no admite `{name}`: reemplaza la función de datos.")
 
@@ -302,6 +310,28 @@ class InMemoryDatabase:
         row["avatar_url"] = avatar_url
         return True
 
+    def lock_user_profile(self, session: object, usuario_id: UUID) -> UserProfileRow | None:
+        """`FOR UPDATE OF u` sobre la ficha (orden hogar → membresía → usuario, fase 9)."""
+        self.events.append(("lock_user_profile", usuario_id))
+        return self.get_user_profile(session, usuario_id)
+
+    def delete_user_profile(self, session: object, usuario_id: UUID) -> bool:
+        """DELETE de la ficha: cascada a preferencias; `hogar_miembros.usuario_id` en nulo.
+
+        La verificación `miembros_activo_con_usuario` (en `check`) falla si su membresía
+        activa no se cerró antes (RN-IX-09, DC-36).
+        """
+        tables = self._tables(session)
+        self.events.append(("delete_user_profile", usuario_id))
+        if tables.usuarios.pop(usuario_id, None) is None:
+            return False
+        tables.preferencias_usuario.pop(usuario_id, None)
+        for row in tables.hogar_miembros.values():
+            if row["usuario_id"] == usuario_id:
+                row["usuario_id"] = None
+        tables.check()
+        return True
+
     def get_preferences(self, session: object, usuario_id: UUID) -> PreferencesRow | None:
         prefs = self._tables(session).preferencias_usuario.get(usuario_id)
         return None if prefs is None else PreferencesRow(**prefs)
@@ -398,6 +428,8 @@ REPLACED_FUNCTIONS = (
             "set_avatar_url",
             "get_preferences",
             "update_preferences",
+            "lock_user_profile",
+            "delete_user_profile",
         ),
     ),
     (
@@ -706,10 +738,10 @@ def test_delete_account_sole_admin_closes_membership_deletes_household_then_auth
 ) -> None:
     """Administrador único → 204: membresía cerrada, hogar borrado, Auth después del commit.
 
-    Esperado (orden único de bloqueo del proyecto: hogar → membresía): lectura de la
-    membresía sin bloqueo → bloqueo del hogar → relectura con FOR UPDATE → conteo → cierre de
-    la membresía → borrado del hogar → commit → Auth → Storage (una sola vez, con la URL de la
-    configuración y el id del token). Después no queda hogar, ni ficha, ni preferencias, ni usuario de
+    Esperado (orden único de bloqueo del proyecto: hogar → membresía → usuario): lectura de la
+    membresía sin bloqueo → bloqueo del hogar → relectura con FOR UPDATE → bloqueo de la ficha
+    → conteo → cierre de la membresía → borrado del hogar → borrado de la ficha (fase 9) →
+    commit → Auth → Storage (una sola vez, con la URL de la configuración y el id del token). Después no queda hogar, ni ficha, ni preferencias, ni usuario de
     Auth, y GET /usuarios/me da 404. Regla: RN-IX-09, DC-36, RN-I-02.
     """
     db.seed_profile(ADMIN_ID)
@@ -722,9 +754,11 @@ def test_delete_account_sole_admin_closes_membership_deletes_household_then_auth
         ("get_active_membership_of_user", ADMIN_ID, False),
         ("lock_household", HOGAR_ID),
         ("get_active_membership_of_user", ADMIN_ID, True),
+        ("lock_user_profile", ADMIN_ID),
         ("count_other_active_members", HOGAR_ID),
         ("close_membership", ADMIN_MEMBRESIA_ID),
         ("delete_household", HOGAR_ID),
+        ("delete_user_profile", ADMIN_ID),
         ("commit",),
         ("delete_auth_user", TEST_SUPABASE_URL, ADMIN_ID),
         ("delete_avatar_files", TEST_SUPABASE_URL, ADMIN_ID),
@@ -773,10 +807,11 @@ def test_delete_account_auth_failure_is_500_without_internal_detail_and_retry_is
 ) -> None:
     """Falla de Supabase Auth → 500 `ERROR_INTERNO` sin exponer la excepción; reintento → 204.
 
-    Esperado: el commit ya ocurrió (membresía cerrada y hogar borrado quedan guardados), Auth
-    se llamó después del commit, Storage no se llamó y la ficha sigue (Auth no la borró). Al
-    reintentar sin falla: 204, sin membresía activa que bloquee, y la cuenta desaparece.
-    Regla: RN-IX-09, DC-36, DC-16 (S-01).
+    Esperado: el commit ya ocurrió (membresía cerrada, hogar y ficha borrados quedan guardados:
+    desde la fase 9 la ficha se borra en la transacción, RN-IX-09 y DC-36), Auth se llamó
+    después del commit, Storage no se llamó y el usuario de Auth sigue. Al reintentar sin
+    falla: 204, sin membresía activa ni ficha (nada que bloquear ni borrar en la base) y la
+    cuenta desaparece de Auth. Regla: RN-IX-09, DC-36, DC-16 (S-01).
     """
     db.seed_profile(ADMIN_ID)
     db.seed_membership(ADMIN_MEMBRESIA_ID, ADMIN_ID, HOGAR_ID, "administrador")
@@ -792,7 +827,8 @@ def test_delete_account_auth_failure_is_500_without_internal_detail_and_retry_is
     assert names[-2:] == ["commit", "delete_auth_user"]
     assert "delete_avatar_files" not in names
     assert HOGAR_ID not in db.committed.hogares
-    assert ADMIN_ID in db.committed.usuarios
+    assert ADMIN_ID not in db.committed.usuarios
+    assert ADMIN_ID in db.committed.auth_users
 
     db.auth_failure = None
     db.events.clear()
@@ -800,6 +836,9 @@ def test_delete_account_auth_failure_is_500_without_internal_detail_and_retry_is
 
     assert retried.status_code == 204, retried.text
     assert db.events == [
+        ("get_active_membership_of_user", ADMIN_ID, False),
+        ("lock_user_profile", ADMIN_ID),
+        # Sin membresía al empezar: ¿apareció una mientras se bloqueaba la ficha? (fase 9)
         ("get_active_membership_of_user", ADMIN_ID, False),
         ("commit",),
         ("delete_auth_user", TEST_SUPABASE_URL, ADMIN_ID),

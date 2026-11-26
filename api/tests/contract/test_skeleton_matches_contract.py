@@ -218,24 +218,9 @@ def test_schema_matches_contract(name: str) -> None:
 
 
 # `minProperties` no entra en `canon` (KEEP): se compara aparte, esquema por esquema.
-MIN_PROPERTIES_PENDING = {
-    # TODO(actualizarPermisos): falta `minProperties: 1` en el esquema al implementar la operación.
-    "PermisosActualizar",
-}
-
-
 @pytest.mark.parametrize(
     "name",
-    [
-        pytest.param(
-            name,
-            marks=pytest.mark.skip(reason="TODO(actualizarPermisos)")
-            if name in MIN_PROPERTIES_PENDING
-            else (),
-        )
-        for name, schema in sorted(contract_components().items())
-        if "minProperties" in schema
-    ],
+    [name for name, schema in sorted(contract_components().items()) if "minProperties" in schema],
 )
 def test_min_properties_matches_contract(name: str) -> None:
     gen_schema = generated()["components"]["schemas"][name]
@@ -280,7 +265,8 @@ SAMPLE_USER_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 
 
 # Operaciones ya implementadas (fase 3 · Usuario; fase 4 · Onboarding; fase 6 · Consumo;
-# fase 7 · Historial; fase 8 · Alertas y consejos): no responden 501.
+# fase 7 · Historial; fase 8 · Alertas y consejos; fase 9 · Miembros e invitaciones): no
+# responden 501.
 IMPLEMENTED_OPERATIONS = frozenset(
     {
         "obtenerUsuarioActual",
@@ -301,6 +287,17 @@ IMPLEMENTED_OPERATIONS = frozenset(
         "marcarAlertasLeidas",
         "listarConsejos",
         "actualizarEstadoConsejo",
+        "listarMiembros",
+        "actualizarPermisos",
+        "expulsarMiembro",
+        "transferirAdministracion",
+        "salirDelHogar",
+        "crearInvitacion",
+        "revocarInvitacion",
+        "listarInvitacionesRecibidas",
+        "resolverTokenInvitacion",
+        "aceptarInvitacion",
+        "rechazarInvitacion",
     }
 )
 

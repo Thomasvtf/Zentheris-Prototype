@@ -46,9 +46,11 @@ EMPTY_PATCH_MESSAGE = "Envía al menos un campo."
 NOT_NULL_MESSAGE = "El campo no admite null."
 AUTH_USER_MISSING_MESSAGE = "La cuenta del token ya no existe."
 MEMBERSHIP_MOVED_MESSAGE = "La membresía activa cambió de hogar mientras se bloqueaba."
+MEMBERSHIP_APPEARED_MESSAGE = "Apareció una membresía activa mientras se bloqueaba la ficha."
 
 # Lectura sin bloqueo → bloqueo del hogar → relectura FOR UPDATE; se repite como máximo una vez
-# más si la membresía cambió de hogar entre la lectura y el bloqueo.
+# más si la membresía cambió de hogar entre la lectura y el bloqueo. El mismo máximo vale para la
+# vuelta completa de `delete_account` (hogar → membresía → ficha) si aparece una membresía.
 LOCK_ATTEMPTS = 2
 
 
@@ -109,21 +111,29 @@ def delete_account(
 ) -> None:
     """`eliminarCuenta`: eliminar la cuenta de forma irreversible (RN-IX-09, DC-36).
 
-    Orden de bloqueo único en todo el proyecto: HOGAR primero, membresía después (con el
-    orden inverso, dos transacciones cruzadas acabarían en interbloqueo). Ver
-    `_lock_active_membership`.
+    Orden de bloqueo único en todo el proyecto: HOGAR → membresía → USUARIO (con otro orden,
+    dos transacciones cruzadas acabarían en interbloqueo). Ver `_lock_account`.
 
-    1) Con membresía activa (su hogar y su fila bloqueados, en ese orden): un administrador
-       con otros miembros activos recibe 409 `ADMIN_DEBE_TRANSFERIR` sin cambios. Si no, se
-       cierra la membresía y, si era el único miembro activo, se borra el hogar (cascada).
-    2) Commit.
-    3) Se borra el usuario en Supabase Auth (cascada a usuarios, preferencias, alertas y
-       consejos del usuario). Si falla, la excepción sube (500 `ERROR_INTERNO`); reintentar es
-       seguro porque ya no hay membresía activa.
-    4) Se borran sus fotos en Storage con mejor esfuerzo: si falla, solo queda en el log.
+    1) Se bloquean el hogar y la membresía activa (si la hay) y después la ficha. Si al obtener
+       el bloqueo de la ficha aparece una membresía activa que no estaba (una aceptación de
+       invitación confirmó mientras se esperaba), rollback y nueva vuelta (máximo
+       `LOCK_ATTEMPTS`; si no, RuntimeError → 500 `ERROR_INTERNO`).
+    2) Con membresía activa: un administrador con otros miembros activos recibe 409
+       `ADMIN_DEBE_TRANSFERIR` sin cambios. Si no, se cierra la membresía y, si era el único
+       miembro activo, se borra el hogar (cascada).
+    3) Se borra la ficha DENTRO de la transacción (cascada a preferencias, alertas y consejos
+       del usuario): una aceptación que llegue después, incluso en el hueco antes del borrado en
+       Auth, no encuentra la ficha y responde 404 `NO_ENCONTRADO` (carrera cerrada).
+    4) Commit.
+    5) Se borra el usuario en Supabase Auth. Si falla, la excepción sube (500 `ERROR_INTERNO`);
+       reintentar es seguro porque ya no hay membresía activa ni ficha.
+    6) Se borran sus fotos en Storage con mejor esfuerzo: si falla, solo queda en el log.
+
+    Riesgo residual (documentado): crear otra ficha con `POST /usuarios/me` y aceptar una
+    invitación en el instante que tarda Auth en borrar la cuenta.
     """
     closed_at = now if now is not None else datetime.now(UTC)
-    membership = _lock_active_membership(session, user_id)
+    membership, profile = _lock_account(session, user_id)
     if membership is not None:
         others = memberships_data.count_other_active_members(session, membership.hogar_id, user_id)
         if membership.rol == "administrador" and others > 0:
@@ -131,6 +141,8 @@ def delete_account(
         memberships_data.close_membership(session, membership.membresia_id, closed_at)
         if others == 0:
             households_data.delete_household(session, membership.hogar_id)
+    if profile is not None:
+        users_data.delete_user_profile(session, user_id)
     session.commit()
 
     supabase_admin.delete_auth_user(settings, user_id)
@@ -246,10 +258,13 @@ def _lock_active_membership(
 
     1) Lectura SIN bloqueo para conocer el hogar. 2) `lock_household(hogar_id)`.
     3) Relectura con `FOR UPDATE`. Si la relectura es None, no hay membresía (la cerró otra
-    transacción). Si cambió de hogar entre 1 y 3, se repite la secuencia una sola vez más; si
-    vuelve a cambiar, RuntimeError (500 `ERROR_INTERNO`).
+    transacción). Si cambió de hogar entre 1 y 3, rollback (suelta el primer hogar: nunca hay dos
+    hogares bloqueados a la vez) y se repite la secuencia una sola vez más; si vuelve a cambiar,
+    RuntimeError (500 `ERROR_INTERNO`).
     """
-    for _attempt in range(LOCK_ATTEMPTS):
+    for attempt in range(LOCK_ATTEMPTS):
+        if attempt:
+            session.rollback()
         candidate = memberships_data.get_active_membership_of_user(session, user_id)
         if candidate is None:
             return None
@@ -258,6 +273,29 @@ def _lock_active_membership(
         if locked is None or locked.hogar_id == candidate.hogar_id:
             return locked
     raise RuntimeError(MEMBERSHIP_MOVED_MESSAGE)
+
+
+def _lock_account(
+    session: Session, user_id: UUID
+) -> tuple[memberships_data.MembershipSummaryRow | None, users_data.UserProfileRow | None]:
+    """Membresía activa y ficha bloqueadas en el orden único: hogar → membresía → usuario.
+
+    Si no había membresía y, tras esperar el bloqueo de la ficha, aparece una activa (una
+    aceptación confirmó mientras tanto), se hace rollback (suelta la ficha: nunca se pide un
+    hogar teniendo la ficha) y se repite la secuencia. Como máximo `LOCK_ATTEMPTS` vueltas; si
+    en todas cambió, RuntimeError (500 `ERROR_INTERNO`) sin commit.
+    """
+    for _attempt in range(LOCK_ATTEMPTS):
+        membership = _lock_active_membership(session, user_id)
+        profile = users_data.lock_user_profile(session, user_id)
+        if (
+            membership is None
+            and memberships_data.get_active_membership_of_user(session, user_id) is not None
+        ):
+            session.rollback()
+            continue
+        return membership, profile
+    raise RuntimeError(MEMBERSHIP_APPEARED_MESSAGE)
 
 
 def _to_preferences(row: users_data.PreferencesRow) -> Preferencias:

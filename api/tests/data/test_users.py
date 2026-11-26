@@ -5,6 +5,8 @@ Una sesión falsa registra cada sentencia y sus parámetros: se comprueba el SQL
 por defecto de preferencias y el mapeo de filas.
 """
 
+import re
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -19,9 +21,11 @@ from app.data.users import (
     AuthUserMissingError,
     PreferencesRow,
     UserProfileRow,
+    delete_user_profile,
     get_preferences,
     get_user_profile,
     insert_user_with_default_preferences,
+    lock_user_profile,
     set_avatar_url,
     update_preferences,
     update_user_profile,
@@ -36,6 +40,8 @@ ALL_STATEMENTS = (
     users.SET_AVATAR_URL_SQL,
     users.PREFERENCES_SQL,
     users.UPDATE_PREFERENCES_SQL,
+    users.LOCK_USER_PROFILE_SQL,
+    users.DELETE_USER_PROFILE_SQL,
 )
 
 
@@ -457,3 +463,90 @@ def test_insert_reraises_other_integrity_errors(usuario_id: UUID, pgcode: str | 
 def test_auth_user_missing_error_is_not_an_integrity_error() -> None:
     assert issubclass(AuthUserMissingError, Exception)
     assert not issubclass(AuthUserMissingError, IntegrityError)
+
+
+# --- Fase 9: bloqueo y borrado de la ficha (RN-IX-09, RN-X-06, DC-36) --------------------------
+
+
+def test_lock_user_profile_locks_only_the_usuarios_row(usuario_id: UUID) -> None:
+    """Orden de bloqueo hogar → membresía → usuario: solo se bloquea la fila de usuarios."""
+    session = FakeSession([_profile_row(str(usuario_id))])
+
+    row = lock_user_profile(session, usuario_id)  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert statement is users.LOCK_USER_PROFILE_SQL
+    assert params == {"usuario_id": usuario_id}
+    assert_bound_only(statement, params)
+    sql = normalized_sql(statement)
+    assert sql == normalized_sql(users.USER_PROFILE_SQL) + " for update of u"
+    assert "from usuarios u" in sql
+    assert "where u.id = :usuario_id" in sql
+    assert row == UserProfileRow(
+        id=usuario_id,
+        nombre_completo="Ana Pérez",
+        telefono="3001234567",
+        avatar_url=f"{usuario_id}/avatar.png",
+        preferencias=PreferencesRow(
+            notif_consumo=True, notif_consejos=False, base_comparacion="meta"
+        ),
+    )
+    assert session.commits == 0
+
+
+def test_lock_user_profile_returns_none_without_profile(usuario_id: UUID) -> None:
+    """Sin ficha (o borrada por eliminar cuenta mientras se esperaba el bloqueo): None."""
+    assert lock_user_profile(FakeSession(), usuario_id) is None  # type: ignore[arg-type]
+
+
+def test_get_user_profile_does_not_lock(usuario_id: UUID) -> None:
+    session = FakeSession([_profile_row(usuario_id)])
+
+    get_user_profile(session, usuario_id)  # type: ignore[arg-type]
+
+    assert "for update" not in normalized_sql(session.calls[0][0])
+
+
+@pytest.mark.parametrize(("rows", "expected"), [([{"id": "x"}], True), ([], False)])
+def test_delete_user_profile_deletes_only_that_user(
+    usuario_id: UUID, rows: list[dict[str, Any]], expected: bool
+) -> None:
+    session = FakeSession(rows)
+
+    assert delete_user_profile(session, usuario_id) is expected  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert statement is users.DELETE_USER_PROFILE_SQL
+    assert params == {"usuario_id": usuario_id}
+    assert_bound_only(statement, params)
+    assert normalized_sql(statement) == "delete from usuarios where id = :usuario_id returning id"
+    assert len(session.calls) == 1  # las cascadas son de la base, no de la función
+    assert session.commits == 0
+
+
+def test_delete_cascades_declared_in_the_migration_match_dc36() -> None:
+    """DC-36: cascada a preferencias, alertas_usuario y consejos_usuario; SET NULL en las otras dos."""
+    migrations = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
+    (migration,) = migrations.glob("*_0002_*.sql")
+    sql = migration.read_text(encoding="utf-8")
+
+    found: set[tuple[str, str, str]] = set()
+    table = ""
+    for line in sql.splitlines():
+        created = re.match(r"create table public\.(\w+) \(", line)
+        if created:
+            table = created.group(1)
+        reference = re.match(
+            r"\s*(\w+)\s+uuid\b.*references public\.usuarios\(id\) on delete (cascade|set null)",
+            line,
+        )
+        if reference:
+            found.add((table, reference.group(1), reference.group(2)))
+    assert found == {
+        ("preferencias_usuario", "usuario_id", "cascade"),
+        ("hogar_miembros", "usuario_id", "set null"),
+        ("invitaciones_hogar", "invitado_por", "set null"),
+        ("alertas_usuario", "usuario_id", "cascade"),
+        ("consejos_usuario", "usuario_id", "cascade"),
+    }
+    assert sql.count("references public.usuarios(id)") == len(found)

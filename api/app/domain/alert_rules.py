@@ -11,6 +11,8 @@ Solo se llama con horas generadas en vivo, nunca con el backfill (DC-35, A-02): 
   activa o promedio de los días completos anteriores, máximo 90, × días del mes).
 - Consejos: uno por regla y zona mientras haya uno vigente (7 días, RN-XV-05); la variante nueva
   es la que no usó el anterior (DC-24).
+- Nuevo miembro: una alerta informativa por membresía (`nuevo_miembro:<membresia_id>`, RN-X-06,
+  RN-XIV-07 (4), DC-25) para los demás miembros (RN-VI-02, RN-XIV-06).
 """
 
 from __future__ import annotations
@@ -61,6 +63,7 @@ MONTH_CLOSE_INSIDE = "cierre_mes_dentro"
 MONTH_CLOSE_ABOVE = "cierre_mes_encima"
 NOTICE_ZONE = "nuevo_consejo_zona"
 NOTICE_GENERAL = "nuevo_consejo_general"
+NEW_MEMBER = "nuevo_miembro"
 # TODO(pendiente: frase en config_files): `{referencia}` del cierre de mes. textos-backend solo la
 # describe en `_meta.variables_por_clave` («tu meta de N kWh» o «tu promedio de N kWh»).
 REFERENCE_PHRASES: Mapping[str, str] = {
@@ -487,3 +490,38 @@ def alert_recipients(
         if allowed and switch:
             recipients.append(member.usuario_id)
     return recipients
+
+
+# ------------------------------------------------------------------ nuevo miembro
+def new_member_event_key(membresia_id: UUID) -> str:
+    """`nuevo_miembro:<membresia_id>` (DC-25, RN-XIV-08)."""
+    return build_event_key(NEW_MEMBER, str(membresia_id))
+
+
+def plan_new_member_alert(
+    texts: BackendTexts, *, membresia_id: UUID, nombre: str, hogar_nombre: str, created_at: datetime
+) -> PlannedAlert:
+    """Alerta «Nuevo miembro» (RN-X-06, RN-XIV-07 (4), DC-25).
+
+    Regla, categoría y severidad de la plantilla `nuevo_miembro` (informacion, informativa), sin
+    zona; `{nombre}` y `{hogar}` se rellenan tal cual; `created_at` = momento de la aceptación.
+
+    Raises:
+        ValueError: `created_at` no tiene zona horaria.
+    """
+    _bogota(created_at)
+    variables = {"nombre": nombre, "hogar": hogar_nombre}
+    key = new_member_event_key(membresia_id)
+    return _planned(NEW_MEMBER, texts, variables, None, key, created_at)
+
+
+def new_member_recipients(
+    members: Sequence[AlertMember], permiso_recibir_alertas: bool, new_usuario_id: UUID
+) -> list[UUID]:
+    """Destinatarios del aviso «Nuevo miembro»: los de una alerta `informacion` menos el nuevo.
+
+    El aviso es para los demás miembros (RN-VI-02, RN-XIV-06); `members` ya viene filtrado por
+    `fecha_ingreso <= created_at` en `services/`.
+    """
+    recipients = alert_recipients("informacion", members, permiso_recibir_alertas)
+    return [usuario_id for usuario_id in recipients if usuario_id != new_usuario_id]

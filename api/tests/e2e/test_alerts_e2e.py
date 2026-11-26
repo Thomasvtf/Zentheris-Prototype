@@ -33,8 +33,9 @@ Línea de tiempo (Bogotá; reloj fijo en el onboarding y en `alerts_tips`):
   `hour_recovery.generate_readings_for_gaps` envolviendo al simulador real; la continuidad del
   simulador ya la prueban `test_hour_recovery_e2e` y B-04. En la prueba del orden de
   personalidades las horas son las del simulador, sin tocar.
-- Un segundo miembro y una meta se insertan directo en el almacén: invitaciones y metas (crear)
-  son de la fase 9 y aún no hay operación que los cree. El consejo de otro hogar (para el 404)
+- Un segundo miembro y una meta se insertan directo en el almacén (así se fija su `fecha_ingreso`
+  y sus interruptores; el alta por invitación se prueba en `test_members_e2e.py` y `crearMeta`
+  aún no existe). El consejo de otro hogar (para el 404)
   sí nace del flujo real: onboarding y recuperación en vivo con un pico crítico del vecino.
 
 El SQL no se ejecuta: que PostgreSQL haga lo mismo queda pendiente (A-01…A-05 y R-01 sobre

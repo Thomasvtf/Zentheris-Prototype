@@ -5,13 +5,16 @@ catálogo), números es-CO (RN-XII-08: coma decimal y punto de miles; kW con 2 d
 1), horas «HH:00» en America/Bogota, clave de evento (DC-25) y textos de
 `config_files/textos-backend.es-CO.json` (RN-XI-09). El dominio no lee el archivo: `services/`
 lo lee y lo pasa a `parse_backend_texts`; las plantillas se rellenan con `render_backend_text`.
+También arma el correo de invitación (`correos.invitacion`; RN-IX-03, DC-04): texto plano y HTML
+con todos los valores escapados.
 """
 
 from __future__ import annotations
 
+import html
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, fields
+from datetime import date, datetime
 from string import Formatter
 from types import MappingProxyType
 from typing import Any
@@ -154,9 +157,26 @@ class TipTemplate:
 
 
 @dataclass(frozen=True)
+class EmailTemplate:
+    """`correos.invitacion` de textos-backend: 10 claves, todas texto no vacío."""
+
+    asunto: str
+    preheader: str
+    saludo: str
+    cuerpo: str
+    boton: str
+    vigencia: str
+    sin_cuenta: str
+    enlace_alterno: str
+    seguridad: str
+    pie: str
+
+
+@dataclass(frozen=True)
 class BackendTexts:
     alerts: Mapping[str, AlertTemplate]
     tips: Sequence[TipTemplate]
+    invitation_email: EmailTemplate
 
 
 def _text(item: Mapping[str, Any], key: str, where: str) -> str:
@@ -243,16 +263,33 @@ def _tips(raw: Mapping[str, Any]) -> tuple[TipTemplate, ...]:
     return tips
 
 
-def parse_backend_texts(raw: Mapping[str, Any]) -> BackendTexts:
-    """Plantillas de alertas y consejos del JSON ya leído (RN-XI-09, DC-24, DC-25).
+def _invitation_email(raw: Mapping[str, Any]) -> EmailTemplate:
+    section = raw.get("correos")
+    if not isinstance(section, Mapping) or not section:
+        raise ValueError("falta la sección correos en los textos del backend")
+    item = section.get("invitacion")
+    if not isinstance(item, Mapping) or not item:
+        raise ValueError("falta correos.invitacion en los textos del backend")
+    where = "correos.invitacion"
+    return EmailTemplate(**{field.name: _text(item, field.name, where)
+                            for field in fields(EmailTemplate)})
 
-    Exige las 7 reglas de alerta de DC-25 y las variantes 1 y 2 de cada regla de consejo por tipo
-    de zona (y de la general), con títulos distintos por grupo.
+
+def parse_backend_texts(raw: Mapping[str, Any]) -> BackendTexts:
+    """Plantillas de alertas, consejos y correo de invitación del JSON ya leído.
+
+    RN-XI-09, DC-24, DC-25, RN-IX-03. Exige las 7 reglas de alerta de DC-25, las variantes 1 y 2
+    de cada regla de consejo por tipo de zona (y de la general), con títulos distintos por grupo,
+    y las 10 claves de `correos.invitacion`.
 
     Raises:
         ValueError: falta una sección, una plantilla o un campo, o un valor no es válido.
     """
-    return BackendTexts(alerts=MappingProxyType(_alerts(raw)), tips=_tips(raw))
+    return BackendTexts(
+        alerts=MappingProxyType(_alerts(raw)),
+        tips=_tips(raw),
+        invitation_email=_invitation_email(raw),
+    )
 
 
 def render_backend_text(template: str, variables: Mapping[str, object]) -> str:
@@ -274,3 +311,76 @@ def render_backend_text(template: str, variables: Mapping[str, object]) -> str:
             raise ValueError(f"variable no admitida en la plantilla: {{{field}}}")
         parts.append(str(variables[field]))
     return "".join(parts)
+
+
+# ------------------------------------------------------------------ correo de invitación
+@dataclass(frozen=True)
+class RenderedEmail:
+    asunto: str
+    texto: str  # texto plano
+    html: str  # HTML mínimo; todos los valores variables escapados
+
+
+def format_long_date(day: date) -> str:
+    """Fecha larga en es-CO: «2 de diciembre de 2026» (mes de `MONTH_NAMES`, día sin cero)."""
+    return f"{day.day} de {MONTH_NAMES[day.month]} de {day.year}"
+
+
+def _one_line(text: str) -> str:
+    """El asunto va en una cabecera: sin saltos de línea aunque el nombre los traiga."""
+    return " ".join(text.splitlines())
+
+
+def render_invitation_email(
+    texts: BackendTexts, *, invitador: str, hogar: str, correo: str, expira_en: datetime, enlace: str
+) -> RenderedEmail:
+    """Correo de invitación (RN-IX-03, DC-04) desde `correos.invitacion`.
+
+    `{fecha_vencimiento}` es la fecha de `expira_en` en America/Bogota. Texto plano: párrafos
+    separados por una línea en blanco (saludo, cuerpo, «botón: enlace», vigencia, sin_cuenta,
+    enlace_alterno, seguridad, pie). HTML: preheader oculto, los mismos párrafos y el botón como
+    enlace. El nombre de quien invita y el del hogar los escribe el usuario: en el HTML cada
+    párrafo ya rellenado (valores incluidos) pasa por `html.escape`. El asunto se deja en una
+    sola línea.
+
+    Raises:
+        ValueError: `expira_en` no tiene zona horaria.
+        KeyError: una plantilla usa una variable fuera de las cinco del correo.
+    """
+    if expira_en.utcoffset() is None:
+        raise ValueError("se exige una fecha con zona horaria")
+    template = texts.invitation_email
+    variables = {
+        "invitador": invitador,
+        "hogar": hogar,
+        "correo": correo,
+        "fecha_vencimiento": format_long_date(expira_en.astimezone(TIMEZONE).date()),
+        "enlace": enlace,
+    }
+
+    def fill(text: str) -> str:
+        return render_backend_text(text, variables)
+
+    asunto = _one_line(fill(template.asunto))
+    boton = fill(template.boton)
+    before = [fill(template.saludo), fill(template.cuerpo)]
+    after = [fill(text) for text in (template.vigencia, template.sin_cuenta,
+                                     template.enlace_alterno, template.seguridad, template.pie)]
+    texto = "\n\n".join([*before, f"{boton}: {enlace}", *after])
+
+    def paragraph(text: str) -> str:
+        return f"<p>{html.escape(text, quote=True)}</p>"
+
+    button = (f'<p><a href="{html.escape(enlace, quote=True)}">'
+              f"{html.escape(boton, quote=True)}</a></p>")
+    preheader = (
+        '<div style="display:none;max-height:0;overflow:hidden;opacity:0">'
+        f"{html.escape(fill(template.preheader), quote=True)}</div>"
+    )
+    body = "\n".join([preheader, *map(paragraph, before), button, *map(paragraph, after)])
+    page = (
+        '<!DOCTYPE html>\n<html lang="es-CO">\n<head>\n<meta charset="utf-8">\n'
+        f"<title>{html.escape(asunto, quote=True)}</title>\n</head>\n<body>\n{body}\n"
+        "</body>\n</html>\n"
+    )
+    return RenderedEmail(asunto=asunto, texto=texto, html=page)

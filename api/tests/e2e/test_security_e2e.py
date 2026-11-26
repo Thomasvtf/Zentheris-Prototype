@@ -21,6 +21,15 @@ contenido se prueba en `test_alerts_e2e.py`. Para que lleguen al servicio sin ba
 `make_test_settings()`. La prueba sigue siendo de la guardia: el contenido de la respuesta se
 prueba en `test_consumption_e2e.py` y `test_history_e2e.py`.
 
+Fase 9 (las 11 de «Miembros e invitaciones»): `call_api` instala el doble en memoria de
+`tests/services/members_fakes.py` sembrado con lo que dicen las membresías de la prueba (el rol de
+quien llama en `HOGAR_ID`, otro miembro activo con el `membresia_id` de la ruta y una invitación
+pendiente vigente con el `invitacion_id` de la ruta) y una sesión que admite `commit` y
+`rollback`. Superada la guardia responden su éxito del contrato (200, 201 o 204). Única
+excepción: un administrador que pide `salirDelHogar` pasa la guardia y recibe la respuesta de la
+regla RN-X-07 (409 `ADMIN_DEBE_TRANSFERIR`, hay otro miembro), no un 403/404 de la guardia. Su
+contenido se prueba en `test_members_e2e.py`.
+
 Los 401 llevan `codigo` = `NO_AUTENTICADO` (con `WWW-Authenticate: Bearer`) y el 404 sin
 membresía `NO_ENCONTRADO`; ambos cuerpos validan contra el esquema `Error` del contrato.
 
@@ -29,7 +38,7 @@ Matriz: docs/pruebas/matriz-pruebas-backend-v1.md (P-01…P-06).
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -52,7 +61,10 @@ from app.data.tips import UserTipRow
 from app.domain.simulator import TIMEZONE
 from app.errors import NOT_FOUND_MESSAGE, UNAUTHORIZED_MESSAGE
 from app.main import API_PREFIX, create_app
+from app.security.invitation_tokens import hash_invitation_token
+from app.services import backend_texts as backend_texts_service
 from app.services import consumption as consumption_service
+from app.services import members_invitations as members_service
 from app.services import thresholds as thresholds_service
 from tests.contract.test_c01_responses_match_schema import assert_matches_contract
 from tests.helpers.auth import (
@@ -67,6 +79,7 @@ from tests.helpers.auth import (
 )
 from tests.services.consumption_fakes import FakeSession as CountingSession
 from tests.services.consumption_fakes import install_fake_consumption_database
+from tests.services.members_fakes import FakeMembersDatabase, install_fake_members_database
 
 # --- Contrato -------------------------------------------------------------------------------
 
@@ -217,8 +230,40 @@ IMPLEMENTED_OPERATIONS: frozenset[str] = frozenset(
         "marcarAlertasLeidas",
         "listarConsejos",
         "actualizarEstadoConsejo",
+        # Fase 9: miembros e invitaciones (las 4 de /invitaciones no llevan hogar).
+        "listarMiembros",
+        "actualizarPermisos",
+        "expulsarMiembro",
+        "transferirAdministracion",
+        "salirDelHogar",
+        "crearInvitacion",
+        "revocarInvitacion",
+        "listarInvitacionesRecibidas",
+        "resolverTokenInvitacion",
+        "aceptarInvitacion",
+        "rechazarInvitacion",
     }
 )
+# Las 11 de la etiqueta «Miembros e invitaciones» del contrato (fase 9).
+MEMBERS_OPERATIONS: frozenset[str] = frozenset(
+    {
+        "listarMiembros",
+        "actualizarPermisos",
+        "expulsarMiembro",
+        "transferirAdministracion",
+        "salirDelHogar",
+        "crearInvitacion",
+        "revocarInvitacion",
+        "listarInvitacionesRecibidas",
+        "resolverTokenInvitacion",
+        "aceptarInvitacion",
+        "rechazarInvitacion",
+    }
+)
+# La guardia deja pasar y responde la regla, no la guardia (ver el módulo): (operación, rol).
+BUSINESS_ANSWER_AFTER_GUARDS: dict[tuple[str, str], tuple[int, str]] = {
+    ("salirDelHogar", "administrador"): (409, "ADMIN_DEBE_TRANSFERIR"),  # RN-X-07
+}
 
 ERROR_BODY_KEYS = {"codigo", "mensaje", "detalles"}
 UNAUTHORIZED_BODY = {
@@ -344,7 +389,14 @@ def call_api(e2e_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> CallApi
         include_required_query: bool = True,
     ) -> httpx.Response:
         install_fake_memberships(monkeypatch, rows)
-        if op_id in IMPLEMENTED_OPERATIONS:
+        if op_id in MEMBERS_OPERATIONS:
+            members_db = install_members_data(monkeypatch, rows)
+
+            def members_session() -> Iterator[Any]:
+                yield members_db.session()
+
+            monkeypatch.setitem(e2e_client.app.dependency_overrides, get_session, members_session)
+        elif op_id in IMPLEMENTED_OPERATIONS:
             install_implemented_operation_data(monkeypatch)
             # Las escrituras de la fase 8 hacen commit: sesión que lo admite (y lo cuenta).
             monkeypatch.setitem(
@@ -387,6 +439,59 @@ def install_implemented_operation_data(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(thresholds_service, "get_thresholds", fresh)
     monkeypatch.setattr(consumption_service, "get_thresholds", fresh)
     install_alert_and_tip_data(monkeypatch)
+
+
+MEMBER_JOINED_AT = datetime(2026, 11, 1, 12, tzinfo=TIMEZONE)
+OTHER_USER_ID = UUID("00000000-0000-4000-8000-0000000000a2")
+# `make_token` usa este correo por defecto: la invitación de la ruta es para quien llama.
+TOKEN_EMAIL = "persona@example.com"
+
+
+def install_members_data(
+    monkeypatch: pytest.MonkeyPatch, rows: list[ActiveMembershipRow]
+) -> FakeMembersDatabase:
+    """Doble de `app.data` de la fase 9, coherente con las membresías de la guardia.
+
+    `HOGAR_ID` existe; quien llama tiene ficha y, si `rows` lo dice, su membresía con ese rol; hay
+    otro miembro activo con `OTHER_PATH_IDS["membresia_id"]` y una invitación pendiente que vence
+    dentro de 7 días con `OTHER_PATH_IDS["invitacion_id"]` (para el correo del token de
+    `USER_ID`). El correo de la invitación nueva no es de ningún miembro. Textos del backend de
+    `make_test_settings()` (caché propia de la prueba); el envío del correo es un doble.
+    """
+    db = FakeMembersDatabase()
+    db.add_household(HOGAR_ID, "Casa de prueba")
+    db.add_user(USER_ID, "Persona de prueba", TOKEN_EMAIL)
+    db.add_user(OTHER_USER_ID, "Otra persona", "otra@example.com")
+    for row in rows:
+        if (row.usuario_id, row.hogar_id) == (USER_ID, HOGAR_ID):
+            db.add_membership(
+                HOGAR_ID,
+                USER_ID,
+                row.rol,
+                fecha_ingreso=MEMBER_JOINED_AT,
+                membresia_id=row.membresia_id,
+            )
+    db.add_membership(
+        HOGAR_ID,
+        OTHER_USER_ID,
+        "miembro",
+        fecha_ingreso=MEMBER_JOINED_AT,
+        membresia_id=OTHER_PATH_IDS["membresia_id"],
+    )
+    db.add_invitation(
+        HOGAR_ID,
+        TOKEN_EMAIL,
+        invitado_por=OTHER_USER_ID,
+        expira_en=datetime.now(TIMEZONE) + timedelta(days=7),
+        invitacion_id=OTHER_PATH_IDS["invitacion_id"],
+        # El token del cuerpo válido de `resolverTokenInvitacion` (solo se guarda su hash).
+        token_hash=hash_invitation_token(valid_body("resolverTokenInvitacion")["token"]),
+    )
+    install_fake_members_database(monkeypatch, db)
+    monkeypatch.setattr(backend_texts_service, "get_settings", make_test_settings)
+    texts = cache(backend_texts_service.get_backend_texts.__wrapped__)
+    monkeypatch.setattr(members_service, "get_backend_texts", texts)
+    return db
 
 
 def committing_session() -> Iterator[CountingSession]:
@@ -442,10 +547,26 @@ ALL_TRUE = dict.fromkeys(PERMISSIONS, True)
 ALL_FALSE = dict.fromkeys(PERMISSIONS, False)
 
 
-def assert_passes_guards(response: httpx.Response, op_id: str) -> None:
-    """Los guardias dejaron pasar: 200 válido si el servicio existe; si no, su esqueleto (501)."""
+def success_status(op_id: str) -> int:
+    """El único estado 2xx que declara el contrato para la operación (200, 201 o 204)."""
+    op = OPERATIONS[op_id]
+    responses = CONTRACT["paths"][op.path][op.method.lower()]["responses"]
+    (status,) = [int(code) for code in responses if str(code).startswith("2")]
+    return status
+
+
+def assert_passes_guards(response: httpx.Response, op_id: str, rol: str = "miembro") -> None:
+    """Los guardias dejaron pasar: el éxito del contrato si el servicio existe (o la respuesta de
+    la regla de `BUSINESS_ANSWER_AFTER_GUARDS`); si no existe, su esqueleto (501)."""
+    if (op_id, rol) in BUSINESS_ANSWER_AFTER_GUARDS:
+        status, codigo = BUSINESS_ANSWER_AFTER_GUARDS[op_id, rol]
+        assert response.status_code == status, (op_id, response.status_code, response.text)
+        assert response.json()["codigo"] == codigo
+        assert_matches_contract(op_id, response)
+        return
     if op_id in IMPLEMENTED_OPERATIONS:
-        assert response.status_code == 200, (op_id, response.status_code, response.text)
+        expected = success_status(op_id)
+        assert response.status_code == expected, (op_id, response.status_code, response.text)
         assert_matches_contract(op_id, response)
         return
     assert response.status_code == 501, (op_id, response.status_code, response.text)
@@ -590,6 +711,21 @@ def test_member_without_permissions_passes_membership_only_operations(
     assert_passes_guards(call_api(op_id, rows=[member(**ALL_FALSE)]), op_id)
 
 
+INVITATION_OPERATIONS = sorted(op for op in MEMBERS_OPERATIONS if not OPERATIONS[op].has_household)
+
+
+@pytest.mark.parametrize("op_id", INVITATION_OPERATIONS)
+def test_invitation_operations_need_only_the_token(call_api: CallApi, op_id: str) -> None:
+    """Las 4 de `/invitaciones` solo exigen token válido: sin ninguna membresía, éxito del contrato.
+
+    La invitación es para el correo del token (RN-X-05: el servicio compara el correo, no la
+    membresía). Regla: RN-X-01, RN-X-05, RN-X-06.
+    """
+    assert len(INVITATION_OPERATIONS) == 4
+    assert {guard_kind(op) for op in INVITATION_OPERATIONS} == {"usuario"}
+    assert_passes_guards(call_api(op_id, rows=[]), op_id)
+
+
 # --- P-05 -----------------------------------------------------------------------------------
 
 
@@ -615,7 +751,7 @@ def test_p06_admin_without_permissions_passes_every_guard(call_api: CallApi, op_
     las ya implementadas (`IMPLEMENTED_OPERATIONS`, el 200 de la matriz); 501 del esqueleto en
     las demás, cuyo 200 queda para cuando exista su servicio. Regla: RN-XVII-05.
     """
-    assert_passes_guards(call_api(op_id, rows=[admin(**ALL_FALSE)]), op_id)
+    assert_passes_guards(call_api(op_id, rows=[admin(**ALL_FALSE)]), op_id, "administrador")
 
 
 # --- 401 ------------------------------------------------------------------------------------

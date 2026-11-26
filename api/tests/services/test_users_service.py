@@ -4,6 +4,9 @@ Cubre las 8 operaciones de la fase 3: ficha (RN-IX-01, RN-IX-07), avatar (RN-I-0
 preferencias (RN-VI-04, RN-VII-01, RN-XVI-02, RN-XVI-03) y baja de la cuenta (RN-IX-09,
 DC-36). Cada llamada a datos, el commit y las llamadas a Supabase quedan en un registro
 ordenado para comprobar la transacción: commit solo con éxito y Supabase después del commit.
+La baja de la cuenta sigue el orden de bloqueo único hogar → membresía → ficha y borra la ficha
+antes del commit (RN-IX-09, DC-36; docstring de `delete_account`). La carrera con aceptar una
+invitación se prueba en test_delete_account_race.py.
 """
 
 import logging
@@ -49,15 +52,20 @@ DEFAULT_PREFERENCES = PreferencesRow(
 
 
 class FakeSession:
-    """Solo cuenta commits y los anota en el registro compartido; no ejecuta SQL."""
+    """Solo cuenta commits y rollbacks y los anota en el registro compartido; no ejecuta SQL."""
 
     def __init__(self, events: list[tuple[Any, ...]]) -> None:
         self.events = events
         self.commits = 0
+        self.rollbacks = 0
 
     def commit(self) -> None:
         self.commits += 1
         self.events.append(("commit",))
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
+        self.events.append(("rollback",))
 
     def exec(self, *_args: Any, **_kwargs: Any) -> None:  # pragma: no cover
         raise AssertionError("el servicio no debe ejecutar SQL directamente")
@@ -110,6 +118,16 @@ def data(monkeypatch: pytest.MonkeyPatch) -> FakeData:
             preferencias=DEFAULT_PREFERENCES,
         )
         return True
+
+    def lock_user_profile(_session: Any, usuario_id: UUID) -> UserProfileRow | None:
+        fake.events.append(("lock_user_profile", usuario_id))
+        return fake.profile
+
+    def delete_user_profile(_session: Any, usuario_id: UUID) -> bool:
+        fake.events.append(("delete_user_profile", usuario_id))
+        deleted = fake.profile is not None
+        fake.profile = None
+        return deleted
 
     def update_user_profile(_session: Any, usuario_id: UUID, changes: dict[str, Any]) -> bool:
         fake.events.append(("update_user_profile", usuario_id, dict(changes)))
@@ -183,6 +201,8 @@ def data(monkeypatch: pytest.MonkeyPatch) -> FakeData:
         (users_data, get_user_profile),
         (users_data, insert_user_with_default_preferences),
         (users_data, update_user_profile),
+        (users_data, lock_user_profile),
+        (users_data, delete_user_profile),
         (users_data, set_avatar_url),
         (users_data, get_preferences),
         (users_data, update_preferences),
@@ -239,6 +259,10 @@ def _lock_sequence(hogar_id: UUID = HOGAR_ID) -> list[tuple[Any, ...]]:
         ("lock_household", hogar_id),
         ("get_active_membership_of_user", USER_ID, True),
     ]
+
+
+# Último nivel del orden único: la ficha, después del hogar y la membresía.
+PROFILE_LOCK = ("lock_user_profile", USER_ID)
 
 
 def _assert_api_error(exc: ApiError, status: int, codigo: CodigoError) -> None:
@@ -649,6 +673,7 @@ def test_update_preferences_null_value_is_422(data: FakeData, session: FakeSessi
 def test_delete_account_admin_with_other_members_is_409_without_commit_or_supabase(
     data: FakeData, session: FakeSession, settings: Settings
 ) -> None:
+    data.profile = _profile()
     data.membership = _membership("administrador")
     data.other_members = 2
 
@@ -660,6 +685,7 @@ def test_delete_account_admin_with_other_members_is_409_without_commit_or_supaba
     names = data.names()
     assert "close_membership" not in names
     assert "delete_household" not in names
+    assert "delete_user_profile" not in names
     assert "delete_auth_user" not in names
     assert "delete_avatar_files" not in names
 
@@ -667,6 +693,7 @@ def test_delete_account_admin_with_other_members_is_409_without_commit_or_supaba
 def test_delete_account_only_admin_closes_membership_deletes_household_then_auth(
     data: FakeData, session: FakeSession, settings: Settings
 ) -> None:
+    data.profile = _profile()
     data.membership = _membership("administrador")
     data.other_members = 0
 
@@ -674,19 +701,23 @@ def test_delete_account_only_admin_closes_membership_deletes_household_then_auth
 
     assert data.events == [
         *_lock_sequence(),
+        PROFILE_LOCK,
         ("count_other_active_members", HOGAR_ID, USER_ID),
         ("close_membership", MEMBRESIA_ID, NOW),
         ("delete_household", HOGAR_ID),
+        ("delete_user_profile", USER_ID),
         ("commit",),
         ("delete_auth_user", USER_ID),
         ("delete_avatar_files", USER_ID),
     ]
     assert session.commits == 1
+    assert session.rollbacks == 0
 
 
 def test_delete_account_member_not_alone_closes_membership_keeps_household(
     data: FakeData, session: FakeSession, settings: Settings
 ) -> None:
+    data.profile = _profile()
     data.membership = _membership("miembro")
     data.other_members = 3
 
@@ -695,7 +726,12 @@ def test_delete_account_member_not_alone_closes_membership_keeps_household(
     names = data.names()
     assert data.find("close_membership") == ("close_membership", MEMBRESIA_ID, NOW)
     assert "delete_household" not in names
-    assert names.index("close_membership") < names.index("commit") < names.index("delete_auth_user")
+    assert (
+        names.index("close_membership")
+        < names.index("delete_user_profile")
+        < names.index("commit")
+        < names.index("delete_auth_user")
+    )
     assert names[-1] == "delete_avatar_files"
     assert session.commits == 1
 
@@ -711,30 +747,48 @@ def test_delete_account_only_member_with_member_role_deletes_household(
     assert data.find("delete_household") == ("delete_household", HOGAR_ID)
 
 
-def test_delete_account_without_membership_only_deletes_auth(
+def test_delete_account_without_membership_rechecks_and_deletes_profile_then_auth(
     data: FakeData, session: FakeSession, settings: Settings
 ) -> None:
+    data.profile = _profile()
+
     service.delete_account(session, USER_ID, settings, now=NOW)  # type: ignore[arg-type]
 
-    # Sin membresía en la lectura sin bloqueo: no se bloquea nada.
+    # Sin membresía en la lectura sin bloqueo: no se bloquea ningún hogar; tras bloquear la ficha
+    # se comprueba que no apareció una membresía mientras se esperaba.
     assert data.events == [
         ("get_active_membership_of_user", USER_ID, False),
+        PROFILE_LOCK,
+        ("get_active_membership_of_user", USER_ID, False),
+        ("delete_user_profile", USER_ID),
         ("commit",),
         ("delete_auth_user", USER_ID),
         ("delete_avatar_files", USER_ID),
     ]
+    assert data.profile is None
 
 
-def test_delete_account_locks_household_before_membership(
+def test_delete_account_without_profile_does_not_delete_it(
     data: FakeData, session: FakeSession, settings: Settings
 ) -> None:
+    service.delete_account(session, USER_ID, settings, now=NOW)  # type: ignore[arg-type]
+
+    assert "delete_user_profile" not in data.names()
+    assert data.names()[-3:] == ["commit", "delete_auth_user", "delete_avatar_files"]
+
+
+def test_delete_account_locks_household_then_membership_then_profile(
+    data: FakeData, session: FakeSession, settings: Settings
+) -> None:
+    data.profile = _profile()
     data.membership = _membership("miembro")
     data.other_members = 1
 
     service.delete_account(session, USER_ID, settings, now=NOW)  # type: ignore[arg-type]
 
-    assert data.events[:4] == [
+    assert data.events[:5] == [
         *_lock_sequence(),
+        PROFILE_LOCK,
         ("count_other_active_members", HOGAR_ID, USER_ID),
     ]
 
@@ -743,17 +797,65 @@ def test_delete_account_membership_closed_meanwhile_continues_without_membership
     data: FakeData, session: FakeSession, settings: Settings
 ) -> None:
     # Otra transacción cerró la membresía entre la lectura y el bloqueo del hogar.
-    data.membership_reads = [_membership("administrador"), None]
+    data.profile = _profile()
+    data.membership_reads = [_membership("administrador"), None, None]
     data.other_members = 2
 
     service.delete_account(session, USER_ID, settings, now=NOW)  # type: ignore[arg-type]
 
     assert data.events == [
         *_lock_sequence(),
+        PROFILE_LOCK,
+        ("get_active_membership_of_user", USER_ID, False),
+        ("delete_user_profile", USER_ID),
         ("commit",),
         ("delete_auth_user", USER_ID),
         ("delete_avatar_files", USER_ID),
     ]
+
+
+def test_delete_account_membership_appeared_while_locking_profile_rolls_back_and_retries(
+    data: FakeData, session: FakeSession, settings: Settings
+) -> None:
+    # Sin membresía al empezar; una aceptación confirmó mientras se esperaba la ficha.
+    data.profile = _profile()
+    accepted = _membership("miembro")
+    data.membership_reads = [None, accepted, accepted, accepted]
+    data.other_members = 1
+
+    service.delete_account(session, USER_ID, settings, now=NOW)  # type: ignore[arg-type]
+
+    assert data.events == [
+        ("get_active_membership_of_user", USER_ID, False),
+        PROFILE_LOCK,
+        ("get_active_membership_of_user", USER_ID, False),
+        ("rollback",),
+        *_lock_sequence(),
+        PROFILE_LOCK,
+        ("count_other_active_members", HOGAR_ID, USER_ID),
+        ("close_membership", MEMBRESIA_ID, NOW),
+        ("delete_user_profile", USER_ID),
+        ("commit",),
+        ("delete_auth_user", USER_ID),
+        ("delete_avatar_files", USER_ID),
+    ]
+    assert session.rollbacks == 1
+
+
+def test_delete_account_membership_appearing_every_round_is_runtime_error_without_commit(
+    data: FakeData, session: FakeSession, settings: Settings
+) -> None:
+    data.profile = _profile()
+    accepted = _membership("miembro")
+    data.membership_reads = [None, accepted] * service.LOCK_ATTEMPTS
+
+    with pytest.raises(RuntimeError):
+        service.delete_account(session, USER_ID, settings, now=NOW)  # type: ignore[arg-type]
+
+    assert session.commits == 0
+    assert session.rollbacks == service.LOCK_ATTEMPTS
+    assert "delete_user_profile" not in data.names()
+    assert "delete_auth_user" not in data.names()
 
 
 def test_delete_account_membership_moved_household_retries_once(
@@ -773,7 +875,9 @@ def test_delete_account_membership_moved_household_retries_once(
 
     assert data.events == [
         *_lock_sequence(HOGAR_ID),
+        ("rollback",),  # suelta el primer hogar antes de bloquear el nuevo
         *_lock_sequence(new_household),
+        PROFILE_LOCK,
         ("count_other_active_members", new_household, USER_ID),
         ("close_membership", new_membership.membresia_id, NOW),
         ("delete_household", new_household),
@@ -798,8 +902,9 @@ def test_delete_account_membership_moving_twice_is_runtime_error_without_commit(
     with pytest.raises(RuntimeError):
         service.delete_account(session, USER_ID, settings, now=NOW)  # type: ignore[arg-type]
 
-    assert data.events == [*_lock_sequence(HOGAR_ID), *_lock_sequence(second)]
+    assert data.events == [*_lock_sequence(HOGAR_ID), ("rollback",), *_lock_sequence(second)]
     assert session.commits == 0
+    assert session.rollbacks == 1
 
 
 def test_delete_account_uses_current_utc_time_by_default(

@@ -103,6 +103,8 @@ HOUSEHOLD_TABLES = (
 # Tablas de la fase 8 (alertas y consejos) y las metas: el onboarding no las toca (A-02); las
 # usan los almacenes de la recuperación y de las alertas (`tests/e2e/alerts_store.py`).
 ALERT_TABLES = ("metas_consumo", "alertas", "alertas_usuario", "consejos", "consejos_usuario")
+# Tabla de la fase 9 (invitaciones): la usa el almacén de `test_members_e2e.py`.
+MEMBER_TABLES = ("invitaciones_hogar",)
 TABLES = (
     "auth_users",
     "usuarios",
@@ -110,6 +112,7 @@ TABLES = (
     "perfiles_simulacion",
     *HOUSEHOLD_TABLES,
     *ALERT_TABLES,
+    *MEMBER_TABLES,
 )
 # Filas de un solo hogar con las 4 zonas básicas (el cuerpo por defecto de `body_of`).
 ONE_BASIC_HOUSEHOLD = {
@@ -203,6 +206,9 @@ class Store:
             id(getattr(module, name)): (name, handler)
             for module, name, handler in (
                 (users_data, "USER_PROFILE_SQL", self._user_profile),
+                # Fase 9: eliminarCuenta bloquea la ficha (`for update of u`) y la borra.
+                (users_data, "LOCK_USER_PROFILE_SQL", self._user_profile),
+                (users_data, "DELETE_USER_PROFILE_SQL", self._delete_user_profile),
                 (users_data, "INSERT_USER_SQL", self._insert_user),
                 (users_data, "INSERT_DEFAULT_PREFERENCES_SQL", self._insert_preferences),
                 (memberships_data, "ACTIVE_MEMBERSHIP_OF_USER_SQL", self._active_membership),
@@ -422,6 +428,33 @@ class Store:
         self.put(session, "usuarios", usuario_id, row)
         return FakeResult([{"id": usuario_id}])
 
+    def _delete_user_profile(self, session: StoreSession, params: Params) -> FakeResult:
+        """DELETE FROM usuarios … RETURNING id, con las acciones de las claves foráneas de 0002.
+
+        Cascada: preferencias_usuario, alertas_usuario y consejos_usuario. SET NULL:
+        hogar_miembros.usuario_id (la verificación miembros_activo_con_usuario rechaza dejar una
+        membresía ACTIVA sin usuario: 23514) e invitaciones_hogar.invitado_por (DC-36).
+        """
+        usuario_id = params["usuario_id"]
+        if usuario_id not in self.view(session, "usuarios"):
+            return FakeResult()
+        members = self.view(session, "hogar_miembros")
+        for key, row in members.items():
+            if row["usuario_id"] != usuario_id:
+                continue
+            self._require(row["estado"] != "activo", "23514", "miembros_activo_con_usuario")
+            self.put(session, "hogar_miembros", key, {**row, "usuario_id": None})
+        for key, row in self.view(session, "invitaciones_hogar").items():
+            if row["invitado_por"] == usuario_id:
+                self.put(session, "invitaciones_hogar", key, {**row, "invitado_por": None})
+        for table in ("alertas_usuario", "consejos_usuario"):
+            for key, row in self.view(session, table).items():
+                if row["usuario_id"] == usuario_id:
+                    self.put(session, table, key, None)
+        self.put(session, "preferencias_usuario", usuario_id, None)
+        self.put(session, "usuarios", usuario_id, None)
+        return FakeResult([{"id": usuario_id}], rowcount=1)
+
     def _insert_preferences(self, session: StoreSession, params: Params) -> FakeResult:
         usuario_id = params["usuario_id"]
         self.put(session, "preferencias_usuario", usuario_id, self._default_preferences())
@@ -488,11 +521,12 @@ class Store:
         return FakeResult([{"id": params["hogar_id"]}] if found else [])
 
     def _delete_household(self, session: StoreSession, params: Params) -> FakeResult:
-        """Cascada de 0002: miembros, zonas, fuente, sensores y lecturas."""
+        """Cascada de 0002: miembros, invitaciones, zonas, fuente, sensores y lecturas."""
         parents = {params["hogar_id"]}
         self.put(session, "hogares", params["hogar_id"], None)
         for table, column in (
             ("hogar_miembros", "hogar_id"),
+            ("invitaciones_hogar", "hogar_id"),
             ("fuentes_principales", "hogar_id"),
             ("zonas", "hogar_id"),
             ("sensores_zona", "zona_id"),
@@ -1284,13 +1318,15 @@ def test_from_the_profile_to_the_household_and_back_to_nothing(
     deleted = call(client, "eliminarCuenta", USER_ID)
 
     assert deleted.status_code == 204, deleted.text
-    assert db.events == [
+    assert db.events == [  # orden de bloqueo hogar → membresía → usuario (fase 9)
         "ACTIVE_MEMBERSHIP_OF_USER_SQL",
         "LOCK_HOUSEHOLD_SQL",
         "ACTIVE_MEMBERSHIP_OF_USER_FOR_UPDATE_SQL",
+        "LOCK_USER_PROFILE_SQL",
         "COUNT_OTHER_ACTIVE_MEMBERS_SQL",
         "CLOSE_MEMBERSHIP_SQL",
         "DELETE_HOUSEHOLD_SQL",
+        "DELETE_USER_PROFILE_SQL",
         "commit",
         "delete_auth_user",
         "delete_avatar_files",

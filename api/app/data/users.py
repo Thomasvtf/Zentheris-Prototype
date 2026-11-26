@@ -33,8 +33,7 @@ _NOT_NULL_FIELDS = frozenset(
 )
 
 # RN-IX-07, RN-VII-01: ficha del usuario (perfil) con sus preferencias (1:1).
-USER_PROFILE_SQL = text(
-    """
+_USER_PROFILE_BASE = """
     select u.id,
            u.nombre_completo,
            u.telefono,
@@ -45,6 +44,20 @@ USER_PROFILE_SQL = text(
       from usuarios u
       join preferencias_usuario p on p.usuario_id = u.id
      where u.id = :usuario_id
+    """
+USER_PROFILE_SQL = text(_USER_PROFILE_BASE)
+# RN-IX-09, RN-X-06, DC-36: igual, bloqueando SOLO la fila de usuarios (`for update of u`), último
+# nivel del orden de bloqueo hogar → membresía → usuario. Cierra la carrera entre eliminar la
+# cuenta y aceptar una invitación.
+LOCK_USER_PROFILE_SQL = text(_USER_PROFILE_BASE + " for update of u")
+
+# RN-IX-09, DC-36: borra la ficha. En cascada: preferencias_usuario, alertas_usuario y
+# consejos_usuario; a nulo: hogar_miembros.usuario_id e invitaciones_hogar.invitado_por.
+DELETE_USER_PROFILE_SQL = text(
+    """
+    delete from usuarios
+     where id = :usuario_id
+    returning id
     """
 )
 
@@ -150,8 +163,35 @@ def get_user_profile(session: Session, usuario_id: UUID) -> UserProfileRow | Non
     """
     result = session.exec(USER_PROFILE_SQL, params={"usuario_id": usuario_id})
     row = result.mappings().first()
-    if row is None:
-        return None
+    return None if row is None else _to_user_profile_row(row)
+
+
+def lock_user_profile(session: Session, usuario_id: UUID) -> UserProfileRow | None:
+    """Como `get_user_profile`, pero `FOR UPDATE OF u` sobre la fila de usuarios (RN-IX-09, DC-36).
+
+    Último nivel del orden de bloqueo único (hogar → membresía → usuario): se pide después de
+    `lock_household` y de las membresías. None si la persona no tiene ficha o si otra transacción
+    la borró mientras se esperaba el bloqueo (cuenta eliminándose). Sin commit.
+    """
+    result = session.exec(LOCK_USER_PROFILE_SQL, params={"usuario_id": usuario_id})
+    row = result.mappings().first()
+    return None if row is None else _to_user_profile_row(row)
+
+
+def delete_user_profile(session: Session, usuario_id: UUID) -> bool:
+    """Borra la ficha del usuario dentro de la transacción (RN-IX-09, DC-36, I-03).
+
+    Cascada a preferencias_usuario, alertas_usuario y consejos_usuario; `SET NULL` en
+    hogar_miembros.usuario_id e invitaciones_hogar.invitado_por. Su membresía activa debe estar
+    cerrada antes (la verificación miembros_activo_con_usuario no admite una activa sin usuario).
+    True si borró la fila. Sin commit.
+    """
+    result = session.exec(DELETE_USER_PROFILE_SQL, params={"usuario_id": usuario_id})
+    return result.mappings().first() is not None
+
+
+def _to_user_profile_row(row: Mapping[str, Any]) -> UserProfileRow:
+    """Convierte la fila de USER_PROFILE_SQL (o su variante con bloqueo) en UserProfileRow."""
     return UserProfileRow(
         id=as_uuid(row["id"]),
         nombre_completo=row["nombre_completo"],

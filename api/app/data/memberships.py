@@ -1,7 +1,7 @@
 """Consultas de hogar_miembros y permisos.
 
-Las demás funciones se escriben en la sesión de cada endpoint (ver
-docs/MAPA-DE-INTEGRACION.md).
+Membresía activa, alta, cierre, destinatarios de alertas y gestión de miembros (fase 9). Las
+demás funciones se escriben en la sesión de cada endpoint (ver docs/MAPA-DE-INTEGRACION.md).
 """
 
 from collections.abc import Mapping
@@ -302,3 +302,253 @@ def get_alert_permission(session: Session, hogar_id: UUID) -> bool | None:
     result = session.exec(ALERT_PERMISSION_SQL, params={"hogar_id": hogar_id})
     row = result.mappings().first()
     return None if row is None else bool(row["permiso_recibir_alertas"])
+
+
+# --- Fase 9: miembros del hogar (RN-II-01, RN-II-02, RN-X-06, RN-X-07, RN-IX-09, DC-36) ---------
+
+MembershipRole = Literal["administrador", "miembro"]
+MEMBERSHIP_ROLES = frozenset({"administrador", "miembro"})
+
+# RN-II-02, R-01: miembros activos del hogar con su ficha; el administrador primero, luego por
+# fecha de ingreso. Una membresía activa siempre tiene usuario (miembros_activo_con_usuario).
+ACTIVE_MEMBERS_SQL = text(
+    """
+    select m.id as membresia_id,
+           m.usuario_id,
+           u.nombre_completo,
+           u.avatar_url,
+           m.rol,
+           m.fecha_ingreso
+      from hogar_miembros m
+      join usuarios u on u.id = m.usuario_id
+     where m.hogar_id = :hogar_id
+       and m.estado = 'activo'
+     order by case when m.rol = 'administrador' then 0 else 1 end,
+              m.fecha_ingreso,
+              m.id
+    """
+)
+
+# RN-II-02: miembros activos del hogar (límite de 5).
+COUNT_ACTIVE_MEMBERS_SQL = text(
+    """
+    select count(*) as total
+      from hogar_miembros
+     where hogar_id = :hogar_id
+       and estado = 'activo'
+    """
+)
+
+# RN-X-07, R-01: una membresía por id solo si es de ese hogar (cualquier estado).
+_HOUSEHOLD_MEMBERSHIP_BASE = """
+    select id as membresia_id,
+           hogar_id,
+           usuario_id,
+           rol,
+           estado
+      from hogar_miembros
+     where id = :membresia_id
+       and hogar_id = :hogar_id
+    """
+HOUSEHOLD_MEMBERSHIP_SQL = text(_HOUSEHOLD_MEMBERSHIP_BASE)
+# Igual, bloqueando la fila (después de lock_household: orden hogar → membresía → usuario).
+HOUSEHOLD_MEMBERSHIP_FOR_UPDATE_SQL = text(_HOUSEHOLD_MEMBERSHIP_BASE + " for update")
+
+# RN-I-03, RN-II-02: la membresía activa del usuario en ese hogar.
+_USER_MEMBERSHIP_IN_HOUSEHOLD_BASE = """
+    select id as membresia_id,
+           hogar_id,
+           usuario_id,
+           rol,
+           estado
+      from hogar_miembros
+     where hogar_id = :hogar_id
+       and usuario_id = :usuario_id
+       and estado = 'activo'
+    """
+USER_MEMBERSHIP_IN_HOUSEHOLD_SQL = text(_USER_MEMBERSHIP_IN_HOUSEHOLD_BASE)
+# Igual, bloqueando la fila (guardia de gestión del administrador).
+USER_MEMBERSHIP_IN_HOUSEHOLD_FOR_UPDATE_SQL = text(
+    _USER_MEMBERSHIP_IN_HOUSEHOLD_BASE + " for update"
+)
+
+# RN-II-02, RN-II-04, RN-X-07: cambia el rol de una membresía activa (transferir la administración).
+SET_MEMBERSHIP_ROLE_SQL = text(
+    """
+    update hogar_miembros
+       set rol = :rol
+     where id = :membresia_id
+       and estado = 'activo'
+    """
+)
+
+# RN-X-06, RN-II-01: quien acepta una invitación entra como miembro activo.
+INSERT_MEMBER_MEMBERSHIP_SQL = text(
+    """
+    insert into hogar_miembros (hogar_id, usuario_id, rol, estado, fecha_ingreso)
+    values (:hogar_id, :usuario_id, 'miembro', 'activo', :fecha_ingreso)
+    returning id
+    """
+)
+
+# RN-X-05: ¿el correo ya es de un miembro activo del hogar? El correo vive en auth.users.
+ACTIVE_MEMBER_EMAIL_SQL = text(
+    """
+    select 1 as existe
+      from hogar_miembros m
+      join auth.users au on au.id = m.usuario_id
+     where m.hogar_id = :hogar_id
+       and m.estado = 'activo'
+       and lower(au.email) = lower(:correo)
+     limit 1
+    """
+)
+
+
+@dataclass(frozen=True)
+class MemberRow:
+    """Miembro activo del hogar con su ficha (RN-II-02, RN-X-07)."""
+
+    membresia_id: UUID
+    usuario_id: UUID
+    nombre_completo: str
+    avatar_url: str | None  # ruta en el bucket privado de avatares (DC-43)
+    rol: MembershipRole
+    fecha_ingreso: datetime
+
+
+@dataclass(frozen=True)
+class MembershipRow:
+    """Fila de hogar_miembros: id, hogar, usuario (nulo si eliminó su cuenta), rol y estado."""
+
+    membresia_id: UUID
+    hogar_id: UUID
+    usuario_id: UUID | None
+    rol: MembershipRole
+    estado: Literal["activo", "inactivo"]
+
+
+def list_active_members(session: Session, hogar_id: UUID) -> list[MemberRow]:
+    """Miembros activos del hogar con nombre y avatar (RN-II-02, R-01).
+
+    Orden: administrador primero, luego `fecha_ingreso` y `membresia_id`. Sin commit.
+    """
+    result = session.exec(ACTIVE_MEMBERS_SQL, params={"hogar_id": hogar_id})
+    return [
+        MemberRow(
+            membresia_id=as_uuid(row["membresia_id"]),
+            usuario_id=as_uuid(row["usuario_id"]),
+            nombre_completo=row["nombre_completo"],
+            avatar_url=row["avatar_url"],
+            rol=row["rol"],
+            fecha_ingreso=row["fecha_ingreso"],
+        )
+        for row in result.mappings().all()
+    ]
+
+
+def count_active_members(session: Session, hogar_id: UUID) -> int:
+    """Miembros activos del hogar (RN-II-02: máximo 5). Sin commit."""
+    result = session.exec(COUNT_ACTIVE_MEMBERS_SQL, params={"hogar_id": hogar_id})
+    row = result.mappings().first()
+    return int(row["total"]) if row is not None else 0
+
+
+def get_household_membership(
+    session: Session, hogar_id: UUID, membresia_id: UUID, *, for_update: bool = False
+) -> MembershipRow | None:
+    """La membresía `membresia_id` solo si es de `hogar_id`, en cualquier estado (RN-X-07, R-01).
+
+    Una membresía de otro hogar devuelve None (P-01). Con `for_update=True` bloquea la fila; se
+    pide después de `lock_household` (orden hogar → membresía → usuario). Sin commit.
+    """
+    statement = HOUSEHOLD_MEMBERSHIP_FOR_UPDATE_SQL if for_update else HOUSEHOLD_MEMBERSHIP_SQL
+    result = session.exec(
+        statement,
+        params={"hogar_id": hogar_id, "membresia_id": membresia_id},
+    )
+    row = result.mappings().first()
+    return None if row is None else _to_membership_row(row)
+
+
+def get_user_membership_in_household(
+    session: Session, hogar_id: UUID, usuario_id: UUID, *, for_update: bool = False
+) -> MembershipRow | None:
+    """La membresía 'activo' del usuario en ese hogar; None si no la tiene (RN-I-03, RN-II-02).
+
+    Con `for_update=True` bloquea la fila (guardia de gestión, después de `lock_household`).
+    Sin commit.
+    """
+    statement = (
+        USER_MEMBERSHIP_IN_HOUSEHOLD_FOR_UPDATE_SQL
+        if for_update
+        else USER_MEMBERSHIP_IN_HOUSEHOLD_SQL
+    )
+    result = session.exec(
+        statement,
+        params={"hogar_id": hogar_id, "usuario_id": usuario_id},
+    )
+    row = result.mappings().first()
+    return None if row is None else _to_membership_row(row)
+
+
+def set_membership_role(session: Session, membresia_id: UUID, rol: MembershipRole) -> None:
+    """Cambia el rol de una membresía activa (RN-II-02, RN-X-07: transferir la administración).
+
+    El servicio baja primero al administrador y luego sube al destino: el índice
+    uq_miembros_admin_activo admite un solo administrador activo por hogar. ValueError con un rol
+    desconocido. Sin commit.
+    """
+    if rol not in MEMBERSHIP_ROLES:
+        raise ValueError("Rol de membresía no permitido.")
+    session.exec(SET_MEMBERSHIP_ROLE_SQL, params={"membresia_id": membresia_id, "rol": rol})
+
+
+def insert_member_membership(
+    session: Session, *, hogar_id: UUID, usuario_id: UUID, fecha_ingreso: datetime
+) -> UUID:
+    """Crea la membresía 'miembro' y 'activo' de quien acepta una invitación (RN-X-06, RN-II-01).
+
+    Devuelve el id nuevo. ActiveMembershipExistsError si el usuario ya tiene otra membresía activa
+    (23505 de uq_miembros_usuario_activo). Cualquier otra IntegrityError sube tal cual (por
+    ejemplo, 23514 del trigger de 5 miembros). La transacción queda abortada. Sin commit.
+    """
+    try:
+        result = session.exec(
+            INSERT_MEMBER_MEMBERSHIP_SQL,
+            params={
+                "hogar_id": hogar_id,
+                "usuario_id": usuario_id,
+                "fecha_ingreso": fecha_ingreso,
+            },
+        )
+    except IntegrityError as exc:
+        if _violates_active_user_index(exc):
+            # `from None`: el detalle de Postgres lleva el id del usuario (S-01).
+            raise ActiveMembershipExistsError("El usuario ya tiene un hogar activo.") from None
+        raise
+    return as_uuid(result.mappings().one()["id"])
+
+
+def is_active_member_email(session: Session, hogar_id: UUID, correo: str) -> bool:
+    """True si algún miembro activo del hogar tiene ese correo (RN-X-05: ya es miembro).
+
+    Une auth.users (email) y compara con `lower()` en ambos lados. Solo lectura. Sin commit.
+    """
+    result = session.exec(
+        ACTIVE_MEMBER_EMAIL_SQL,
+        params={"hogar_id": hogar_id, "correo": correo},
+    )
+    return result.mappings().first() is not None
+
+
+def _to_membership_row(row: Mapping[str, Any]) -> MembershipRow:
+    """Convierte una fila de hogar_miembros en MembershipRow (usuario_id puede ser nulo)."""
+    usuario_id = row["usuario_id"]
+    return MembershipRow(
+        membresia_id=as_uuid(row["membresia_id"]),
+        hogar_id=as_uuid(row["hogar_id"]),
+        usuario_id=None if usuario_id is None else as_uuid(usuario_id),
+        rol=row["rol"],
+        estado=row["estado"],
+    )

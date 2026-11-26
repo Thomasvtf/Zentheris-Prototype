@@ -644,3 +644,97 @@ def test_alert_recipients(categoria: str, permission: bool, expected) -> None:
 
 def test_alert_recipients_empty() -> None:
     assert R.alert_recipients("consumo", [], True) == []
+
+
+# ------------------------------------------------------------------ nuevo miembro
+# RN-X-06, RN-XIV-07 (4), RN-XIV-08 / DC-25 (`nuevo_miembro:<membresia_id>`), RN-VI-02.
+NEW_MEMBERSHIP = UUID("6f1c2b8e-0d7a-4c5e-9b1f-2a3d4e5f6a7b")
+JOINED = datetime(2026, 11, 25, 4, 30, tzinfo=UTC)  # 23:30 Bogotá del 24
+
+
+def plan_new_member(**changes) -> R.PlannedAlert:
+    arguments = {"membresia_id": NEW_MEMBERSHIP, "nombre": "Luis Gómez",
+                 "hogar_nombre": "Casa Pérez", "created_at": JOINED}
+    arguments.update(changes)
+    return R.plan_new_member_alert(texts(), **arguments)
+
+
+def test_new_member_rule_name() -> None:
+    assert R.NEW_MEMBER == "nuevo_miembro"
+
+
+def test_new_member_event_key() -> None:
+    assert R.new_member_event_key(NEW_MEMBERSHIP) == f"nuevo_miembro:{NEW_MEMBERSHIP}"
+    assert R.new_member_event_key(NEW_MEMBERSHIP) == F.build_event_key(
+        "nuevo_miembro", str(NEW_MEMBERSHIP))
+
+
+def test_new_member_event_key_differs_by_membership() -> None:
+    assert R.new_member_event_key(UUID(int=1)) != R.new_member_event_key(UUID(int=2))
+
+
+def test_plan_new_member_alert() -> None:
+    assert plan_new_member() == R.PlannedAlert(
+        regla_origen="nuevo_miembro",
+        categoria="informacion",
+        severidad="informativa",
+        titulo="Luis Gómez se unió al hogar",
+        mensaje="Luis Gómez ya forma parte de Casa Pérez.",
+        zona_id=None,
+        clave_evento=f"nuevo_miembro:{NEW_MEMBERSHIP}",
+        created_at=JOINED,
+    )
+
+
+def test_plan_new_member_alert_uses_the_template() -> None:
+    template = texts().alerts["nuevo_miembro"]
+    alert = plan_new_member(nombre="Ana", hogar_nombre="Apto 301")
+    assert alert.titulo == template.titulo.replace("{nombre}", "Ana")
+    assert alert.mensaje == template.mensaje.replace("{nombre}", "Ana").replace(
+        "{hogar}", "Apto 301")
+
+
+def test_plan_new_member_alert_keeps_values_as_written() -> None:
+    alert = plan_new_member(nombre="{hogar} <b>", hogar_nombre="{nombre}")
+    assert alert.titulo == "{hogar} <b> se unió al hogar"
+    assert alert.mensaje == "{hogar} <b> ya forma parte de {nombre}."
+
+
+def test_plan_new_member_alert_keeps_created_at() -> None:
+    moment = datetime(2026, 11, 24, 23, 30, tzinfo=TIMEZONE)
+    assert plan_new_member(created_at=moment).created_at == moment
+
+
+def test_plan_new_member_alert_rejects_naive_created_at() -> None:
+    with pytest.raises(ValueError):
+        plan_new_member(created_at=JOINED.replace(tzinfo=None))
+
+
+NEW = R.AlertMember(UUID(int=21), "miembro", notif_consumo=True, notif_consejos=True)
+
+
+@pytest.mark.parametrize(
+    ("permission", "expected"),
+    [(True, [MEMBER, ADMIN]), (False, [ADMIN])],
+)
+def test_new_member_recipients(permission: bool, expected) -> None:
+    members = [MEMBER, NEW, ADMIN, QUIET, ADMIN_QUIET]
+    assert R.new_member_recipients(members, permission, NEW.usuario_id) == [
+        m.usuario_id for m in expected]
+
+
+def test_new_member_recipients_exclude_the_new_member_even_as_admin() -> None:
+    new_admin = R.AlertMember(UUID(int=22), "administrador", notif_consumo=True,
+                              notif_consejos=True)
+    assert R.new_member_recipients([new_admin, MEMBER], False, new_admin.usuario_id) == []
+
+
+def test_new_member_recipients_respect_the_consumption_switch() -> None:
+    """La categoría informacion usa `notif_consumo`; `notif_consejos` no cuenta."""
+    only_tips = R.AlertMember(UUID(int=23), "miembro", notif_consumo=False, notif_consejos=True)
+    assert R.new_member_recipients([only_tips, ADMIN_QUIET], True, NEW.usuario_id) == []
+
+
+def test_new_member_recipients_only_the_new_member() -> None:
+    assert R.new_member_recipients([NEW], True, NEW.usuario_id) == []
+    assert R.new_member_recipients([], True, NEW.usuario_id) == []

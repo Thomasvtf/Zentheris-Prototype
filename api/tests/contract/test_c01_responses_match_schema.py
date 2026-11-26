@@ -23,7 +23,9 @@ RN-XIII-01 a RN-XIII-06, RN-XVII-02, RN-I-03, RN-IV-05, DC-29 a DC-31, DC-34 (v0
 `PuntoSerie.zonas` solo con el filtro General, en el orden de `participacion_zonas`); y las 5
 operaciones de alertas y consejos (fase 8: `listarAlertas`, `contarAlertasNoLeidas`,
 `marcarAlertasLeidas`, `listarConsejos`, `actualizarEstadoConsejo`) con el servicio reemplazado
-por un doble: RN-XIV-01 a RN-XIV-05, RN-XV-02 a RN-XV-06, RN-XII-02, RN-I-03, RN-VI-05.
+por un doble: RN-XIV-01 a RN-XIV-05, RN-XV-02 a RN-XV-06, RN-XII-02, RN-I-03, RN-VI-05; y las 11
+operaciones de miembros e invitaciones (fase 9) con el servicio reemplazado por un doble:
+RN-II-01 a RN-II-04, RN-X-01, RN-X-05 a RN-X-08, RN-XVI-07, DC-41, DC-42.
 Las demás: TODO(C-01).
 """
 
@@ -71,9 +73,22 @@ from app.schemas.alerts_tips import (
     ConsejoEstadoActualizar,
     ConsejosLista,
 )
+from app.schemas.common import Rol
+from app.schemas.households import Permisos, PermisosActualizar
+from app.schemas.members_invitations import (
+    InvitacionCrear,
+    InvitacionesRecibidasLista,
+    InvitacionPendiente,
+    InvitacionRecibida,
+    InvitacionToken,
+    Miembro,
+    MiembrosHogar,
+)
+from app.schemas.users import MembresiaResumen
 from app.services import alerts_tips as alerts_tips_service
 from app.services import consumption as consumption_service
 from app.services import hour_recovery, supabase_admin
+from app.services import members_invitations as members_service
 from app.services.backend_texts import get_backend_texts
 from tests.helpers.auth import (
     TEST_SUPABASE_URL,
@@ -134,16 +149,37 @@ ALERTS_OPERATIONS = frozenset(
         "actualizarEstadoConsejo",
     }
 )
+MEMBERS_OPERATIONS = frozenset(
+    {
+        "listarMiembros",
+        "actualizarPermisos",
+        "expulsarMiembro",
+        "transferirAdministracion",
+        "salirDelHogar",
+        "crearInvitacion",
+        "revocarInvitacion",
+        "listarInvitacionesRecibidas",
+        "resolverTokenInvitacion",
+        "aceptarInvitacion",
+        "rechazarInvitacion",
+    }
+)
 # Operaciones con C-01 real: las de la fase 3, el onboarding, la salud (sin autenticación), las
-# consultas de consumo de la fase 6, el historial de la fase 7 y las alertas y consejos de la 8.
-COVERED_OPERATIONS = PHASE_OPERATIONS | CONSUMPTION_OPERATIONS | ALERTS_OPERATIONS | {
+# consultas de consumo de la fase 6, el historial de la fase 7, las alertas y consejos de la 8 y
+# los miembros e invitaciones de la 9.
+COVERED_OPERATIONS = (
+    PHASE_OPERATIONS | CONSUMPTION_OPERATIONS | ALERTS_OPERATIONS | MEMBERS_OPERATIONS
+) | {
     "obtenerSalud",
     "crearHogarOnboarding",
     HISTORY_OPERATION,
 }
-# Rangos del contrato que no se pueden provocar: `/salud` no tiene parámetros ni cuerpo, así que
-# ninguna petición a esa operación da un 4XX propio.
-UNREACHABLE_RANGES = frozenset({("obtenerSalud", "4XX")})
+# Respuestas del contrato que no se pueden provocar: `/salud` no tiene parámetros ni cuerpo, así
+# que ninguna petición a esa operación da un 4XX propio; y `transferirAdministracion` declara 409,
+# pero ninguna regla del servicio lo produce (destino inexistente o inactivo → 404; la propia
+# membresía → 422).
+# TODO(pendiente: el contrato declara 409 en transferirAdministracion pero ninguna regla lo produce)
+UNREACHABLE_RANGES = frozenset({("obtenerSalud", "4XX"), ("transferirAdministracion", "409")})
 # Respuestas que necesitan un cliente propio (el 500 no se propaga) y tienen su prueba aparte.
 COVERED_BY_OWN_TEST = frozenset({("eliminarCuenta", "500")})
 
@@ -243,13 +279,17 @@ def assert_matches_error_schema(response: Any) -> None:
 
 
 class RecordingSession:
-    """Sesión de la petición: solo cuenta commits; cualquier otro uso falla (sin SQL)."""
+    """Sesión de la petición: solo cuenta commits y rollbacks; cualquier otro uso falla (sin SQL)."""
 
     def __init__(self) -> None:
         self.commits = 0
+        self.rollbacks = 0
 
     def commit(self) -> None:
         self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
 
     def __getattr__(self, name: str) -> Any:
         raise AssertionError(f"RecordingSession no admite `{name}`: reemplaza la función de datos.")
@@ -314,6 +354,17 @@ class FakeStore:
         self._check(session, usuario_id)
         return None if self.profile is None else self.profile.preferencias
 
+    def lock_user_profile(self, session: object, usuario_id: UUID) -> UserProfileRow | None:
+        self._check(session, usuario_id)
+        return self.profile
+
+    def delete_user_profile(self, session: object, usuario_id: UUID) -> bool:
+        self._check(session, usuario_id)
+        self.calls.append(("delete_user_profile", usuario_id))
+        deleted = self.profile is not None
+        self.profile = None
+        return deleted
+
     def update_preferences(
         self, session: object, usuario_id: UUID, changes: Mapping[str, bool | str]
     ) -> PreferencesRow | None:
@@ -368,6 +419,8 @@ def install_store(monkeypatch: pytest.MonkeyPatch, store: FakeStore) -> None:
                 "set_avatar_url",
                 "get_preferences",
                 "update_preferences",
+                "lock_user_profile",
+                "delete_user_profile",
             ),
         ),
         (
@@ -899,7 +952,9 @@ def test_cases_cover_every_declared_response_of_the_phase() -> None:
         for code in OPERATIONS[operation_id][2]["responses"]
         if (operation_id, str(code)) not in UNREACHABLE_RANGES | COVERED_BY_OWN_TEST
     }
-    cases = CASES + ONBOARDING_CASES + CONSUMPTION_CASES + HISTORY_CASES + ALERTS_CASES
+    cases = (
+        CASES + ONBOARDING_CASES + CONSUMPTION_CASES + HISTORY_CASES + ALERTS_CASES + MEMBERS_CASES
+    )
     covered = {(case.operation_id, case.status) for case in cases}
     assert covered == declared
     assert len({(c.operation_id, c.name) for c in cases}) == len(cases)
@@ -979,6 +1034,7 @@ def test_delete_account_passes_settings_and_token_user_to_supabase(
     assert store.calls == [
         ("close_membership", MEMBRESIA_ID),
         ("delete_household", HOGAR_ID),
+        ("delete_user_profile", USER_ID),  # la ficha se borra en la transacción (DC-36)
         ("delete_auth_user", TEST_SUPABASE_URL, USER_ID),
         ("delete_avatar_files", TEST_SUPABASE_URL, USER_ID),
     ]
@@ -2367,6 +2423,732 @@ def test_update_tip_status_body_is_the_updated_tip(
     assert body["id"] == str(FIRST_TIP_ID)
     assert body["estado"] == estado
     assert (body["completada_en"] is not None) is completed
+
+
+# --- miembros e invitaciones (fase 9) -----------------------------------------------------
+# Las 11 operaciones con el servicio reemplazado por un doble (monkeypatch de
+# `app.services.members_invitations`): aquí se prueba la capa HTTP (validación de la entrada,
+# guardias, la sesión de la petición, el usuario y el correo del token, y el cuerpo contra el
+# contrato). Las reglas (RN-II-01..04, RN-X-05..08, RN-IX-03, DC-04, DC-25, DC-41, DC-42) están
+# probadas con el servicio real en `tests/services/test_members_invitations_service.py`.
+# Los errores que decide el servicio los lanza el doble con el código del contrato.
+
+MEMBERS_SERVICE_FUNCTIONS = {
+    "listarMiembros": "list_members",
+    "actualizarPermisos": "update_permissions",
+    "expulsarMiembro": "remove_member",
+    "transferirAdministracion": "transfer_admin",
+    "salirDelHogar": "leave_household",
+    "crearInvitacion": "create_invitation",
+    "revocarInvitacion": "revoke_invitation",
+    "listarInvitacionesRecibidas": "list_received_invitations",
+    "resolverTokenInvitacion": "resolve_invitation_token",
+    "aceptarInvitacion": "accept_invitation",
+    "rechazarInvitacion": "reject_invitation",
+}
+MEMBERS_ADMIN_OPERATIONS = frozenset(
+    {
+        "actualizarPermisos",
+        "expulsarMiembro",
+        "transferirAdministracion",
+        "crearInvitacion",
+        "revocarInvitacion",
+    }
+)
+INVITEE_OPERATIONS = frozenset(
+    {
+        "listarInvitacionesRecibidas",
+        "resolverTokenInvitacion",
+        "aceptarInvitacion",
+        "rechazarInvitacion",
+    }
+)
+_MEMBER_GUARD_CODES = frozenset({"NO_AUTENTICADO", "NO_ENCONTRADO", "VALIDACION"})
+_ADMIN_GUARD_CODES = _MEMBER_GUARD_CODES | {"NO_ES_ADMINISTRADOR"}
+_INVITATION_STATE_CODES = frozenset({"INVITACION_NO_PENDIENTE", "INVITACION_EXPIRADA"})
+_INVITEE_CODES = (
+    frozenset({"NO_AUTENTICADO", "CORREO_NO_COINCIDE", "NO_ENCONTRADO", "VALIDACION"})
+    | _INVITATION_STATE_CODES
+)
+MEMBERS_ERROR_CODES = {
+    "listarMiembros": _MEMBER_GUARD_CODES,
+    "actualizarPermisos": _ADMIN_GUARD_CODES,
+    "expulsarMiembro": _ADMIN_GUARD_CODES | {"ADMIN_DEBE_TRANSFERIR", "ADMIN_UNICO_MIEMBRO"},
+    "transferirAdministracion": _ADMIN_GUARD_CODES,
+    "salirDelHogar": _MEMBER_GUARD_CODES | {"ADMIN_DEBE_TRANSFERIR", "ADMIN_UNICO_MIEMBRO"},
+    "crearInvitacion": _ADMIN_GUARD_CODES
+    | {"LIMITE_MIEMBROS", "INVITACION_PENDIENTE_EXISTENTE", "YA_ES_MIEMBRO"},
+    "revocarInvitacion": _ADMIN_GUARD_CODES | _INVITATION_STATE_CODES,
+    "listarInvitacionesRecibidas": frozenset({"NO_AUTENTICADO"}),
+    "resolverTokenInvitacion": _INVITEE_CODES,
+    "aceptarInvitacion": _INVITEE_CODES | {"LIMITE_MIEMBROS", "MEMBRESIA_ACTIVA_EXISTENTE"},
+    "rechazarInvitacion": _INVITEE_CODES,
+}
+MEMBERS_JOINED_AT = datetime(2026, 11, 2, 9, 30, tzinfo=TIMEZONE)
+INVITED_AT = datetime(2026, 11, 23, 10, 0, tzinfo=TIMEZONE)
+INVITATION_EXPIRES_AT = INVITED_AT + timedelta(days=7)  # RN-X-05
+OTHER_MEMBER_ID = sample_id(3, 1)  # membresía de otra persona del hogar
+INVITATION_ID = sample_id(5, 0)
+NEW_MEMBERSHIP_ID = sample_id(3, 9)
+INVITED_EMAIL = "invitada@example.com"
+INVITATION_TOKEN = "token-de-prueba-sin-valor-real"
+MEMBERS_HOUSEHOLD_NAME = "Casa Gómez"
+DEFAULT_PERMISSIONS = Permisos(  # permisos por defecto de un hogar nuevo (RN-II-03)
+    ver_consumo_actual=True, ver_historial=True, recibir_alertas=True, modificar_metas=False
+)
+
+
+def sample_members() -> list[Miembro]:
+    """Administrador (quien llama, con foto) y dos miembros sin foto (`avatar_url` null)."""
+    people = [
+        (MEMBRESIA_ID, USER_ID, "Laura Gómez", f"{USER_ID}/avatar.png", Rol.ADMINISTRADOR),
+        (OTHER_MEMBER_ID, sample_id(4, 1), "Andrés Gómez", None, Rol.MIEMBRO),
+        (sample_id(3, 2), sample_id(4, 2), "Sofía Gómez", None, Rol.MIEMBRO),
+    ]
+    return [
+        Miembro(
+            membresia_id=membresia_id,
+            usuario_id=usuario_id,
+            nombre_completo=nombre,
+            avatar_url=avatar,
+            rol=rol,
+            estado="activo",
+            fecha_ingreso=MEMBERS_JOINED_AT + timedelta(days=index),
+        )
+        for index, (membresia_id, usuario_id, nombre, avatar, rol) in enumerate(people)
+    ]
+
+
+def sample_pending_invitations() -> list[InvitacionPendiente]:
+    return [
+        InvitacionPendiente(
+            id=sample_id(5, index + 1),
+            correo_invitado=f"invitada{index}@example.com",
+            estado="pendiente",
+            expira_en=INVITATION_EXPIRES_AT - timedelta(days=index),
+        )
+        for index in range(2)
+    ]
+
+
+def sample_received_invitations() -> list[InvitacionRecibida]:
+    return [
+        InvitacionRecibida(
+            id=INVITATION_ID,
+            hogar_nombre=MEMBERS_HOUSEHOLD_NAME,
+            invitado_por_nombre="Laura Gómez",
+            expira_en=INVITATION_EXPIRES_AT,
+        )
+    ]
+
+
+@dataclass
+class MembersWorld:
+    """Membresías de la guardia, respuestas del doble del servicio y llamadas recibidas.
+
+    Los dobles tienen la firma posicional de `app.services.members_invitations` (ver sus
+    docstrings): un argumento de más o de menos es un TypeError (500) y la prueba falla. Si
+    `error` no es None, el doble lo lanza tras registrar la llamada (ese error lo decide el
+    servicio, con los códigos del contrato para RN-X-05 a RN-X-08).
+    """
+
+    session: RecordingSession
+    memberships: list[ActiveMembershipRow]
+    members: list[Miembro] = field(default_factory=sample_members)
+    pending: list[InvitacionPendiente] = field(default_factory=sample_pending_invitations)
+    received: list[InvitacionRecibida] = field(default_factory=sample_received_invitations)
+    error: ApiError | None = None
+    guard_sessions: list[object] = field(default_factory=list)
+    calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = field(default_factory=list)
+
+    def _record(self, name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
+        self.calls.append((name, args, kwargs))
+        if self.error is not None:
+            raise self.error
+
+    def _view(self, *, is_admin: bool) -> MiembrosHogar:
+        return MiembrosHogar(
+            miembros_activos=len(self.members),
+            miembros=list(self.members),
+            invitaciones_pendientes=list(self.pending) if is_admin else None,
+            permisos=DEFAULT_PERMISSIONS,
+            puede_gestionar=is_admin,
+        )
+
+    def list_members(
+        self, session: object, user_id: UUID, hogar_id: UUID, **kw: Any
+    ) -> MiembrosHogar:
+        self._record("list_members", (session, user_id, hogar_id), kw)
+        own = next(m for m in self.memberships if m.usuario_id == user_id)
+        return self._view(is_admin=own.rol == "administrador")
+
+    def update_permissions(
+        self, session: object, user_id: UUID, hogar_id: UUID, payload: PermisosActualizar, **kw: Any
+    ) -> Permisos:
+        self._record("update_permissions", (session, user_id, hogar_id, payload), kw)
+        return DEFAULT_PERMISSIONS.model_copy(update=payload.model_dump(exclude_unset=True))
+
+    def remove_member(
+        self, session: object, user_id: UUID, hogar_id: UUID, membresia_id: UUID, **kw: Any
+    ) -> None:
+        self._record("remove_member", (session, user_id, hogar_id, membresia_id), kw)
+
+    def transfer_admin(
+        self, session: object, user_id: UUID, hogar_id: UUID, membresia_id: UUID, **kw: Any
+    ) -> MiembrosHogar:
+        self._record("transfer_admin", (session, user_id, hogar_id, membresia_id), kw)
+        self.members = [
+            m.model_copy(
+                update={"rol": Rol.ADMINISTRADOR if m.membresia_id == membresia_id else Rol.MIEMBRO}
+            )
+            for m in self.members
+        ]
+        return self._view(is_admin=False)  # quien transfirió ya es miembro
+
+    def leave_household(self, session: object, user_id: UUID, hogar_id: UUID, **kw: Any) -> None:
+        self._record("leave_household", (session, user_id, hogar_id), kw)
+
+    def create_invitation(
+        self,
+        session: object,
+        settings: Settings,
+        user_id: UUID,
+        hogar_id: UUID,
+        payload: InvitacionCrear,
+        **kw: Any,
+    ) -> InvitacionPendiente:
+        self._record("create_invitation", (session, settings, user_id, hogar_id, payload), kw)
+        return InvitacionPendiente(
+            id=INVITATION_ID,
+            correo_invitado=payload.correo_invitado.strip().lower(),
+            estado="pendiente",
+            expira_en=INVITATION_EXPIRES_AT,
+        )
+
+    def revoke_invitation(
+        self, session: object, user_id: UUID, hogar_id: UUID, invitacion_id: UUID, **kw: Any
+    ) -> None:
+        self._record("revoke_invitation", (session, user_id, hogar_id, invitacion_id), kw)
+
+    def list_received_invitations(
+        self, session: object, user_id: UUID, correo: str, **kw: Any
+    ) -> InvitacionesRecibidasLista:
+        self._record("list_received_invitations", (session, user_id, correo), kw)
+        return InvitacionesRecibidasLista(invitaciones=list(self.received))
+
+    def resolve_invitation_token(
+        self, session: object, user_id: UUID, correo: str, payload: InvitacionToken, **kw: Any
+    ) -> InvitacionRecibida:
+        self._record("resolve_invitation_token", (session, user_id, correo, payload), kw)
+        return self.received[0]
+
+    def accept_invitation(
+        self, session: object, user_id: UUID, correo: str, invitacion_id: UUID, **kw: Any
+    ) -> MembresiaResumen:
+        self._record("accept_invitation", (session, user_id, correo, invitacion_id), kw)
+        return MembresiaResumen(membresia_id=NEW_MEMBERSHIP_ID, hogar_id=HOGAR_ID, rol=Rol.MIEMBRO)
+
+    def reject_invitation(
+        self, session: object, user_id: UUID, correo: str, invitacion_id: UUID, **kw: Any
+    ) -> None:
+        self._record("reject_invitation", (session, user_id, correo, invitacion_id), kw)
+
+
+@pytest.fixture
+def members_world(monkeypatch: pytest.MonkeyPatch, store: FakeStore) -> MembersWorld:
+    world = MembersWorld(
+        session=store.session,
+        memberships=[
+            make_membership_row(USER_ID, HOGAR_ID, rol="administrador", membresia_id=MEMBRESIA_ID)
+        ],
+    )
+
+    def fake_get_active_membership(
+        session: object, usuario_id: UUID, hogar_id: UUID
+    ) -> ActiveMembershipRow | None:
+        world.guard_sessions.append(session)
+        return next(
+            (m for m in world.memberships if m.usuario_id == usuario_id and m.hogar_id == hogar_id),
+            None,
+        )
+
+    monkeypatch.setattr(memberships_data, "get_active_membership", fake_get_active_membership)
+    for name in MEMBERS_SERVICE_FUNCTIONS.values():
+        assert hasattr(members_service, name), name
+        monkeypatch.setattr(members_service, name, getattr(world, name))
+    return world
+
+
+# Preparaciones de los casos (reciben el `MembersWorld`).
+def as_member(world: MembersWorld) -> None:
+    """Quien llama es miembro, con todos los permisos: ninguno lo convierte en administrador."""
+    world.memberships[:] = [
+        make_membership_row(
+            USER_ID,
+            HOGAR_ID,
+            rol="miembro",
+            membresia_id=MEMBRESIA_ID,
+            ver_consumo_actual=True,
+            ver_historial=True,
+            recibir_alertas=True,
+            modificar_metas=True,
+        )
+    ]
+
+
+def without_members_membership(world: MembersWorld) -> None:
+    world.memberships.clear()
+
+
+def without_pending(world: MembersWorld) -> None:
+    world.pending.clear()
+
+
+def without_received(world: MembersWorld) -> None:
+    world.received.clear()
+
+
+def service_raises(status: int, codigo: str, **detalles: Any) -> Callable[[MembersWorld], None]:
+    """El servicio responde con ese error del contrato (mensaje corto; la app usa el código)."""
+
+    def setup(world: MembersWorld) -> None:
+        world.error = ApiError(status, CodigoError(codigo), "Error del servicio.", detalles or None)
+
+    return setup
+
+
+def as_member_and_service_raises(status: int, codigo: str) -> Callable[[MembersWorld], None]:
+    def setup(world: MembersWorld) -> None:
+        as_member(world)
+        service_raises(status, codigo)(world)
+
+    return setup
+
+
+@dataclass(frozen=True)
+class MembersCase:
+    name: str
+    operation_id: str
+    status: int
+    setup: Callable[[MembersWorld], None] | None = None
+    authenticated: bool = True
+    codigo: str | None = None
+    hogar_id: str | None = None  # por defecto, el hogar de la prueba
+    target_id: str | None = None  # membresia_id o invitacion_id de la ruta (por defecto, uno válido)
+    body: Any = NO_BODY  # por defecto, el cuerpo válido de la operación (si tiene)
+
+
+DEFAULT_MEMBERS_BODIES: dict[str, Any] = {
+    "actualizarPermisos": {"ver_historial": False, "modificar_metas": True},
+    "crearInvitacion": {"correo_invitado": INVITED_EMAIL},
+    "resolverTokenInvitacion": {"token": INVITATION_TOKEN},
+}
+
+
+def _members_guard_cases(operation_id: str) -> list[MembersCase]:
+    """Guardias de las rutas de `/hogares/{hogar_id}`: 401 → 404 → 403 (solo administrador)."""
+
+    def case(name: str, status: int, **kw: Any) -> MembersCase:
+        return MembersCase(name, operation_id, status, **kw)
+
+    cases = [
+        case("sin-token", 401, authenticated=False, codigo="NO_AUTENTICADO"),
+        case("sin-membresia", 404, setup=without_members_membership, codigo="NO_ENCONTRADO"),
+        case("hogar-ajeno", 404, hogar_id=str(OTHER_HOUSEHOLD_ID), codigo="NO_ENCONTRADO"),
+        case("hogar-no-uuid", 422, hogar_id="no-es-un-uuid", codigo="VALIDACION"),
+    ]
+    if operation_id in MEMBERS_ADMIN_OPERATIONS:
+        cases.append(case("miembro", 403, setup=as_member, codigo="NO_ES_ADMINISTRADOR"))
+    return cases
+
+
+def _invitee_cases(operation_id: str, *, by_id: bool) -> list[MembersCase]:
+    """Errores de la persona invitada: los decide el servicio (la ruta solo exige el token)."""
+
+    def case(name: str, status: int, **kw: Any) -> MembersCase:
+        return MembersCase(name, operation_id, status, **kw)
+
+    cases = [
+        case("sin-token", 401, authenticated=False, codigo="NO_AUTENTICADO"),
+        case(
+            "correo-distinto",
+            403,
+            setup=service_raises(403, "CORREO_NO_COINCIDE"),
+            codigo="CORREO_NO_COINCIDE",
+        ),
+        case("no-existe", 404, setup=service_raises(404, "NO_ENCONTRADO"), codigo="NO_ENCONTRADO"),
+        case(
+            "no-pendiente",
+            409,
+            setup=service_raises(409, "INVITACION_NO_PENDIENTE"),
+            codigo="INVITACION_NO_PENDIENTE",
+        ),
+        case(
+            "vencida",
+            409,
+            setup=service_raises(409, "INVITACION_EXPIRADA"),
+            codigo="INVITACION_EXPIRADA",
+        ),
+    ]
+    if by_id:
+        cases.append(
+            case("invitacion-no-uuid", 422, target_id="no-es-un-uuid", codigo="VALIDACION")
+        )
+    return cases
+
+
+def _members_cases() -> tuple[MembersCase, ...]:
+    def op(operation_id: str) -> Callable[..., MembersCase]:
+        def case(name: str, status: int, **kw: Any) -> MembersCase:
+            return MembersCase(name, operation_id, status, **kw)
+
+        return case
+
+    listing = op("listarMiembros")
+    permissions = op("actualizarPermisos")
+    remove = op("expulsarMiembro")
+    transfer = op("transferirAdministracion")
+    leave = op("salirDelHogar")
+    invite = op("crearInvitacion")
+    revoke = op("revocarInvitacion")
+    received = op("listarInvitacionesRecibidas")
+    resolve = op("resolverTokenInvitacion")
+    accept = op("aceptarInvitacion")
+    reject = op("rechazarInvitacion")
+    all_off = dict.fromkeys(DEFAULT_PERMISSIONS.model_dump(), False)
+    return (
+        # listarMiembros (RN-XVI-07, RN-X-08)
+        listing("admin-con-invitaciones", 200),
+        listing("admin-sin-invitaciones", 200, setup=without_pending),
+        listing("miembro-sin-invitaciones", 200, setup=as_member),
+        *_members_guard_cases("listarMiembros"),
+        # actualizarPermisos (RN-II-03, RN-X-08)
+        permissions("cambia-dos", 200),
+        permissions("cambia-todos", 200, body=all_off),
+        *_members_guard_cases("actualizarPermisos"),
+        permissions("cuerpo-vacio", 422, body={}, codigo="VALIDACION"),
+        permissions("permiso-null", 422, body={"ver_historial": None}, codigo="VALIDACION"),
+        permissions("no-booleano", 422, body={"ver_historial": "talvez"}, codigo="VALIDACION"),
+        permissions("campo-de-mas", 422, body={"es_admin": True}, codigo="VALIDACION"),
+        permissions("cuerpo-no-objeto", 422, body=[True], codigo="VALIDACION"),
+        # expulsarMiembro (RN-II-04, RN-X-07)
+        remove("expulsa", 204),
+        *_members_guard_cases("expulsarMiembro"),
+        remove(
+            "membresia-inactiva-o-ajena",
+            404,
+            setup=service_raises(404, "NO_ENCONTRADO"),
+            codigo="NO_ENCONTRADO",
+            target_id=FOREIGN_ID,
+        ),
+        remove(
+            "a-si-mismo-con-otros",
+            409,
+            setup=service_raises(409, "ADMIN_DEBE_TRANSFERIR"),
+            codigo="ADMIN_DEBE_TRANSFERIR",
+            target_id=str(MEMBRESIA_ID),
+        ),
+        remove(
+            "a-si-mismo-unico",
+            409,
+            setup=service_raises(409, "ADMIN_UNICO_MIEMBRO"),
+            codigo="ADMIN_UNICO_MIEMBRO",
+            target_id=str(MEMBRESIA_ID),
+        ),
+        remove("membresia-no-uuid", 422, target_id="no-es-un-uuid", codigo="VALIDACION"),
+        # transferirAdministracion (RN-II-04, RN-X-07)
+        transfer("transfiere", 200),
+        *_members_guard_cases("transferirAdministracion"),
+        transfer(
+            "destino-inactivo-o-ajeno",
+            404,
+            setup=service_raises(404, "NO_ENCONTRADO"),
+            codigo="NO_ENCONTRADO",
+            target_id=FOREIGN_ID,
+        ),
+        transfer(
+            "a-si-mismo",
+            422,
+            setup=service_raises(
+                422,
+                "VALIDACION",
+                campos=[{"ubicacion": ["path", "membresia_id"], "mensaje": "Es la propia."}],
+            ),
+            codigo="VALIDACION",
+            target_id=str(MEMBRESIA_ID),
+        ),
+        transfer("membresia-no-uuid", 422, target_id="no-es-un-uuid", codigo="VALIDACION"),
+        # salirDelHogar (RN-II-04, RN-X-07)
+        leave("miembro-sale", 204, setup=as_member),
+        *_members_guard_cases("salirDelHogar"),
+        leave(
+            "admin-con-otros",
+            409,
+            setup=service_raises(409, "ADMIN_DEBE_TRANSFERIR"),
+            codigo="ADMIN_DEBE_TRANSFERIR",
+        ),
+        leave(
+            "admin-unico",
+            409,
+            setup=service_raises(409, "ADMIN_UNICO_MIEMBRO"),
+            codigo="ADMIN_UNICO_MIEMBRO",
+        ),
+        # crearInvitacion (RN-X-05, RN-IX-03, DC-04, DC-41, DC-42)
+        invite("crea", 201),
+        invite("correo-con-mayusculas", 201, body={"correo_invitado": "Invitada@Example.com"}),
+        *_members_guard_cases("crearInvitacion"),
+        invite(
+            "limite", 409, setup=service_raises(409, "LIMITE_MIEMBROS"), codigo="LIMITE_MIEMBROS"
+        ),
+        invite(
+            "pendiente-existente",
+            409,
+            setup=service_raises(409, "INVITACION_PENDIENTE_EXISTENTE"),
+            codigo="INVITACION_PENDIENTE_EXISTENTE",
+        ),
+        invite(
+            "ya-es-miembro", 409, setup=service_raises(409, "YA_ES_MIEMBRO"), codigo="YA_ES_MIEMBRO"
+        ),
+        invite(
+            "correo-invalido", 422, body={"correo_invitado": "no-es-correo"}, codigo="VALIDACION"
+        ),
+        invite("sin-correo", 422, body={}, codigo="VALIDACION"),
+        invite(
+            "campo-de-mas",
+            422,
+            body={"correo_invitado": INVITED_EMAIL, "rol": "administrador"},
+            codigo="VALIDACION",
+        ),
+        # revocarInvitacion (RN-X-06, DC-42)
+        revoke("revoca", 204),
+        *_members_guard_cases("revocarInvitacion"),
+        revoke(
+            "de-otro-hogar",
+            404,
+            setup=service_raises(404, "NO_ENCONTRADO"),
+            codigo="NO_ENCONTRADO",
+            target_id=FOREIGN_ID,
+        ),
+        revoke(
+            "no-pendiente",
+            409,
+            setup=service_raises(409, "INVITACION_NO_PENDIENTE"),
+            codigo="INVITACION_NO_PENDIENTE",
+        ),
+        revoke(
+            "vencida",
+            409,
+            setup=service_raises(409, "INVITACION_EXPIRADA"),
+            codigo="INVITACION_EXPIRADA",
+        ),
+        revoke("invitacion-no-uuid", 422, target_id="no-es-un-uuid", codigo="VALIDACION"),
+        # listarInvitacionesRecibidas (RN-X-01, DC-42)
+        received("con-invitaciones", 200),
+        received("sin-invitaciones", 200, setup=without_received),
+        received("sin-hogar", 200, setup=without_members_membership),  # no exige membresía
+        received("sin-token", 401, authenticated=False, codigo="NO_AUTENTICADO"),
+        # resolverTokenInvitacion (RN-X-05)
+        resolve("resuelve", 200),
+        *_invitee_cases("resolverTokenInvitacion", by_id=False),
+        resolve("token-vacio", 422, body={"token": ""}, codigo="VALIDACION"),
+        resolve("sin-token-en-cuerpo", 422, body={}, codigo="VALIDACION"),
+        resolve(
+            "campo-de-mas",
+            422,
+            body={"token": INVITATION_TOKEN, "correo": INVITED_EMAIL},
+            codigo="VALIDACION",
+        ),
+        # aceptarInvitacion (RN-X-05, RN-X-06, RN-II-02, DC-25)
+        accept("acepta", 200, setup=without_members_membership),
+        *_invitee_cases("aceptarInvitacion", by_id=True),
+        accept(
+            "sin-ficha", 404, setup=service_raises(404, "NO_ENCONTRADO"), codigo="NO_ENCONTRADO"
+        ),
+        accept(
+            "limite", 409, setup=service_raises(409, "LIMITE_MIEMBROS"), codigo="LIMITE_MIEMBROS"
+        ),
+        accept(
+            "con-hogar-activo",
+            409,
+            setup=as_member_and_service_raises(409, "MEMBRESIA_ACTIVA_EXISTENTE"),
+            codigo="MEMBRESIA_ACTIVA_EXISTENTE",
+        ),
+        # rechazarInvitacion (RN-X-06)
+        reject("rechaza", 204),
+        *_invitee_cases("rechazarInvitacion", by_id=True),
+    )
+
+
+MEMBERS_CASES: tuple[MembersCase, ...] = _members_cases()
+# Casos que la guardia corta antes de llegar al servicio (los 422 de entrada tampoco llegan).
+MEMBERS_GUARD_STOPS = frozenset({"sin-token", "sin-membresia", "hogar-ajeno", "miembro"})
+
+
+def _members_body_of(case: MembersCase) -> Any:
+    return case.body if case.body is not NO_BODY else DEFAULT_MEMBERS_BODIES.get(case.operation_id)
+
+
+def _members_target(case: MembersCase) -> str | None:
+    """Id de la ruta: el del caso o uno válido (otra membresía del hogar o la invitación)."""
+    _method, path, _op = OPERATIONS[case.operation_id]
+    if "{membresia_id}" in path:
+        return case.target_id or str(OTHER_MEMBER_ID)
+    if "{invitacion_id}" in path:
+        return case.target_id or str(INVITATION_ID)
+    return None
+
+
+def members_url(case: MembersCase) -> str:
+    _method, path, _op = OPERATIONS[case.operation_id]
+    target = _members_target(case)
+    return API_PREFIX + path.format(
+        hogar_id=case.hogar_id or str(HOGAR_ID), membresia_id=target, invitacion_id=target
+    )
+
+
+def send_members(client: TestClient, case: MembersCase) -> Any:
+    method, _path, _op = OPERATIONS[case.operation_id]
+    headers = auth_header(make_token(USER_ID, CORREO)) if case.authenticated else {}
+    kwargs: dict[str, Any] = {"headers": headers}
+    body = _members_body_of(case)
+    if body is not None:
+        kwargs["json"] = body
+    return client.request(method.upper(), members_url(case), **kwargs)
+
+
+def expected_members_service_args(case: MembersCase, world: MembersWorld) -> tuple[Any, ...]:
+    """Lo que el router debe pasar al servicio (firmas de `app.services.members_invitations`):
+    la sesión de la petición, el usuario del token, el hogar de la ruta (o el correo del token en
+    `/invitaciones`, para el 403 `CORREO_NO_COINCIDE` de RN-X-05), el id de la ruta y la entrada
+    ya validada; sin `now` (lo decide el servicio). `crearInvitacion` recibe además la
+    configuración (se compara aparte)."""
+    body = _members_body_of(case)
+    target = _members_target(case)
+    rest: tuple[Any, ...] = () if target is None else (UUID(target),)
+    if case.operation_id == "actualizarPermisos":
+        rest = (PermisosActualizar(**body),)
+    elif case.operation_id == "crearInvitacion":
+        rest = (InvitacionCrear(**body),)
+    elif case.operation_id == "resolverTokenInvitacion":
+        rest = (InvitacionToken(**body),)
+    if case.operation_id in INVITEE_OPERATIONS:
+        return (world.session, USER_ID, CORREO, *rest)
+    return (world.session, USER_ID, HOGAR_ID, *rest)
+
+
+@pytest.mark.parametrize(
+    "case", MEMBERS_CASES, ids=lambda c: f"{c.operation_id}-{c.status}-{c.name}"
+)
+def test_members_invitations_response_matches_contract_schema(
+    case: MembersCase, client: TestClient, members_world: MembersWorld
+) -> None:
+    world = members_world
+    if case.setup is not None:
+        case.setup(world)
+    response = send_members(client, case)
+    assert response.status_code == case.status, response.text
+    assert_matches_contract(case.operation_id, response)
+    assert all(s is world.session for s in world.guard_sessions)
+    assert world.session.commits == 0  # el router no confirma: lo hace el servicio
+    reaches_service = case.name not in MEMBERS_GUARD_STOPS and (
+        case.status != 422 or world.error is not None
+    )
+    if reaches_service:
+        uses_guard = case.operation_id not in INVITEE_OPERATIONS
+        assert world.guard_sessions == ([world.session] if uses_guard else [])
+        ((name, args, kwargs),) = world.calls
+        assert name == MEMBERS_SERVICE_FUNCTIONS[case.operation_id]
+        assert kwargs == {}
+        assert args[0] is world.session  # la misma sesión que usó la guardia
+        if case.operation_id == "crearInvitacion":
+            settings = args[1]
+            assert isinstance(settings, Settings)
+            assert settings.supabase_url == TEST_SUPABASE_URL  # la de `get_settings`
+            args = (args[0], *args[2:])
+        assert args == expected_members_service_args(case, world)
+    else:
+        assert world.calls == []  # no llegó al servicio
+    if case.status < 300:
+        return
+    assert response.json()["codigo"] == case.codigo
+    assert (response.headers.get("WWW-Authenticate") == "Bearer") == (case.status == 401)
+
+
+def test_members_invitations_cases_cover_every_code_of_the_operations() -> None:
+    assert set(MEMBERS_ERROR_CODES) == set(MEMBERS_SERVICE_FUNCTIONS) == MEMBERS_OPERATIONS
+    for operation_id, expected in MEMBERS_ERROR_CODES.items():
+        cases = [c for c in MEMBERS_CASES if c.operation_id == operation_id]
+        assert {c.codigo for c in cases} - {None} == expected, operation_id
+        assert any(c.status < 300 for c in cases), operation_id
+
+
+def test_guard_cases_use_the_contract_guard_of_each_operation() -> None:
+    """Gestión (5): administrador; ver miembros y salir: membresía; `/invitaciones` (4): token."""
+    for operation_id in MEMBERS_OPERATIONS:
+        names = {c.name for c in MEMBERS_CASES if c.operation_id == operation_id}
+        assert ("miembro" in names) is (operation_id in MEMBERS_ADMIN_OPERATIONS), operation_id
+        assert ("sin-membresia" in names) is (operation_id not in INVITEE_OPERATIONS), operation_id
+
+
+def test_patch_permissions_passes_only_the_sent_fields(
+    client: TestClient, members_world: MembersWorld
+) -> None:
+    """PATCH parcial: el servicio recibe solo los permisos enviados (`model_fields_set`)."""
+    body = {"recibir_alertas": False}
+    response = send_members(client, MembersCase("x", "actualizarPermisos", 200, body=body))
+    assert response.json() == {**DEFAULT_PERMISSIONS.model_dump(), "recibir_alertas": False}
+    ((_name, args, _kwargs),) = members_world.calls
+    assert args[-1].model_fields_set == {"recibir_alertas"}
+
+
+def test_list_members_hides_pending_invitations_from_members(
+    client: TestClient, members_world: MembersWorld
+) -> None:
+    """Sección 7.3: el administrador ve las invitaciones pendientes; un miembro recibe null."""
+    admin = send_members(client, MembersCase("x", "listarMiembros", 200)).json()
+    assert [i["id"] for i in admin["invitaciones_pendientes"]] == [
+        str(i.id) for i in members_world.pending
+    ]
+    assert admin["puede_gestionar"] is True
+    as_member(members_world)
+    member = send_members(client, MembersCase("x", "listarMiembros", 200)).json()
+    assert member["invitaciones_pendientes"] is None
+    assert member["puede_gestionar"] is False
+    assert member["miembros"] == [m.model_dump(mode="json") for m in members_world.members]
+
+
+def test_invitation_token_is_not_in_the_response_nor_echoed_on_errors(
+    client: TestClient, members_world: MembersWorld
+) -> None:
+    """RN-X-05: el token viaja en el cuerpo y no vuelve en la respuesta ni en los errores."""
+    ok = send_members(client, MembersCase("x", "resolverTokenInvitacion", 200))
+    assert INVITATION_TOKEN not in ok.text
+    bad = send_members(
+        client,
+        MembersCase(
+            "x",
+            "resolverTokenInvitacion",
+            422,
+            body={"token": INVITATION_TOKEN, "de_mas": INVITATION_TOKEN},
+        ),
+    )
+    assert bad.status_code == 422
+    assert INVITATION_TOKEN not in bad.text
+
+
+def test_invalid_invited_email_is_422_without_echoing_it(
+    client: TestClient, members_world: MembersWorld
+) -> None:
+    """S-01: el correo inválido no se repite en la respuesta; el error ubica el campo."""
+    wrong = "persona-sin-arroba.example.com"
+    response = send_members(
+        client, MembersCase("x", "crearInvitacion", 422, body={"correo_invitado": wrong})
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert [c["ubicacion"] for c in body["detalles"]["campos"]] == [["body", "correo_invitado"]]
+    assert wrong not in response.text
+    assert members_world.calls == []
 
 
 # --- operaciones pendientes ---------------------------------------------------------------

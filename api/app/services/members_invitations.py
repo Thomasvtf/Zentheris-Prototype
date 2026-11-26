@@ -21,8 +21,7 @@ módulo lleva correos, tokens, hashes ni ids.
 """
 
 import logging
-from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from uuid import UUID
 
 from sqlmodel import Session
@@ -34,8 +33,8 @@ from app.data import invitations as invitations_data
 from app.data import memberships as memberships_data
 from app.data import users as users_data
 from app.domain import alert_rules
-from app.domain.alert_rules import AlertMember
 from app.domain.formats import render_invitation_email
+from app.domain.simulator import TIMEZONE
 from app.errors import NOT_FOUND_MESSAGE, ApiError, CodigoError
 from app.schemas.households import Permisos, PermisosActualizar
 from app.schemas.members_invitations import (
@@ -50,12 +49,16 @@ from app.schemas.members_invitations import (
 from app.schemas.users import MembresiaResumen
 from app.security.invitation_tokens import generate_invitation_token, hash_invitation_token
 from app.services import email as email_service
+from app.services._alert_delivery import insert_planned_alert, present_members
 from app.services.backend_texts import get_backend_texts
 
 # RN-X-05: la invitación vence a los 7 días.
 INVITATION_VALIDITY = timedelta(days=7)
 # RN-II-02: máximo 5 miembros activos (al invitar cuentan también las pendientes vigentes).
 MAX_MEMBERS = 5
+# D2 (decisión de Nicolás, 25/11/2026; contrato 0.2.10): máximo 20 invitaciones CREADAS por hogar
+# en el día de Bogotá, en cualquier estado.
+MAX_DAILY_INVITATIONS = 20
 
 # Mensajes técnicos y cortos: la app decide el texto por `codigo`.
 NOT_ADMIN_MESSAGE = "Solo el administrador puede hacer esta operación."
@@ -68,6 +71,7 @@ SELF_TRANSFER_MESSAGE = "No puedes transferirte la administración a ti mismo."
 YA_ES_MIEMBRO_MESSAGE = "El correo pertenece a un miembro activo del hogar."
 PENDING_EXISTS_MESSAGE = "Ya hay una invitación pendiente para ese correo en este hogar."
 LIMIT_MESSAGE = "El hogar alcanzó el límite de 5 miembros."
+DAILY_LIMIT_MESSAGE = "El hogar alcanzó el límite de 20 invitaciones por día."
 NOT_PENDING_MESSAGE = "La invitación ya no está pendiente."
 EXPIRED_MESSAGE = "La invitación venció."
 EMAIL_MISMATCH_MESSAGE = "La invitación es para otro correo."
@@ -211,8 +215,10 @@ def create_invitation(
 
     Orden: guardia → correo en minúsculas → vencidas a 'expirada' (DC-42) → 409 `YA_ES_MIEMBRO`
     → 409 `INVITACION_PENDIENTE_EXISTENTE` → 409 `LIMITE_MIEMBROS` (activos + pendientes ≥ 5) →
-    token (solo se guarda su hash) → correo ANTES del commit. Si el envío falla, rollback y la
-    excepción sube (500 `ERROR_INTERNO`); reintentar es seguro porque no queda nada guardado.
+    409 `LIMITE_INVITACIONES_DIARIO` (ya hay 20 creadas hoy en el día de Bogotá, en cualquier
+    estado; D2) → token (solo se guarda su hash) → correo ANTES del commit. Si el envío falla,
+    rollback y la excepción sube (500 `ERROR_INTERNO`, declarado en el contrato 0.2.10);
+    reintentar es seguro porque no queda nada guardado.
     Si el correo tiene un hogar activo en otro lugar, la invitación se crea igual (contrato).
     """
     moment = _now(now)
@@ -227,6 +233,12 @@ def create_invitation(
     pending = invitations_data.count_pending_invitations(session, hogar_id, moment)
     if active + pending >= MAX_MEMBERS:
         raise _limit_reached()
+    day_start, day_end = _bogota_day_bounds(moment)
+    created_today = invitations_data.count_invitations_created_between(
+        session, hogar_id, day_start, day_end
+    )
+    if created_today >= MAX_DAILY_INVITATIONS:
+        raise ApiError(409, CodigoError.LIMITE_INVITACIONES_DIARIO, DAILY_LIMIT_MESSAGE)
 
     token, token_hash = generate_invitation_token()
     try:
@@ -245,8 +257,7 @@ def create_invitation(
     inviter = users_data.get_user_profile(session, user_id)
     household = households_data.get_household(session, hogar_id)
     if inviter is None or household is None:
-        # TODO(pendiente: el contrato no declara 500 en crearInvitacion; PENDIENTES #29).
-        raise RuntimeError(INCONSISTENT_MESSAGE)
+        raise RuntimeError(INCONSISTENT_MESSAGE)  # 500 ERROR_INTERNO (contrato 0.2.10)
     enlace = settings.invitation_link_base + token
     email = render_invitation_email(
         get_backend_texts(),
@@ -261,8 +272,7 @@ def create_invitation(
             settings, correo_invitado=correo, email=email, enlace=enlace
         )
     except email_service.EmailDeliveryError:
-        # TODO(pendiente: el contrato no declara 500 en crearInvitacion; un fallo del SMTP responde
-        # 500 ERROR_INTERNO. PENDIENTES #29). Reintentar es seguro: no queda invitación.
+        # 500 ERROR_INTERNO (contrato 0.2.10). Reintentar es seguro: no queda invitación.
         session.rollback()
         raise
     session.commit()
@@ -448,6 +458,19 @@ def _now(now: datetime | None) -> datetime:
     return now if now is not None else datetime.now(UTC)
 
 
+def _bogota_day_bounds(moment: datetime) -> tuple[datetime, datetime]:
+    """[00:00 Bogotá de hoy, 00:00 Bogotá de mañana) para el día de Bogotá de `moment` (D2).
+
+    `moment` sin zona horaria: ValueError (`astimezone` lo tomaría como hora local del servidor).
+    """
+    if moment.utcoffset() is None:
+        raise ValueError("`now` debe llevar zona horaria.")
+    today = moment.astimezone(TIMEZONE).date()
+    start = datetime.combine(today, time(0), tzinfo=TIMEZONE)
+    end = datetime.combine(today + timedelta(days=1), time(0), tzinfo=TIMEZONE)
+    return start, end
+
+
 def _lock_admin(session: Session, user_id: UUID, hogar_id: UUID) -> memberships_data.MembershipRow:
     """Guardia de gestión: hogar bloqueado → membresía propia FOR UPDATE → debe ser administrador.
 
@@ -543,35 +566,13 @@ def _create_new_member_alert(
         hogar_nombre=household.nombre,
         created_at=created_at,
     )
-    alerta_id = alerts_data.insert_alert(
-        session,
-        hogar_id=hogar_id,
-        categoria=alert.categoria,
-        severidad=alert.severidad,
-        titulo=alert.titulo,
-        mensaje=alert.mensaje,
-        zona_id=alert.zona_id,
-        regla_origen=alert.regla_origen,
-        clave_evento=alert.clave_evento,
-        created_at=alert.created_at,
-    )
+    alerta_id = insert_planned_alert(session, hogar_id, alert)
     if alerta_id is None:
         return
-    members = _alert_members_at(memberships_data.list_alert_members(session, hogar_id), created_at)
+    members = present_members(memberships_data.list_alert_members(session, hogar_id), created_at)
     permission = bool(memberships_data.get_alert_permission(session, hogar_id))
     recipients = alert_rules.new_member_recipients(members, permission, new_usuario_id)
     alerts_data.insert_alert_deliveries(session, alerta_id, recipients)
-
-
-def _alert_members_at(
-    rows: Sequence[memberships_data.AlertMemberRow], moment: datetime
-) -> list[AlertMember]:
-    """Miembros activos que ya estaban en el hogar en `moment` (RN-VI-02: sin efecto retroactivo)."""
-    return [
-        AlertMember(row.usuario_id, row.rol, row.notif_consumo, row.notif_consejos)
-        for row in rows
-        if row.fecha_ingreso <= moment
-    ]
 
 
 def _to_member(row: memberships_data.MemberRow) -> Miembro:

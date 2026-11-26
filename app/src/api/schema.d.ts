@@ -396,9 +396,12 @@ export interface paths {
          *     Códigos en `409`: `LIMITE_MIEMBROS` (activos + pendientes = 5);
          *     `INVITACION_PENDIENTE_EXISTENTE` (ya hay una pendiente para ese correo en este hogar; el
          *     administrador puede cancelarla y volver a invitar); `YA_ES_MIEMBRO` (el correo pertenece
-         *     a un miembro activo de este hogar). Si el correo ya tiene un hogar activo en otro lugar,
-         *     la invitación se crea igual y falla al aceptar con `MEMBRESIA_ACTIVA_EXISTENTE`, para no
-         *     revelar a quién pertenece cada cuenta.
+         *     a un miembro activo de este hogar); `LIMITE_INVITACIONES_DIARIO` (el hogar ya creó 20
+         *     invitaciones hoy, contando el día de Bogotá y todas las invitaciones creadas, en cualquier
+         *     estado; no se crea la invitación ni se envía correo). Si el correo ya tiene un hogar activo
+         *     en otro lugar, la invitación se crea igual y falla al aceptar con
+         *     `MEMBRESIA_ACTIVA_EXISTENTE`, para no revelar a quién pertenece cada cuenta.
+         *     `500` si falla el envío del correo: no queda invitación guardada y se puede reintentar.
          */
         post: operations["crearInvitacion"];
         delete?: never;
@@ -680,6 +683,8 @@ export interface paths {
          * @description Administrador o miembros con `permiso_modificar_metas`. La meta anterior pasa a
          *     `inactiva` y su `fecha_fin` es la `fecha_inicio` de la nueva (fin excluido). El
          *     servidor asigna `fecha_inicio` con la fecha actual de Bogotá. El tipo solo cambia textos.
+         *     Si la meta anterior empezó el mismo día, pasa a `inactiva` con `fecha_fin` null, porque la
+         *     tabla exige `fecha_fin` posterior a `fecha_inicio`; ese día vale la meta más reciente.
          */
         post: operations["crearMeta"];
         delete?: never;
@@ -723,6 +728,9 @@ export interface paths {
          * @description Solo el administrador. No depende de los datos del hogar. Se guarda el día 1 del mes
          *     elegido; la tarifa anterior se cierra con `vigente_hasta` igual al nuevo `vigente_desde`.
          *     `422` con `VIGENCIA_NO_POSTERIOR` si el nuevo inicio no es posterior al de la tarifa vigente.
+         *     No se aceptan meses futuros (catálogo `error.campo.vigencia_futura`): un `vigente_desde`
+         *     posterior al mes actual de Bogotá responde `422` con `VALIDACION`. Así la tarifa vigente
+         *     hoy es siempre la abierta (`vigente_hasta` null).
          */
         post: operations["crearTarifa"];
         delete?: never;
@@ -860,7 +868,8 @@ export interface components {
              *     `NO_ES_ADMINISTRADOR`, `SIN_PERMISO_VER_CONSUMO`, `SIN_PERMISO_VER_HISTORIAL`,
              *     `SIN_PERMISO_RECIBIR_ALERTAS`, `SIN_PERMISO_MODIFICAR_METAS`, `ADMIN_DEBE_TRANSFERIR`,
              *     `MEMBRESIA_ACTIVA_EXISTENTE`, `LIMITE_MIEMBROS`, `INVITACION_EXPIRADA`,
-             *     `INVITACION_NO_PENDIENTE`, `INVITACION_PENDIENTE_EXISTENTE`, `YA_ES_MIEMBRO`,
+             *     `INVITACION_NO_PENDIENTE`, `INVITACION_PENDIENTE_EXISTENTE`,
+             *     `LIMITE_INVITACIONES_DIARIO`, `YA_ES_MIEMBRO`,
              *     `CORREO_NO_COINCIDE`, `ZONAS_NO_PERMITIDAS`, `ZONAS_BASICAS_FALTANTES`,
              *     `CANTIDAD_ZONAS_INVALIDA`, `ZONAS_DUPLICADAS`, `VIGENCIA_NO_POSTERIOR`,
              *     `CONTRASENA_ACTUAL_INCORRECTA`, `CONTRASENA_NO_CUMPLE_REGLAS`,
@@ -879,7 +888,7 @@ export interface components {
          * @description Códigos de error del contrato. Cada uno tiene texto en el catálogo v1 (`error.<codigo en minúsculas>`), salvo FICHA_NO_CREADA y FICHA_EXISTENTE, que son internos. LIMITE_MIEMBROS tiene dos textos (invitar y aceptar).
          * @enum {string}
          */
-        CodigoError: "FICHA_NO_CREADA" | "FICHA_EXISTENTE" | "NO_ES_ADMINISTRADOR" | "SIN_PERMISO_VER_CONSUMO" | "SIN_PERMISO_VER_HISTORIAL" | "SIN_PERMISO_RECIBIR_ALERTAS" | "SIN_PERMISO_MODIFICAR_METAS" | "ADMIN_DEBE_TRANSFERIR" | "MEMBRESIA_ACTIVA_EXISTENTE" | "LIMITE_MIEMBROS" | "INVITACION_EXPIRADA" | "INVITACION_NO_PENDIENTE" | "INVITACION_PENDIENTE_EXISTENTE" | "YA_ES_MIEMBRO" | "CORREO_NO_COINCIDE" | "ZONAS_NO_PERMITIDAS" | "ZONAS_BASICAS_FALTANTES" | "CANTIDAD_ZONAS_INVALIDA" | "ZONAS_DUPLICADAS" | "VIGENCIA_NO_POSTERIOR" | "CONTRASENA_ACTUAL_INCORRECTA" | "CONTRASENA_NO_CUMPLE_REGLAS" | "CONTRASENA_IGUAL_A_ACTUAL" | "ADMIN_UNICO_MIEMBRO" | "BACKFILL_FALLIDO" | "VALIDACION" | "NO_AUTENTICADO" | "NO_ENCONTRADO" | "ERROR_INTERNO";
+        CodigoError: "FICHA_NO_CREADA" | "FICHA_EXISTENTE" | "NO_ES_ADMINISTRADOR" | "SIN_PERMISO_VER_CONSUMO" | "SIN_PERMISO_VER_HISTORIAL" | "SIN_PERMISO_RECIBIR_ALERTAS" | "SIN_PERMISO_MODIFICAR_METAS" | "ADMIN_DEBE_TRANSFERIR" | "MEMBRESIA_ACTIVA_EXISTENTE" | "LIMITE_MIEMBROS" | "INVITACION_EXPIRADA" | "INVITACION_NO_PENDIENTE" | "INVITACION_PENDIENTE_EXISTENTE" | "LIMITE_INVITACIONES_DIARIO" | "YA_ES_MIEMBRO" | "CORREO_NO_COINCIDE" | "ZONAS_NO_PERMITIDAS" | "ZONAS_BASICAS_FALTANTES" | "CANTIDAD_ZONAS_INVALIDA" | "ZONAS_DUPLICADAS" | "VIGENCIA_NO_POSTERIOR" | "CONTRASENA_ACTUAL_INCORRECTA" | "CONTRASENA_NO_CUMPLE_REGLAS" | "CONTRASENA_IGUAL_A_ACTUAL" | "ADMIN_UNICO_MIEMBRO" | "BACKFILL_FALLIDO" | "VALIDACION" | "NO_AUTENTICADO" | "NO_ENCONTRADO" | "ERROR_INTERNO";
         /**
          * @description Calculado al consultar (RN-XI-02). `sin_referencia` es solo respaldo (RN-XI-03);
          *     `sin_datos` indica que falta la lectura de la última hora completa.
@@ -1144,9 +1153,10 @@ export interface components {
             /** @enum {string} */
             granularidad: "hora" | "dia";
             tarifa_vigente: boolean;
+            /** @description Suma de las horas del periodo que tienen lectura de todas las zonas; las horas sin dato no suman (no se cuentan como cero ni vuelven null el total). */
             total_kwh: number;
             serie: components["schemas"]["PuntoSerie"][];
-            /** @description Solo con el filtro General (gráfico de anillo, RN-XIII-04); suma 100. */
+            /** @description Solo con el filtro General (gráfico de anillo, RN-XIII-04); suma 100. Si el total del periodo es 0, cada `participacion_pct` es 0 y la suma es 0. */
             participacion_zonas: {
                 /** Format: uuid */
                 zona_id: string;
@@ -1167,18 +1177,20 @@ export interface components {
             } | null;
             /** @description Mismo tramo del periodo anterior; válido solo si tiene lecturas en todas sus horas (RN-XIII-01, DC-29). menor < -5 %, similar < +10 % (normal), mayor < +25 % (elevado), muy_mayor (crítico). */
             comparacion: {
+                /** @description Como `total_kwh`, suma solo las horas con lectura. */
                 actual_kwh: number;
                 /** @description null = "no hay datos" del periodo anterior (RN-XIII-01). */
                 anterior_kwh: number | null;
                 variacion_pct: number | null;
                 estado: components["schemas"]["EstadoConsumo"];
+                /** @description null cuando `estado` es `sin_datos` (la comparación sin datos no trae mensaje). */
                 mensaje_codigo: components["schemas"]["MensajeCodigo"];
             };
             /** @description Todo null sin tarifa vigente, salvo estado y mensaje_codigo, que siguen la comparación del mismo periodo (opción A). Proyección según RN-XIII-05 (v4.9, DC-30) - acumulado + promedio de lo que falta del periodo; en COP, precio vigente hoy y cargo fijo solo en Mes. */
             costo: {
                 costo_cop: number | null;
                 proyeccion_cierre_cop: number | null;
-                /** @description Solo en la vista Mes (RN-V-02, RN-XIII-05). */
+                /** @description Se refiere a la proyección al cierre. Es true solo si `proyeccion_cierre_cop` se calculó y suma el cargo fijo mensual (vista Mes, filtro General y tarifa vigente hoy con cargo fijo; RN-V-02, RN-XIII-05). `costo_cop` nunca lo incluye. */
                 incluye_cargo_fijo: boolean;
                 /** @description Igual al estado de comparacion del mismo periodo (v0.2.4). */
                 estado: components["schemas"]["EstadoConsumo"];
@@ -1874,7 +1886,6 @@ export interface operations {
             401: components["responses"]["NoAutenticado"];
             403: components["responses"]["Prohibido"];
             404: components["responses"]["NoEncontrado"];
-            409: components["responses"]["Conflicto"];
             422: components["responses"]["Validacion"];
         };
     };
@@ -1931,6 +1942,7 @@ export interface operations {
             404: components["responses"]["NoEncontrado"];
             409: components["responses"]["Conflicto"];
             422: components["responses"]["Validacion"];
+            500: components["responses"]["ErrorServidor"];
         };
     };
     revocarInvitacion: {

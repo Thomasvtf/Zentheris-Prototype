@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Zentheris API (MVP)
-  version: 0.2.9
+  version: 0.2.10
   description: |
-    Contrato de la API del MVP de Zentheris (proyecto formativo SENA). **Versión 0.2.9 · 23/11/2026.**
+    Contrato de la API del MVP de Zentheris (proyecto formativo SENA). **Versión 0.2.10 · 26/11/2026.**
 
     **Estado:** candidato a congelar. Validación estructural propia sin errores (referencias,
     operationId únicos, parámetros de ruta, esquemas JSON Schema 2020-12, enums cruzados con el
@@ -13,7 +13,18 @@ info:
     **Fuentes:** Reglas de Negocio y Modelo de Datos v4.9 (cada operación cita su regla RN-),
     registro de decisiones DC-01 a DC-58 (03/11/2026), umbrales `umbrales-estado.v1.json` y acta 04.
 
-    **Cambios frente a 0.2.8:** cada punto de la serie del historial (`PuntoSerie`) trae `zonas`,
+    **Cambios frente a 0.2.9:** `POST /hogares/{hogar_id}/invitaciones` declara el `409` con el
+    código nuevo `LIMITE_INVITACIONES_DIARIO` (máximo 20 invitaciones creadas por hogar en el día de
+    Bogotá, decisión de Nicolás del 25/11/2026) y el `500` (falla el envío del correo; no queda
+    invitación). `POST /hogares/{hogar_id}/transferir-administracion` ya no declara `409`: ninguna
+    regla lo produce. `POST /hogares/{hogar_id}/metas` aclara la meta reemplazada el mismo día y
+    `POST /hogares/{hogar_id}/tarifas` no acepta meses futuros. Aclaraciones del historial: `total_kwh` y `comparacion.actual_kwh` suman solo
+    las horas con lectura; con total 0 la participación por zona suma 0; la comparación sin datos
+    trae `mensaje_codigo` null; `costo.incluye_cargo_fijo` se refiere a la proyección al cierre.
+    Las consultas que completan horas responden con lo guardado si la recuperación falla.
+    Sin endpoints nuevos: 40 operaciones.
+
+    **Cambios de 0.2.9 frente a 0.2.8:** cada punto de la serie del historial (`PuntoSerie`) trae `zonas`,
     el consumo de cada zona en ese punto, para el gráfico de área apilada del filtro General
     (`null` con filtro por zona). `GET /consumo/zonas` aclara que lista solo las zonas que cuentan
     (zona activa con sensor activo) y `GET /consumo/zonas/{zona_id}` aclara que una zona que no
@@ -42,7 +53,9 @@ info:
     - Estados normal, elevado y crítico: se calculan al consultar (RN-XI-02) con
       `umbrales-estado.v1.json` (RN-XI-07, DC-27). Los umbrales no se exponen.
     - Antes de responder cualquier consulta de consumo, historial, fuentes de datos o alertas,
-      el backend completa las horas faltantes del hogar (RN-IV-05, DC-34).
+      el backend completa las horas faltantes del hogar (RN-IV-05, DC-34). Si esa recuperación
+      falla, la consulta responde igual con lo ya guardado (las horas que falten salen como sin
+      datos) y el fallo queda en el registro del servidor; no es un `500`.
     - Autorización: FastAPI comprueba en cada llamada la membresía activa, el rol y el permiso.
       RLS de Supabase queda como segunda defensa (RN-I-03); con la conexión de servicio RLS no se
       aplica, por eso la comprobación en el backend es obligatoria.
@@ -466,7 +479,6 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
-        '409': { $ref: '#/components/responses/Conflicto' }
         '422': { $ref: '#/components/responses/Validacion' }
 
   /hogares/{hogar_id}/salir:
@@ -504,9 +516,12 @@ paths:
         Códigos en `409`: `LIMITE_MIEMBROS` (activos + pendientes = 5);
         `INVITACION_PENDIENTE_EXISTENTE` (ya hay una pendiente para ese correo en este hogar; el
         administrador puede cancelarla y volver a invitar); `YA_ES_MIEMBRO` (el correo pertenece
-        a un miembro activo de este hogar). Si el correo ya tiene un hogar activo en otro lugar,
-        la invitación se crea igual y falla al aceptar con `MEMBRESIA_ACTIVA_EXISTENTE`, para no
-        revelar a quién pertenece cada cuenta.
+        a un miembro activo de este hogar); `LIMITE_INVITACIONES_DIARIO` (el hogar ya creó 20
+        invitaciones hoy, contando el día de Bogotá y todas las invitaciones creadas, en cualquier
+        estado; no se crea la invitación ni se envía correo). Si el correo ya tiene un hogar activo
+        en otro lugar, la invitación se crea igual y falla al aceptar con
+        `MEMBRESIA_ACTIVA_EXISTENTE`, para no revelar a quién pertenece cada cuenta.
+        `500` si falla el envío del correo: no queda invitación guardada y se puede reintentar.
       requestBody:
         required: true
         content:
@@ -523,6 +538,7 @@ paths:
         '404': { $ref: '#/components/responses/NoEncontrado' }
         '409': { $ref: '#/components/responses/Conflicto' }
         '422': { $ref: '#/components/responses/Validacion' }
+        '500': { $ref: '#/components/responses/ErrorServidor' }
 
   /hogares/{hogar_id}/invitaciones/{invitacion_id}:
     parameters:
@@ -785,6 +801,8 @@ paths:
         Administrador o miembros con `permiso_modificar_metas`. La meta anterior pasa a
         `inactiva` y su `fecha_fin` es la `fecha_inicio` de la nueva (fin excluido). El
         servidor asigna `fecha_inicio` con la fecha actual de Bogotá. El tipo solo cambia textos.
+        Si la meta anterior empezó el mismo día, pasa a `inactiva` con `fecha_fin` null, porque la
+        tabla exige `fecha_fin` posterior a `fecha_inicio`; ese día vale la meta más reciente.
       requestBody:
         required: true
         content:
@@ -829,6 +847,9 @@ paths:
         Solo el administrador. No depende de los datos del hogar. Se guarda el día 1 del mes
         elegido; la tarifa anterior se cierra con `vigente_hasta` igual al nuevo `vigente_desde`.
         `422` con `VIGENCIA_NO_POSTERIOR` si el nuevo inicio no es posterior al de la tarifa vigente.
+        No se aceptan meses futuros (catálogo `error.campo.vigencia_futura`): un `vigente_desde`
+        posterior al mes actual de Bogotá responde `422` con `VALIDACION`. Así la tarifa vigente
+        hoy es siempre la abierta (`vigente_hasta` null).
       requestBody:
         required: true
         content:
@@ -1074,7 +1095,8 @@ components:
             `NO_ES_ADMINISTRADOR`, `SIN_PERMISO_VER_CONSUMO`, `SIN_PERMISO_VER_HISTORIAL`,
             `SIN_PERMISO_RECIBIR_ALERTAS`, `SIN_PERMISO_MODIFICAR_METAS`, `ADMIN_DEBE_TRANSFERIR`,
             `MEMBRESIA_ACTIVA_EXISTENTE`, `LIMITE_MIEMBROS`, `INVITACION_EXPIRADA`,
-            `INVITACION_NO_PENDIENTE`, `INVITACION_PENDIENTE_EXISTENTE`, `YA_ES_MIEMBRO`,
+            `INVITACION_NO_PENDIENTE`, `INVITACION_PENDIENTE_EXISTENTE`,
+            `LIMITE_INVITACIONES_DIARIO`, `YA_ES_MIEMBRO`,
             `CORREO_NO_COINCIDE`, `ZONAS_NO_PERMITIDAS`, `ZONAS_BASICAS_FALTANTES`,
             `CANTIDAD_ZONAS_INVALIDA`, `ZONAS_DUPLICADAS`, `VIGENCIA_NO_POSTERIOR`,
             `CONTRASENA_ACTUAL_INCORRECTA`, `CONTRASENA_NO_CUMPLE_REGLAS`,
@@ -1091,7 +1113,7 @@ components:
     CodigoError:
       type: string
       description: Códigos de error del contrato. Cada uno tiene texto en el catálogo v1 (`error.<codigo en minúsculas>`), salvo FICHA_NO_CREADA y FICHA_EXISTENTE, que son internos. LIMITE_MIEMBROS tiene dos textos (invitar y aceptar).
-      enum: [FICHA_NO_CREADA, FICHA_EXISTENTE, NO_ES_ADMINISTRADOR, SIN_PERMISO_VER_CONSUMO, SIN_PERMISO_VER_HISTORIAL, SIN_PERMISO_RECIBIR_ALERTAS, SIN_PERMISO_MODIFICAR_METAS, ADMIN_DEBE_TRANSFERIR, MEMBRESIA_ACTIVA_EXISTENTE, LIMITE_MIEMBROS, INVITACION_EXPIRADA, INVITACION_NO_PENDIENTE, INVITACION_PENDIENTE_EXISTENTE, YA_ES_MIEMBRO, CORREO_NO_COINCIDE, ZONAS_NO_PERMITIDAS, ZONAS_BASICAS_FALTANTES, CANTIDAD_ZONAS_INVALIDA, ZONAS_DUPLICADAS, VIGENCIA_NO_POSTERIOR, CONTRASENA_ACTUAL_INCORRECTA, CONTRASENA_NO_CUMPLE_REGLAS, CONTRASENA_IGUAL_A_ACTUAL, ADMIN_UNICO_MIEMBRO, BACKFILL_FALLIDO, VALIDACION, NO_AUTENTICADO, NO_ENCONTRADO, ERROR_INTERNO]
+      enum: [FICHA_NO_CREADA, FICHA_EXISTENTE, NO_ES_ADMINISTRADOR, SIN_PERMISO_VER_CONSUMO, SIN_PERMISO_VER_HISTORIAL, SIN_PERMISO_RECIBIR_ALERTAS, SIN_PERMISO_MODIFICAR_METAS, ADMIN_DEBE_TRANSFERIR, MEMBRESIA_ACTIVA_EXISTENTE, LIMITE_MIEMBROS, INVITACION_EXPIRADA, INVITACION_NO_PENDIENTE, INVITACION_PENDIENTE_EXISTENTE, LIMITE_INVITACIONES_DIARIO, YA_ES_MIEMBRO, CORREO_NO_COINCIDE, ZONAS_NO_PERMITIDAS, ZONAS_BASICAS_FALTANTES, CANTIDAD_ZONAS_INVALIDA, ZONAS_DUPLICADAS, VIGENCIA_NO_POSTERIOR, CONTRASENA_ACTUAL_INCORRECTA, CONTRASENA_NO_CUMPLE_REGLAS, CONTRASENA_IGUAL_A_ACTUAL, ADMIN_UNICO_MIEMBRO, BACKFILL_FALLIDO, VALIDACION, NO_AUTENTICADO, NO_ENCONTRADO, ERROR_INTERNO]
 
     EstadoConsumo:
       type: string
@@ -1470,12 +1492,15 @@ components:
           description: Fin de la última hora completa.
         granularidad: { type: string, enum: [hora, dia] }
         tarifa_vigente: { type: boolean }
-        total_kwh: { type: number, minimum: 0 }
+        total_kwh:
+          type: number
+          minimum: 0
+          description: Suma de las horas del periodo que tienen lectura de todas las zonas; las horas sin dato no suman (no se cuentan como cero ni vuelven null el total).
         serie:
           type: array
           items: { $ref: '#/components/schemas/PuntoSerie' }
         participacion_zonas:
-          description: Solo con el filtro General (gráfico de anillo, RN-XIII-04); suma 100.
+          description: Solo con el filtro General (gráfico de anillo, RN-XIII-04); suma 100. Si el total del periodo es 0, cada `participacion_pct` es 0 y la suma es 0.
           oneOf:
             - type: array
               items:
@@ -1505,14 +1530,19 @@ components:
           description: Mismo tramo del periodo anterior; válido solo si tiene lecturas en todas sus horas (RN-XIII-01, DC-29). menor < -5 %, similar < +10 % (normal), mayor < +25 % (elevado), muy_mayor (crítico).
           required: [actual_kwh, anterior_kwh, variacion_pct, estado, mensaje_codigo]
           properties:
-            actual_kwh: { type: number, minimum: 0 }
+            actual_kwh:
+              type: number
+              minimum: 0
+              description: Como `total_kwh`, suma solo las horas con lectura.
             anterior_kwh:
               type: [number, 'null']
               minimum: 0
               description: null = "no hay datos" del periodo anterior (RN-XIII-01).
             variacion_pct: { type: [number, 'null'] }
             estado: { $ref: '#/components/schemas/EstadoConsumo' }
-            mensaje_codigo: { $ref: '#/components/schemas/MensajeCodigo' }
+            mensaje_codigo:
+              $ref: '#/components/schemas/MensajeCodigo'
+              description: null cuando `estado` es `sin_datos` (la comparación sin datos no trae mensaje).
         costo:
           type: object
           required: [costo_cop, proyeccion_cierre_cop, incluye_cargo_fijo, estado, mensaje_codigo]
@@ -1522,7 +1552,7 @@ components:
             proyeccion_cierre_cop: { type: [number, 'null'], minimum: 0 }
             incluye_cargo_fijo:
               type: boolean
-              description: Solo en la vista Mes (RN-V-02, RN-XIII-05).
+              description: Se refiere a la proyección al cierre. Es true solo si `proyeccion_cierre_cop` se calculó y suma el cargo fijo mensual (vista Mes, filtro General y tarifa vigente hoy con cargo fijo; RN-V-02, RN-XIII-05). `costo_cop` nunca lo incluye.
             estado:
               $ref: '#/components/schemas/EstadoConsumo'
               description: Igual al estado de comparacion del mismo periodo (v0.2.4).

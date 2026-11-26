@@ -19,7 +19,7 @@ from app.data import readings as readings_data
 from app.domain import states
 from app.domain.simulator import TIMEZONE, hour_from_index
 from app.domain.simulator.engine import simulate_household
-from app.errors import NOT_FOUND_MESSAGE, ApiError, CodigoError, NotImplementedOperation
+from app.errors import NOT_FOUND_MESSAGE, ApiError, CodigoError
 from app.schemas.consumption import ConsumoActualHogar, ConsumoZonaDetalle, ConsumoZonas
 from app.services import consumption as service
 from app.services import thresholds as thresholds_service
@@ -427,13 +427,6 @@ def test_zone_of_another_household_is_404(db: FakeConsumptionDatabase, which: st
     assert error.value.mensaje == NOT_FOUND_MESSAGE
     assert "readings" not in db.names()  # no lee lecturas de otro hogar
     assert db.names()[0] == "recovery"
-
-
-# ------------------------------------------------------------------ 501 de fases futuras
-def test_data_sources_still_501() -> None:
-    """El historial ya está implementado (fase 7, `test_history_service.py`)."""
-    with pytest.raises(NotImplementedOperation):
-        service.get_data_sources(USER, HOGAR)
 
 
 # ------------------------------------------------------------------ personalidades (promedios)

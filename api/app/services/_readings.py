@@ -4,12 +4,12 @@
 - `read_series`: lecturas horarias por zona en un rango cerrado.
 - `ReadingsByZone`: `{zona: {inicio de hora: kWh}}`.
 
-Módulo interno de `app.services` (no lo llaman los routers); lo usan `consumption` y
-`live_alerts`. No importa otros servicios: `hour_recovery` importa `live_alerts`, así que
+Módulo interno de `app.services` (no lo llaman los routers); lo usan `consumption`,
+`goals_tariff` y `live_alerts`. No importa otros servicios: `hour_recovery` importa `live_alerts`, así que
 importar aquí `hour_recovery` cerraría el ciclo `hour_recovery` → `live_alerts` → `_readings` →
 `hour_recovery`. Por eso la recuperación previa a cada consulta (`_recover`, que llama a
-`hour_recovery.fill_missing_hours_or_continue`) se queda en `consumption` y en `alerts_tips`,
-cada uno con su reloj inyectable.
+`hour_recovery.fill_missing_hours_or_continue`) se queda en `consumption`, `alerts_tips` y
+`goals_tariff`, cada uno con su reloj inyectable.
 """
 
 from collections.abc import Iterable, Sequence

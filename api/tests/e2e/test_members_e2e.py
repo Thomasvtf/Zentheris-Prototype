@@ -38,7 +38,7 @@ import json
 import logging
 from collections import Counter
 from collections.abc import Callable, Iterator
-from datetime import datetime, timedelta, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -161,6 +161,7 @@ class MembersStore(ConsumptionStore):
             (inv, "EXPIRE_STALE_PENDING_FOR_EMAIL_SQL", self._expire_stale),
             (inv, "HAS_PENDING_INVITATION_SQL", self._has_pending),
             (inv, "COUNT_PENDING_INVITATIONS_SQL", self._count_pending),
+            (inv, "COUNT_INVITATIONS_CREATED_BETWEEN_SQL", self._count_created_between),
             (inv, "INSERT_INVITATION_SQL", self._insert_invitation),
             (inv, "LIST_PENDING_INVITATIONS_SQL", self._list_pending),
             (inv, "INVITATION_BY_ID_SQL", self._invitation_by_id),
@@ -419,6 +420,15 @@ class MembersStore(ConsumptionStore):
 
     def _count_pending(self, session: StoreSession, params: Params) -> FakeResult:
         return FakeResult([{"total": len(self._pending(session, params["hogar_id"], params["now"]))}])
+
+    def _count_created_between(self, session: StoreSession, params: Params) -> FakeResult:
+        """count(*) del hogar con `created_at >= :start and created_at < :end`, cualquier estado."""
+        total = sum(
+            row["hogar_id"] == params["hogar_id"]
+            and params["start"] <= row["created_at"] < params["end"]
+            for row in self.view(session, "invitaciones_hogar").values()
+        )
+        return FakeResult([{"total": total}])
 
     def _insert_invitation(self, session: StoreSession, params: Params) -> FakeResult:
         hogar_id, correo = params["hogar_id"], params["correo_invitado"]
@@ -1067,6 +1077,64 @@ def test_limit_of_five_counts_active_and_pending(
     invite(api, caplog, admin, hogar_id, db.emails[people[4]])
     view = ok(api("listarMiembros", admin, hogar_id=hogar_id))
     assert view["miembros_activos"] + len(view["invitaciones_pendientes"]) == MAX_MEMBERS
+
+
+MAX_DAILY_INVITATIONS = 20  # D2 de la fase 10 (members_invitations.MAX_DAILY_INVITATIONS)
+
+
+@each_personality
+def test_daily_invitation_limit_uses_the_bogota_day(
+    client: TestClient,
+    db: MembersStore,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    name: str,
+) -> None:
+    """D2 (decisión de Nicolás, RN-X-05): 20 invitaciones creadas hoy (Bogotá) → la 21.ª da 409.
+
+    Esperado: el administrador crea 20 invitaciones el lunes 30/11 (19 revocadas y 1 pendiente:
+    cuentan todas, en cualquier estado; así `LIMITE_MIEMBROS` no interviene). La 21.ª, a las
+    19:30 (ya 01/12 en UTC) y a las 23:59 de Bogotá, responde 409 `LIMITE_INVITACIONES_DIARIO`
+    con el mensaje de D2; no queda fila nueva, no se envía correo y el log no lleva enlace. A las
+    00:00 del martes (Bogotá) vuelve a dejar invitar (201, correo con enlace).
+    """
+    assert members_service.MAX_DAILY_INVITATIONS == MAX_DAILY_INVITATIONS
+    api = Api(client, db)
+    admin, hogar_id = household(db, client, monkeypatch, name)
+    created = []
+    for number in range(1, MAX_DAILY_INVITATIONS + 1):
+        at(number)
+        invitacion_id, _token = invite(api, caplog, admin, hogar_id, f"limite{number}@example.com")
+        created.append(invitacion_id)
+        if number < MAX_DAILY_INVITATIONS:
+            ok(api("revocarInvitacion", admin, hogar_id=hogar_id, invitacion_id=invitacion_id), 204)
+    states = Counter(db.invitation(i)["estado"] for i in created)
+    assert states == {"revocada": MAX_DAILY_INVITATIONS - 1, "pendiente": 1}
+
+    body = {"correo_invitado": "veintiuno@example.com"}
+    evening, last_minute = T0 + timedelta(minutes=440), T0 + timedelta(minutes=709)
+    assert evening.astimezone(UTC).date() == T0.date() + timedelta(days=1)  # otro día en UTC
+    for moment in (evening, last_minute):  # 19:30 y 23:59 del lunes en Bogotá
+        Clock.moment = moment
+        assert moment.astimezone(TIMEZONE).date() == T0.date()
+        before = db.snapshot()
+        sent, records = len(db.sent), len(caplog.records)
+        refused = error(api("crearInvitacion", admin, body, hogar_id=hogar_id), 409,
+                        "LIMITE_INVITACIONES_DIARIO")
+        assert refused["mensaje"] == members_service.DAILY_LIMIT_MESSAGE
+        assert db.snapshot() == before  # ni fila nueva ni ningún otro cambio
+        assert len(db.sent) == sent
+        new_records = caplog.records[records:]
+        assert not [r for r in new_records if r.name == email_service.__name__]
+        assert all(LINK_BASE not in r.getMessage() for r in new_records)
+
+    next_day = at(710)  # martes 01/12 00:00 en Bogotá
+    assert next_day.astimezone(TIMEZONE).timetuple()[:5] == (2026, 12, 1, 0, 0)
+    invitacion_id, token = invite(api, caplog, admin, hogar_id, body["correo_invitado"])
+    row = db.invitation(invitacion_id)
+    assert (row["estado"], row["created_at"]) == ("pendiente", next_day)
+    assert db.sent[-1][2] == LINK_BASE + token
+    assert len(db.rows("invitaciones_hogar")) == MAX_DAILY_INVITATIONS + 1
 
 
 def test_conflicts_when_inviting_and_accepting(

@@ -2,8 +2,9 @@
 
 Fase 6: consumo actual, consumo por zonas y detalle de una zona (RN-XI-01 a RN-XI-09, RN-XII-03,
 RN-XII-05 a RN-XII-07, RN-V-01, RN-V-02, RN-IV-05, DC-28, DC-34). Fase 7: historial por periodo
-(RN-XIII-01 a RN-XIII-06, DC-29 a DC-31; el cálculo vive en `app.domain.history`). Fuentes de
-datos sigue en 501 (fase 10).
+(RN-XIII-01 a RN-XIII-06, DC-29 a DC-31; el cálculo vive en `app.domain.history`). Fase 10:
+Fuentes de datos (RN-XVI-06, RN-III-03, RN-XVII-01; el cálculo vive en
+`app.domain.data_sources`).
 
 Pasos de cada consulta (la seguridad ya corrió en el router); cada caso de uso decide su rango:
 1. `_recover`: un único instante (`now` o `datetime.now(UTC)`) y la recuperación de horas
@@ -39,10 +40,10 @@ from app.data import households as households_data
 from app.data import tariffs as tariffs_data
 from app.data import users as users_data
 from app.data.households import ZoneRow
-from app.domain import history, states
+from app.domain import data_sources, history, states
 from app.domain.formats import zone_name
 from app.domain.simulator import TIMEZONE
-from app.errors import NOT_FOUND_MESSAGE, ApiError, CodigoError, NotImplementedOperation
+from app.errors import NOT_FOUND_MESSAGE, ApiError, CodigoError
 from app.schemas.common import IntervaloHora
 from app.schemas.consumption import (
     ConsumoActualHogar,
@@ -54,6 +55,8 @@ from app.schemas.consumption import (
     ConsumoZonaItem,
     ConsumoZonas,
     FuentesDatos,
+    FuentesDatosFuentePrincipal,
+    FuentesDatosSensor,
     Historial,
     HistorialComparacion,
     HistorialCosto,
@@ -69,6 +72,9 @@ from app.services._readings import read_series as _read_series
 from app.services.thresholds import get_thresholds
 
 ONE_HOUR = timedelta(hours=1)
+# Todo hogar creado por el onboarding tiene su fuente principal (RN-X-03); si falta, es un estado
+# imposible y la consulta responde 500 ERROR_INTERNO (mensaje sin datos).
+MISSING_MAIN_SOURCE_MESSAGE = "El hogar no tiene fuente principal."
 
 __all__ = [
     "get_current_consumption",
@@ -275,9 +281,68 @@ def get_history(
     return _to_history(evaluation, zona_id, {zone.id: zone.tipo for zone in counting})
 
 
-def get_data_sources(user_id: UUID, hogar_id: UUID) -> FuentesDatos:
-    """`obtenerFuentesDatos`: Fuente principal y sensores, solo lectura (RN-III-03, RN-XVI-06). TODO(obtenerFuentesDatos)."""
-    raise NotImplementedOperation("obtenerFuentesDatos")
+def get_data_sources(
+    session: Session,
+    user_id: UUID,
+    hogar_id: UUID,
+    can_view_values: bool,
+    now: datetime | None = None,
+) -> FuentesDatos:
+    """`obtenerFuentesDatos`: Fuente principal y sensores, solo lectura (RN-III-03, RN-XVI-06).
+
+    Recupera primero las horas faltantes (RN-IV-05, DC-34; si falla, responde con lo guardado y
+    un WARNING sin datos, nunca 500). Lista todos los sensores del hogar (también los de zonas
+    inactivas y los pausados) con el kWh de la última hora completa (kWh en 1 h = kW medio). El
+    estado de cada sensor, el orden, la suma de la fuente principal (solo los sensores que
+    cuentan; null si a alguno le falta la lectura) y la ocultación de valores los decide
+    `app.domain.data_sources.evaluate_data_sources`. `can_view_values` lo calcula el router:
+    administrador o `ver_consumo_actual` (RN-XVII-01). Solo lectura: sin commit propio.
+    """
+    moment = _recover(session, hogar_id, now)
+    hour_start, hour_end = states.evaluated_hour(moment)
+    source = households_data.get_main_source(session, hogar_id)
+    if source is None:
+        # TODO(pendiente: 500 genérico no declarado en el contrato; PENDIENTES #29).
+        raise RuntimeError(MISSING_MAIN_SOURCE_MESSAGE)
+    sensors = households_data.list_zone_sensors(session, hogar_id)
+    zone_ids = list(dict.fromkeys(sensor.zona_id for sensor in sensors))
+    series = _read_series(session, hogar_id, zone_ids, hour_start, hour_start)
+    view = data_sources.evaluate_data_sources(
+        [
+            data_sources.SensorInput(
+                sensor_id=sensor.sensor_id,
+                zona_id=sensor.zona_id,
+                zona_tipo=sensor.zona_tipo,
+                zona_estado=sensor.zona_estado,
+                sensor_estado=sensor.sensor_estado,
+                # El rango es una sola hora: a lo sumo una lectura por zona.
+                kwh=next(iter(series.get(sensor.zona_id, {}).values()), None),
+            )
+            for sensor in sensors
+        ],
+        can_view_values,
+    )
+    return FuentesDatos(
+        valores_ocultos=view.valores_ocultos,
+        hora=IntervaloHora(inicio=hour_start, fin=hour_end),
+        fuente_principal=FuentesDatosFuentePrincipal(
+            id=source.id,
+            nombre=source.nombre,
+            estado=source.estado,
+            potencia_kw=view.fuente_potencia_kw,
+        ),
+        sensores=[
+            FuentesDatosSensor(
+                id=sensor.sensor_id,
+                nombre=sensor.nombre,
+                zona_id=sensor.zona_id,
+                zona_nombre=sensor.zona_nombre,
+                potencia_kw=sensor.potencia_kw,
+                estado=sensor.estado,
+            )
+            for sensor in view.sensores
+        ],
+    )
 
 
 # ------------------------------------------------------------------ pasos de lectura

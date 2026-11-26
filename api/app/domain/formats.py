@@ -1,6 +1,7 @@
 """Formatos del backend: nombres, números es-CO, horas, claves de evento y textos resueltos.
 
-Nombres de zona y de la fuente principal (RN-XII-03, RN-X-03), meses (`formato.mes` del
+Nombres de zona, de sensor y de la fuente principal (RN-XII-03, RN-X-03, RN-XVI-06), mes y
+año «YYYY-MM» de la tarifa (RN-XVI-05), meses (`formato.mes` del
 catálogo), números es-CO (RN-XII-08: coma decimal y punto de miles; kW con 2 decimales y kWh con
 1), horas «HH:00» en America/Bogota, clave de evento (DC-25) y textos de
 `config_files/textos-backend.es-CO.json` (RN-XI-09). El dominio no lee el archivo: `services/`
@@ -12,6 +13,7 @@ con todos los valores escapados.
 from __future__ import annotations
 
 import html
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
 from datetime import date, datetime
@@ -56,6 +58,7 @@ MONTH_NAMES: Mapping[int, str] = MappingProxyType(
 )
 
 EVENT_KEY_SEPARATOR = ":"
+_YEAR_MONTH = re.compile(r"[0-9]{4}-(0[1-9]|1[0-2])")  # se usa con fullmatch
 
 # Valores que admite el esquema de `alertas` y `consejos` (RN-XIV-01, RN-XIV-02, RN-XV-04).
 ALERT_CATEGORIES: tuple[str, ...] = ("consumo", "consejo", "informacion")
@@ -89,6 +92,31 @@ def zone_name(tipo: str) -> str:
 def main_source_name(nombre_hogar: str) -> str:
     """Nombre de la fuente principal del hogar (RN-X-03; `fuentes.principal_nombre`)."""
     return f"Fuente principal {nombre_hogar}"
+
+
+def sensor_name(tipo: str) -> str:
+    """Nombre del sensor de una zona: «Sensor [zona]» (RN-XVI-06; `fuentes.sensor_nombre`).
+
+    Raises:
+        KeyError: el tipo no está en el catálogo de 9 zonas.
+    """
+    return f"Sensor {zone_name(tipo)}"
+
+
+# ------------------------------------------------------------------ mes y año
+def first_day_of_month(year_month: str) -> date:
+    """«YYYY-MM» -> día 1 de ese mes (RN-XVI-05: `vigente_desde` se guarda el día 1).
+
+    Mismo patrón que `TarifaCrear.vigente_desde` del contrato (`^[0-9]{4}-(0[1-9]|1[0-2])$`),
+    solo dígitos ASCII y sin espacios ni salto de línea final.
+
+    Raises:
+        ValueError: no es texto, no cumple el patrón o el año no es válido (0000).
+    """
+    if not isinstance(year_month, str) or not _YEAR_MONTH.fullmatch(year_month):
+        raise ValueError("se espera mes y año con el formato YYYY-MM")
+    year, month = year_month.split("-")
+    return date(int(year), int(month), 1)
 
 
 # ------------------------------------------------------------------ números y horas

@@ -52,7 +52,6 @@ from app.data.memberships import AlertMemberRow
 from app.domain import alert_rules, states
 from app.domain.alert_rules import (
     AlertDecision,
-    AlertMember,
     ExistingTip,
     PlannedAlert,
     TipTrigger,
@@ -60,6 +59,7 @@ from app.domain.alert_rules import (
 )
 from app.domain.formats import BackendTexts, build_event_key
 from app.domain.simulator import TIMEZONE
+from app.services._alert_delivery import insert_planned_alert, present_members
 from app.services._readings import ReadingsByZone, counting_zones, read_series
 from app.services.backend_texts import get_backend_texts
 from app.services.thresholds import get_thresholds
@@ -217,7 +217,7 @@ def _store_decisions(
             regla_origen=tip.regla_origen,
             created_at=tip.created_at,
         )
-        assigned = [member.usuario_id for member in _members_at(members, tip.created_at)]
+        assigned = [member.usuario_id for member in present_members(members, tip.created_at)]
         tips_data.insert_tip_assignments(session, consejo_id, assigned)
         notice = replace(
             tip.notice, clave_evento=build_event_key(NEW_TIP_NOTICE_RULE, str(consejo_id))
@@ -239,28 +239,9 @@ def _store_alert(
     Solo a los miembros con `fecha_ingreso <= alert.created_at`; entre ellos, `alert_recipients`
     aplica el permiso del hogar y el interruptor de la categoría (valores actuales).
     """
-    alerta_id = alerts_data.insert_alert(
-        session,
-        hogar_id=hogar_id,
-        categoria=alert.categoria,
-        severidad=alert.severidad,
-        titulo=alert.titulo,
-        mensaje=alert.mensaje,
-        zona_id=alert.zona_id,
-        regla_origen=alert.regla_origen,
-        clave_evento=alert.clave_evento,
-        created_at=alert.created_at,
-    )
+    alerta_id = insert_planned_alert(session, hogar_id, alert)
     if alerta_id is not None:
-        present = [
-            AlertMember(row.usuario_id, row.rol, row.notif_consumo, row.notif_consejos)
-            for row in _members_at(members, alert.created_at)
-        ]
+        present = present_members(members, alert.created_at)
         recipients = alert_rules.alert_recipients(alert.categoria, present, permission)
         alerts_data.insert_alert_deliveries(session, alerta_id, recipients)
     return alerta_id
-
-
-def _members_at(members: Sequence[AlertMemberRow], moment: datetime) -> list[AlertMemberRow]:
-    """Miembros activos que ya estaban en el hogar en `moment` (RN-XV-06, RN-VI-02)."""
-    return [member for member in members if member.fecha_ingreso <= moment]

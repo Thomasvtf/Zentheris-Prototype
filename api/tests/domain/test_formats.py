@@ -399,3 +399,52 @@ def test_render_invitation_email_keeps_braces_in_values() -> None:
 def test_render_invitation_email_subject_is_one_line() -> None:
     email = render_email(invitador="Ana\r\nBcc: otro@example.com")
     assert "\n" not in email.asunto and "\r" not in email.asunto
+
+
+# ------------------------------------------------------------------ fase 10: fuentes y tarifa
+@pytest.mark.parametrize("zone_type", ZONE_TYPES)
+def test_sensor_name_matches_the_catalog(zone_type: str) -> None:
+    """«Sensor [zona]» (RN-XVI-06; `fuentes.sensor_nombre`) con el nombre visible de la zona."""
+    template = load_catalog()["fuentes"]["sensor_nombre"]
+    expected = template.replace("{zona}", load_catalog()["zona"][zone_type], 1)
+    assert F.sensor_name(zone_type) == expected
+
+
+def test_sensor_name_examples() -> None:
+    assert F.sensor_name("bano") == "Sensor Baño"
+    assert F.sensor_name("cuarto_servicio") == "Sensor Cuarto de servicio"
+
+
+def test_sensor_name_out_of_catalog() -> None:
+    with pytest.raises(KeyError):
+        F.sensor_name("patio")
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("2026-11", date(2026, 11, 1)),
+        ("2026-01", date(2026, 1, 1)),
+        ("2027-12", date(2027, 12, 1)),
+        ("2028-02", date(2028, 2, 1)),
+    ],
+)
+def test_first_day_of_month(text: str, expected: date) -> None:
+    """`vigente_desde` «YYYY-MM» se guarda como el día 1 (RN-XVI-05, contrato `TarifaCrear`)."""
+    assert F.first_day_of_month(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["2026-13", "2026-00", "2026-1", "26-11", "2026-11-01", "2026/11", " 2026-11", "2026-11 ",
+     "2026-11\n", "", "２０２６-11", "0000-01", "abcd-ef"],
+)
+def test_first_day_of_month_rejects_invalid(text: str) -> None:
+    with pytest.raises(ValueError):
+        F.first_day_of_month(text)
+
+
+@pytest.mark.parametrize("value", [None, 202611, date(2026, 11, 1)])
+def test_first_day_of_month_rejects_non_text(value: object) -> None:
+    with pytest.raises(ValueError):
+        F.first_day_of_month(value)  # type: ignore[arg-type]

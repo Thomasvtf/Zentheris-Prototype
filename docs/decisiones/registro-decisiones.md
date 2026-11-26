@@ -1,6 +1,6 @@
 # Registro de decisiones de cierre de pendientes · 03/11/2026
 
-Versión 1.1 · 2026-11-03, ampliada el 2026-11-11 con DC-59 a DC-69 y el 2026-11-12 con DC-70 (America/Bogota). **Origen:** autonomía delegada por Nicolás el 03/11/2026. Cada decisión cuenta como **aprobada**, salvo que Nicolás pida revertirla. Para revertir una, basta con citar su ID (por ejemplo, «revertir DC-12»).
+Versión 1.1 · 2026-11-03, ampliada el 2026-11-11 con DC-59 a DC-69 el 2026-11-12 con DC-70 y el 2026-11-26 con DC-71 a DC-73 (America/Bogota). **Origen:** autonomía delegada por Nicolás el 03/11/2026. Cada decisión cuenta como **aprobada**, salvo que Nicolás pida revertirla. Para revertir una, basta con citar su ID (por ejemplo, «revertir DC-12»).
 
 Antes de tomar cada decisión se verificó su coherencia con las reglas v4.8, el contrato 0.2.4, el catálogo de textos v1, el sistema de diseño y la arquitectura del prototipo. Todas quedan incorporadas en las **reglas v4.9** (sección 9.5) y en el **contrato 0.2.5**.
 
@@ -107,6 +107,16 @@ Origen: respuestas de Nicolás en el chat de revisión de las Fases 0 a 2. Nicol
 | DC-68 | Cadena de PR y condiciones de fusión | Los 6 PR de la Fase 3 van **en cadena**: cada rama sale de la anterior y cada PR apunta a la rama anterior (solo el PR 1 apunta a `main`). Condiciones: (1) fusionar con «Create a merge commit», nunca «Squash» ni «Rebase»; (2) fusionar de abajo hacia arriba y siempre hacia `main`, redirigiendo el PR antes; (3) cada descripción dice «Depende de #N»; (4) borrar la rama ya fusionada para que GitHub redirija el siguiente PR. Los PR 7 y 8 (alineación) salen de las puntas de las ramas del equipo y traen `feat/esqueleto-app`. Los PR se abren como borrador mientras no se hable con el equipo (propuesta; Nicolás no se pronunció aparte). La fusión a `main` sigue sin autorizarse. | DC-61, DC-65 | [P] confirmada por Nicolás 11/11/2026 (cadena y 4 condiciones); borrador propuesto |
 | DC-69 | Abreviaturas, signo y tiempo relativo (RN-XII-08 no los define) | **Miles «k»** siempre con 1 decimal (6.000 → «$6,0k»); desde 1.000.000 sigue con «k» (1.250.000 → «$1.250,0k»). **Negativos** con guion (−) y redondeo medio hacia arriba sobre el valor sin signo (−12,5 → −13), sin `toFixed`. **`relativeTime`:** menos de 1 min «Ahora»; menos de 60 min «Hace n min»; mismo día calendario «Hace n h»; día calendario anterior «Ayer»; de 2 a 6 días «Hace n días»; 7 días o más «dd/mm»; no usa «Hoy». «Mismo día» y «ayer» se calculan en America/Bogota. | RN-XII-08, catálogo `formato.tiempo` | [P] confirmada por Nicolás 11/11/2026 |
 | DC-70 | Opción A y retiro de `paquete-repo/` | DC-70 (12/11/2026, Nicolás): se mantiene la opción A de DC-57 (Archivos_Zentheris es el original y el repositorio es la copia). Se retira 11_guias-de-desarrollo/paquete-repo/: sus duplicados van a _por-borrar y sus originales a la carpeta temática. La correspondencia carpeta ↔ repositorio y el estado de sincronización viven en MANIFIESTO.md, que reemplaza a LEEME-paquete-repo.md. | DC-57, `MANIFIESTO.md` | [P] confirmada por Nicolás 12/11/2026 |
+
+## G. Backend, fase 10 (26/11/2026)
+
+Origen: la fase 10 del backend (meta, tarifa, Fuentes de datos e invitaciones). DC-72 la decidió Nicolás el 25/11/2026; DC-71 y DC-73 las decidió Claude por la autonomía delegada («si algo no es mío decides lo más simple»). Quedan en el contrato 0.2.10.
+
+| ID | Pendiente | Decisión | Afecta | Evidencia |
+|---|---|---|---|---|
+| DC-71 | Meta cambiada el mismo día en que empezó la anterior (la tabla exige `fecha_fin` posterior a `fecha_inicio`) | La meta anterior pasa a `inactiva` con `fecha_fin` vacía y ese día vale la meta más reciente. No se cambia la tabla. | `POST /hogares/{hogar_id}/metas`, tabla `metas` | [V] pruebas de la fase 10 |
+| DC-72 | Límite de invitaciones por día (RN-X no lo define) | Máximo **20 invitaciones creadas por hogar al día**, con el día de America/Bogota, contando también las canceladas (cada una mandó un correo). La 21.ª responde `409 LIMITE_INVITACIONES_DIARIO`, no crea la invitación y no manda correo. Texto: `error.limite_invitaciones_diario`. Cuida el cupo de 300 correos al día de Brevo (DC-04). | RN-X, contrato, catálogo | [P] decidida por Nicolás 25/11/2026; [V] pruebas |
+| DC-73 | Tarifa con mes futuro (solo lo prohibía un texto de la app) | El servidor también rechaza meses futuros (`error.campo.vigencia_futura`), así «tarifa vigente» significa una sola cosa. | `POST /hogares/{hogar_id}/tarifas` | [V] pruebas de la fase 10 |
 
 ## Qué no se decidió (fuera de la autonomía o depende de terceros)
 

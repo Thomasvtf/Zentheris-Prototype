@@ -24,6 +24,7 @@ from app.data.invitations import (
     InvitationRow,
     PendingInvitationExistsError,
     ReceivedInvitationRow,
+    count_invitations_created_between,
     count_pending_invitations,
     expire_stale_pending,
     expire_stale_pending_for_email,
@@ -48,6 +49,7 @@ ALL_STATEMENTS = (
     invitations.EXPIRE_STALE_PENDING_FOR_EMAIL_SQL,
     invitations.HAS_PENDING_INVITATION_SQL,
     invitations.COUNT_PENDING_INVITATIONS_SQL,
+    invitations.COUNT_INVITATIONS_CREATED_BETWEEN_SQL,
     invitations.INSERT_INVITATION_SQL,
     invitations.LIST_PENDING_INVITATIONS_SQL,
     invitations.INVITATION_BY_ID_SQL,
@@ -661,3 +663,76 @@ def test_get_received_invitation_uses_the_same_projection_by_id() -> None:
 
 def test_get_received_invitation_returns_none_without_row() -> None:
     assert get_received_invitation(FakeSession(), uuid4()) is None  # type: ignore[arg-type]
+
+
+# ------------------------------------------- límite diario de invitaciones (D2, fase 10)
+
+# 00:00 de Bogotá del 25/11/2026 y del 26/11/2026 (lo que calcula el servicio desde NOW).
+DAY_START = datetime(2026, 11, 25, tzinfo=BOGOTA)
+DAY_END = datetime(2026, 11, 26, tzinfo=BOGOTA)
+
+
+def test_count_invitations_created_between_binds_household_and_bounds() -> None:
+    hogar_id = uuid4()
+    session = FakeSession([{"total": 20}])
+
+    total = count_invitations_created_between(session, hogar_id, DAY_START, DAY_END)  # type: ignore[arg-type]
+
+    assert total == 20
+    statement, params = session.calls[0]
+    assert statement is invitations.COUNT_INVITATIONS_CREATED_BETWEEN_SQL
+    assert isinstance(statement, TextClause)
+    assert params == {"hogar_id": hogar_id, "start": DAY_START, "end": DAY_END}
+    assert_bound_only(statement, params)
+    assert session.commits == 0
+
+
+def test_count_invitations_created_between_counts_every_state_half_open() -> None:
+    """R-01 y D2: solo el hogar; created_at en [start, end); sin filtrar por estado."""
+    assert normalized_sql(invitations.COUNT_INVITATIONS_CREATED_BETWEEN_SQL) == (
+        "select count(*) as total from invitaciones_hogar "
+        "where hogar_id = :hogar_id and created_at >= :start and created_at < :end"
+    )
+
+
+@pytest.mark.parametrize(("rows", "expected"), [([{"total": 0}], 0), ([], 0), ([{"total": 7}], 7)])
+def test_count_invitations_created_between_maps_the_total(
+    rows: list[dict[str, Any]], expected: int
+) -> None:
+    session = FakeSession(rows)
+
+    total = count_invitations_created_between(session, uuid4(), DAY_START, DAY_END)  # type: ignore[arg-type]
+
+    assert total == expected
+    assert type(total) is int
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        (DAY_START.replace(tzinfo=None), DAY_END),
+        (DAY_START, DAY_END.replace(tzinfo=None)),
+        (DAY_START.replace(tzinfo=None), DAY_END.replace(tzinfo=None)),
+    ],
+    ids=["start naive", "end naive", "ambas naive"],
+)
+def test_count_invitations_created_between_rejects_naive_datetimes_without_sql(
+    start: datetime, end: datetime
+) -> None:
+    session = FakeSession()
+
+    with pytest.raises(ValueError, match="zona horaria"):
+        count_invitations_created_between(session, uuid4(), start, end)  # type: ignore[arg-type]
+
+    assert session.calls == []
+
+
+def test_count_invitations_created_between_accepts_utc_bounds() -> None:
+    """Cualquier zona horaria explícita vale; el servicio usa la de Bogotá."""
+    session = FakeSession([{"total": 1}])
+
+    total = count_invitations_created_between(  # type: ignore[arg-type]
+        session, uuid4(), DAY_START.astimezone(UTC), DAY_END.astimezone(UTC)
+    )
+
+    assert total == 1

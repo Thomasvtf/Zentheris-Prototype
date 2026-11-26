@@ -405,3 +405,84 @@ def update_permissions(
     result = session.exec(UPDATE_PERMISSIONS_SQL, params=params)
     row = result.mappings().first()
     return None if row is None else _to_household_row(row)
+
+
+# ------------------------------------------------------------ fuentes de datos (RN-XVI-06)
+
+# RN-XVI-06, R-01: la fuente principal (medidor virtual) del hogar; una por hogar en el MVP
+# (único fuentes_principales.hogar_id).
+MAIN_SOURCE_SQL = text(
+    """
+    select id,
+           nombre,
+           estado
+      from fuentes_principales
+     where hogar_id = :hogar_id
+    """
+)
+
+# RN-XVI-06, RN-III-03, R-01: todos los sensores del hogar con su zona (uno por zona, RN-X-03),
+# sin filtrar por estado: el dominio decide el estado de cada uno y cuáles cuentan para el total
+# (counts_for_total). Filtra por zonas.hogar_id (I-01: sensor y zona del mismo hogar). Usa
+# ix_zonas_hogar y el único sensores_zona.zona_id.
+ZONE_SENSORS_SQL = text(
+    """
+    select s.id as sensor_id,
+           z.id as zona_id,
+           z.tipo as zona_tipo,
+           z.estado as zona_estado,
+           s.estado as sensor_estado
+      from sensores_zona s
+      join zonas z on z.id = s.zona_id
+     where z.hogar_id = :hogar_id
+     order by z.id
+    """
+)
+
+
+@dataclass(frozen=True)
+class MainSourceRow:
+    """Fuente principal del hogar: medidor virtual general (RN-XVI-06)."""
+
+    id: UUID
+    nombre: str
+    estado: Literal["activa", "inactiva"]
+
+
+@dataclass(frozen=True)
+class ZoneSensorRow:
+    """Sensor de una zona con los estados de ambos (RN-XVI-06, RN-III-03)."""
+
+    sensor_id: UUID
+    zona_id: UUID
+    zona_tipo: str
+    zona_estado: Literal["activa", "inactiva"]
+    sensor_estado: Literal["activo", "pausado"]
+
+
+def get_main_source(session: Session, hogar_id: UUID) -> MainSourceRow | None:
+    """La fuente principal de `hogar_id`, o None si no hay (RN-XVI-06, R-01). Sin commit."""
+    result = session.exec(MAIN_SOURCE_SQL, params={"hogar_id": hogar_id})
+    row = result.mappings().first()
+    if row is None:
+        return None
+    return MainSourceRow(id=as_uuid(row["id"]), nombre=row["nombre"], estado=row["estado"])
+
+
+def list_zone_sensors(session: Session, hogar_id: UUID) -> list[ZoneSensorRow]:
+    """Todos los sensores de `hogar_id` con su zona, ordenados por id de zona (RN-XVI-06, R-01).
+
+    Incluye zonas inactivas y sensores pausados (el dominio fija el estado y el orden visible).
+    Hogar sin sensores → lista vacía. Sin commit.
+    """
+    result = session.exec(ZONE_SENSORS_SQL, params={"hogar_id": hogar_id})
+    return [
+        ZoneSensorRow(
+            sensor_id=as_uuid(row["sensor_id"]),
+            zona_id=as_uuid(row["zona_id"]),
+            zona_tipo=row["zona_tipo"],
+            zona_estado=row["zona_estado"],
+            sensor_estado=row["sensor_estado"],
+        )
+        for row in result.mappings().all()
+    ]

@@ -476,6 +476,19 @@ def install_fake_members_database(monkeypatch: pytest.MonkeyPatch, db: FakeMembe
         ev.append(("count_pending_invitations", hogar_id, now))
         return sum(1 for i in _pending(session, now) if i.hogar_id == hogar_id)
 
+    def count_invitations_created_between(
+        session: Any, hogar_id: UUID, start: datetime, end: datetime
+    ) -> int:
+        """Como la consulta: `created_at` en [start, end), cualquier estado; naive → ValueError."""
+        ev.append(("count_invitations_created_between", hogar_id, start, end))
+        if start.utcoffset() is None or end.utcoffset() is None:
+            raise ValueError("`start` y `end` deben llevar zona horaria.")
+        return sum(
+            1
+            for i in _tables(session).invitations.values()
+            if i.hogar_id == hogar_id and start <= i.created_at < end
+        )
+
     def insert_invitation(
         session: Any,
         *,
@@ -659,6 +672,7 @@ def install_fake_members_database(monkeypatch: pytest.MonkeyPatch, db: FakeMembe
                 expire_stale_pending_for_email,
                 has_pending_invitation,
                 count_pending_invitations,
+                count_invitations_created_between,
                 insert_invitation,
                 list_pending_invitations,
                 get_invitation,

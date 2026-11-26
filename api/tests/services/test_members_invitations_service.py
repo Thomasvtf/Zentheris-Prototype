@@ -4,7 +4,8 @@ Las 11 operaciones de «Miembros e invitaciones»: camino feliz y cada error en 
 documenta cada función de app.services.members_invitations, con el `CodigoError` exacto y sin
 commit (salvo las invitaciones vencidas, que se marcan 'expirada' y se confirman antes del 409,
 DC-42). Vencida ⇔ `expira_en < now` (RN-X-05): en la frontera exacta sigue vigente. Reglas:
-RN-II-01..04, RN-X-05..08, RN-IX-03, RN-XIV-06/07/08, RN-VI-02, DC-04, DC-25, DC-41, DC-42.
+RN-II-01..04, RN-X-05..08, RN-IX-03, RN-XIV-06/07/08, RN-VI-02, DC-04, DC-25, DC-41, DC-42 y
+(fase 10) el límite diario de 20 invitaciones por hogar en el día de Bogotá (D2, contrato 0.2.10).
 """
 
 import hashlib
@@ -1127,6 +1128,221 @@ def test_create_invitation_with_pending_expiring_exactly_now_is_409_pending_exis
     assert db.committed.invitations[frontera].estado == "pendiente"  # no se marcó expirada
 
 
+# --- crearInvitacion · límite diario (D2, contrato 0.2.10) ------------------------------------
+
+# NOW = 25/11/2026 15:00 UTC = 10:00 Bogotá. El día de Bogotá va de 05:00 UTC a 05:00 UTC.
+BOGOTA_TODAY_START = datetime(2026, 11, 25, 5, 0, tzinfo=UTC)
+BOGOTA_TOMORROW_START = datetime(2026, 11, 26, 5, 0, tzinfo=UTC)
+# Estados que no cuentan para LIMITE_MIEMBROS pero sí para el límite diario.
+CLOSED_STATES = ("revocada", "expirada", "rechazada", "aceptada")
+
+
+def _created_today(
+    db: FakeMembersDatabase, count: int, *, first: datetime = BOGOTA_TODAY_START, pending: int = 0
+) -> None:
+    """`count` invitaciones creadas desde `first` (una por minuto); las `pending` primeras siguen
+    pendientes y vigentes, las demás en estados cerrados (revocada, expirada, …)."""
+    for index in range(count):
+        created = first + timedelta(minutes=index)
+        db.add_invitation(
+            HOGAR,
+            f"hoy{index}@example.com",
+            invitado_por=ADMIN,
+            expira_en=created + timedelta(days=7),
+            estado="pendiente" if index < pending else CLOSED_STATES[index % len(CLOSED_STATES)],
+            created_at=created,
+        )
+
+
+def test_create_invitation_daily_limit_21st_is_409_without_insert_or_email(
+    db: FakeMembersDatabase,
+    session: FakeMembersSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """D2: con 20 creadas hoy (2 pendientes + 18 revocadas/expiradas/…), la 21.ª responde 409
+    LIMITE_INVITACIONES_DIARIO; no genera token, no inserta, no envía correo (ni el enlace al log
+    del modo local) y no hay commit."""
+    _created_today(db, 20, pending=2)
+    before = dict(db.committed.invitations)
+    # Envío real en modo local (sin SMTP): si se llamara, escribiría el enlace en el log.
+    monkeypatch.setattr(email_service, "send_invitation_email", REAL_SEND_INVITATION_EMAIL)
+    local = Settings.model_construct(
+        invitation_link_base=LINK_BASE,
+        smtp_host=None,
+        smtp_user=None,
+        smtp_password=None,
+        smtp_sender=None,
+    )
+
+    def no_token() -> Any:
+        raise AssertionError("no debe generar token al superar el límite diario")
+
+    monkeypatch.setattr(service, "generate_invitation_token", no_token)
+    payload = InvitacionCrear.model_validate({"correo_invitado": CORREO_CARLA})
+
+    with caplog.at_level(logging.DEBUG):
+        error = _raises(
+            409,
+            CodigoError.LIMITE_INVITACIONES_DIARIO,
+            service.create_invitation,
+            session,
+            local,
+            ADMIN,
+            HOGAR,
+            payload,
+            now=NOW,
+        )
+
+    assert error.mensaje == "El hogar alcanzó el límite de 20 invitaciones por día."
+    assert service.MAX_DAILY_INVITATIONS == 20
+    names = db.names()
+    assert "insert_invitation" not in names
+    assert "send_invitation_email" not in names
+    assert LINK_BASE not in caplog.text
+    assert db.sent_emails == []
+    assert session.commits == 0
+    assert db.committed.invitations == before
+
+
+def test_create_invitation_daily_limit_check_order_and_bogota_bounds(
+    db: FakeMembersDatabase, session: FakeMembersSession, settings: Settings
+) -> None:
+    """El chequeo va bajo el bloqueo, después de LIMITE_MIEMBROS y antes de insertar, con
+    [00:00 Bogotá de hoy, 00:00 Bogotá de mañana)."""
+    payload = InvitacionCrear.model_validate({"correo_invitado": CORREO_CARLA})
+
+    service.create_invitation(session, settings, ADMIN, HOGAR, payload, now=NOW)  # type: ignore[arg-type]
+
+    names = db.names()
+    assert names[0] == "lock_household"
+    assert names.index("count_pending_invitations") < names.index(
+        "count_invitations_created_between"
+    )
+    assert names.index("count_invitations_created_between") < names.index("insert_invitation")
+    (event,) = [e for e in db.events if e[0] == "count_invitations_created_between"]
+    assert event == (
+        "count_invitations_created_between",
+        HOGAR,
+        BOGOTA_TODAY_START,
+        BOGOTA_TOMORROW_START,
+    )
+
+
+def test_create_invitation_members_limit_is_checked_before_daily_limit(
+    db: FakeMembersDatabase, session: FakeMembersSession, settings: Settings
+) -> None:
+    db.add_membership(HOGAR, CARLA, fecha_ingreso=JOINED)  # 3 activos
+    _created_today(db, 20, pending=2)  # + 2 pendientes = 5 y 20 creadas hoy
+    payload = InvitacionCrear.model_validate({"correo_invitado": "tres@example.com"})
+
+    _raises(
+        409,
+        CodigoError.LIMITE_MIEMBROS,
+        service.create_invitation,
+        session,
+        settings,
+        ADMIN,
+        HOGAR,
+        payload,
+        now=NOW,
+    )
+    assert "count_invitations_created_between" not in db.names()
+
+
+def test_create_invitation_with_19_today_and_older_ones_is_created(
+    db: FakeMembersDatabase, session: FakeMembersSession, settings: Settings
+) -> None:
+    """19 de hoy + las de ayer (hasta las 23:59:59 Bogotá) y las de otro hogar no llegan a 20."""
+    _created_today(db, 19, pending=1)
+    for index in range(5):
+        created = BOGOTA_TODAY_START - SECOND - timedelta(hours=index)  # ayer en Bogotá
+        db.add_invitation(
+            HOGAR,
+            f"ayer{index}@example.com",
+            invitado_por=ADMIN,
+            expira_en=created + timedelta(days=7),
+            estado="revocada",
+            created_at=created,
+        )
+    for index in range(3):
+        db.add_invitation(
+            OTRO_HOGAR,
+            f"otro{index}@example.com",
+            invitado_por=None,
+            expira_en=NOW + timedelta(days=7),
+            estado="revocada",
+            created_at=NOW - timedelta(hours=1),
+        )
+    payload = InvitacionCrear.model_validate({"correo_invitado": CORREO_CARLA})
+
+    result = service.create_invitation(session, settings, ADMIN, HOGAR, payload, now=NOW)  # type: ignore[arg-type]
+
+    assert db.committed.invitations[result.id].estado == "pendiente"
+    assert len(db.sent_emails) == 1
+    assert session.commits == 1
+
+
+def test_create_invitation_daily_limit_counts_one_created_exactly_at_bogota_midnight(
+    db: FakeMembersDatabase, session: FakeMembersSession, settings: Settings
+) -> None:
+    _created_today(db, 19, first=BOGOTA_TODAY_START + timedelta(hours=1))
+    db.add_invitation(
+        HOGAR,
+        "medianoche@example.com",
+        invitado_por=ADMIN,
+        expira_en=BOGOTA_TODAY_START + timedelta(days=7),
+        estado="expirada",
+        created_at=BOGOTA_TODAY_START,  # 00:00:00 Bogotá: ya es hoy
+    )
+    payload = InvitacionCrear.model_validate({"correo_invitado": CORREO_CARLA})
+
+    _raises(
+        409,
+        CodigoError.LIMITE_INVITACIONES_DIARIO,
+        service.create_invitation,
+        session,
+        settings,
+        ADMIN,
+        HOGAR,
+        payload,
+        now=NOW,
+    )
+
+
+def test_create_invitation_daily_limit_uses_the_bogota_day_not_the_utc_day(
+    db: FakeMembersDatabase, session: FakeMembersSession, settings: Settings
+) -> None:
+    """26/11 04:30 UTC sigue siendo el 25/11 (23:30) en Bogotá: las 20 del 25 cuentan. A las
+    00:00 Bogotá del 26 el contador vuelve a empezar."""
+    _created_today(db, 20)
+    payload = InvitacionCrear.model_validate({"correo_invitado": CORREO_CARLA})
+    late = datetime(2026, 11, 26, 4, 30, tzinfo=UTC)
+
+    _raises(
+        409,
+        CodigoError.LIMITE_INVITACIONES_DIARIO,
+        service.create_invitation,
+        session,
+        settings,
+        ADMIN,
+        HOGAR,
+        payload,
+        now=late,
+    )
+
+    next_day = db.session("B")
+    result = service.create_invitation(
+        next_day,  # type: ignore[arg-type]
+        settings,
+        ADMIN,
+        HOGAR,
+        payload,
+        now=BOGOTA_TOMORROW_START,
+    )
+    assert db.committed.invitations[result.id].estado == "pendiente"
+
+
 # --- aceptarInvitacion ------------------------------------------------------------------------
 
 
@@ -1434,3 +1650,10 @@ def test_accept_invitation_alert_failure_propagates_without_commit(
     assert session.commits == 0
     assert db.active_memberships_of(CARLA) == []
     assert db.committed.invitations[invitation].estado == "pendiente"
+
+
+def test_bogota_day_bounds_rejects_a_naive_now() -> None:
+    """Igual que `_bogota_date` de metas: sin zona horaria, ValueError (no la hora del servidor)."""
+    with pytest.raises(ValueError):
+        service._bogota_day_bounds(NOW.replace(tzinfo=None))
+    assert service._bogota_day_bounds(NOW) == (BOGOTA_TODAY_START, BOGOTA_TOMORROW_START)

@@ -404,6 +404,10 @@
       },
       "titulo": "Ya no quedan cupos",
       "cuerpo": "El hogar tiene 5 entre miembros activos e invitaciones pendientes. Cancela una invitación o espera a que alguien salga."
+    },
+    "limite_invitaciones_diario": {
+      "titulo": "Llegaste al límite de invitaciones de hoy",
+      "cuerpo": "Este hogar ya creó 20 invitaciones hoy. Podrás invitar de nuevo mañana."
     }
   },
   "comun": {

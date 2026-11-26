@@ -92,7 +92,7 @@ def remove_member(
     operation_id="transferirAdministracion",
     summary="Transferir el rol de administrador a otro miembro activo (RN-II-04, RN-X-07)",
     response_model=MiembrosHogar,
-    responses=error_responses(401, 403, 404, 409, 422),
+    responses=error_responses(401, 403, 404, 422),
 )
 def transfer_admin(
     hogar_id: UUID,
@@ -127,7 +127,7 @@ def leave_household(
     summary="Invitar a una persona por correo (RN-X-05)",
     response_model=InvitacionPendiente,
     status_code=201,
-    responses=error_responses(401, 403, 404, 409, 422),
+    responses=error_responses(401, 403, 404, 409, 422, 500),
 )
 def create_invitation(
     hogar_id: UUID,

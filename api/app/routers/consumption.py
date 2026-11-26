@@ -110,8 +110,14 @@ def get_history(
     operation_id="obtenerFuentesDatos",
     summary="Fuente principal y sensores, solo lectura (RN-III-03, RN-XVI-06)",
     response_model=FuentesDatos,
-    responses=error_responses(401, 404),
+    responses=error_responses(401, 404, 422),
 )
-def get_data_sources(hogar_id: UUID, user: CurrentUser, member: CurrentMembership) -> FuentesDatos:
-    """Fuente principal y sensores, solo lectura (RN-III-03, RN-XVI-06)."""
-    return service.get_data_sources(user.id, hogar_id)
+def get_data_sources(
+    hogar_id: UUID, user: CurrentUser, member: CurrentMembership, session: DbSession
+) -> FuentesDatos:
+    """Fuente principal y sensores, solo lectura (RN-III-03, RN-XVI-06).
+
+    Sin `ver_consumo_actual` no hay 403: el servicio oculta los valores (P-07, RN-XVII-01).
+    """
+    can_view_values = member.is_admin or member.permisos.ver_consumo_actual
+    return service.get_data_sources(session, user.id, hogar_id, can_view_values)

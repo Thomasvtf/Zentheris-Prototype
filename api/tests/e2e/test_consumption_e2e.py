@@ -14,7 +14,9 @@ fase 6, imitando su resultado (no las ramas del SQL):
 - `HOURLY_READINGS_SQL`: lecturas de las zonas pedidas del hogar en [start, end] inclusive, por
   zona y hora; el kWh como NUMERIC (Decimal) y la hora en UTC, como el controlador.
 - `PREFERENCES_SQL`, `ACTIVE_GOAL_SQL` y `CURRENT_TARIFF_SQL` (vigencia [desde, hasta), DC-39).
-  Metas y tarifas se siembran ya confirmadas: aún no hay operación que las cree (fase 7+).
+  Metas y tarifas son filas de `metas_consumo` y `tarifas_hogar` (`tests/e2e/goals_tariff_store.py`);
+  estas pruebas las siembran ya confirmadas (`crearMeta` y `crearTarifa` se prueban por la API en
+  `test_goals_tariff_e2e.py`).
 
 Reloj: el onboarding corre en T (sábado 21/11/2026 22:10, Bogotá) y `datetime.now()` del
 servicio de consumo se fija por prueba (`query_at`). Los umbrales salen de `make_test_settings()`
@@ -49,9 +51,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.data import alerts as alerts_data
-from app.data import goals as goals_data
 from app.data import memberships as memberships_data
-from app.data import tariffs as tariffs_data
 from app.data import users as users_data
 from app.domain.formats import zone_name
 from app.domain.simulator import TIMEZONE, hour_from_index
@@ -68,6 +68,7 @@ from tests.e2e.alerts_store import (
     ZONES_STATEMENT,
     use_test_config,
 )
+from tests.e2e.goals_tariff_store import GoalsTariffMixin
 from tests.e2e.test_hour_recovery_e2e import (
     END,
     HOURS_OFF,
@@ -126,22 +127,22 @@ each_personality = pytest.mark.parametrize("name", PERSONALITY_ORDER)
 # --- el almacén con las sentencias de la fase 6 ---------------------------------------------
 
 
-class ConsumptionStore(RecoveryStore):
+class ConsumptionStore(GoalsTariffMixin, RecoveryStore):
     """`RecoveryStore` más las lecturas de la guardia y de las consultas de consumo.
 
     Zonas y lecturas por hora (`HOUSEHOLD_ZONES_SQL`, `HOURLY_READINGS_SQL`) las resuelve ya el
-    almacén de la recuperación, porque también las usa la evaluación en vivo de alertas.
+    almacén de la recuperación, porque también las usa la evaluación en vivo de alertas. Metas,
+    tarifas y fuentes de datos (`ACTIVE_GOAL_SQL`, `CURRENT_TARIFF_SQL` y las de la fase 10) las
+    resuelve `GoalsTariffMixin` sobre las tablas `metas_consumo` y `tarifas_hogar`
+    (`tests/e2e/goals_tariff_store.py`).
     """
 
     def __init__(self) -> None:
         super().__init__()
-        self.goals: dict[UUID, dict[str, Any]] = {}  # metas_consumo 'activa' por hogar
-        self.tariffs: dict[UUID, list[dict[str, Any]]] = {}  # tarifas_hogar por hogar
+        self.register_goals_tariff()
         for module, name, handler in (
             (memberships_data, MEMBERSHIP_STATEMENT, self._membership_with_permissions),
             (users_data, PREFERENCES_STATEMENT, self._preferences),
-            (goals_data, GOAL_STATEMENT, self._active_goal),
-            (tariffs_data, TARIFF_STATEMENT, self._current_tariff),
         ):
             self.handlers[id(getattr(module, name))] = (name, handler)
 
@@ -177,21 +178,6 @@ class ConsumptionStore(RecoveryStore):
     def _preferences(self, session: StoreSession, params: Params) -> FakeResult:
         row = self.view(session, "preferencias_usuario").get(params["usuario_id"])
         return FakeResult([] if row is None else [row])
-
-    def _active_goal(self, _session: StoreSession, params: Params) -> FakeResult:
-        goal = self.goals.get(params["hogar_id"])
-        return FakeResult([] if goal is None else [goal])
-
-    def _current_tariff(self, _session: StoreSession, params: Params) -> FakeResult:
-        today = params["today"]
-        return FakeResult(
-            [
-                row
-                for row in self.tariffs.get(params["hogar_id"], [])
-                if row["vigente_desde"] <= today
-                and (row["vigente_hasta"] is None or row["vigente_hasta"] > today)
-            ]
-        )
 
     # --- preparación y lo que miran las pruebas ----------------------------------------
 
@@ -444,7 +430,7 @@ def test_tariff_costs_and_goal_reference(
     hogar_id = new_household(db, client, monkeypatch, name)
     user_id = user_of(name)
     query_at(monkeypatch, T)
-    db.tariffs[hogar_id] = [
+    db.seed_tariffs(hogar_id, [
         {  # vencida el 21/11: [desde, hasta) no la incluye
             "id": stable_id("tarifa", TAG, name, "vieja"),
             "precio_kwh": Decimal("999.0000"),
@@ -459,13 +445,10 @@ def test_tariff_costs_and_goal_reference(
             "vigente_desde": date(2026, 11, 21),
             "vigente_hasta": None,
         },
-    ]
-    db.goals[hogar_id] = {
-        "id": stable_id("meta", TAG, name),
-        "tipo": "ahorro",
-        "valor_kwh_mensual": GOAL_KWH,
-        "fecha_inicio": date(2026, 11, 1),
-    }
+    ])
+    db.seed_goal_row(
+        hogar_id, stable_id("meta", TAG, name), GOAL_KWH, date(2026, 11, 1), created_at=T
+    )
     db.set_comparison_base(user_id, "meta")
     price = float(PRICE_KWH)
 
@@ -599,7 +582,7 @@ def test_tariff_of_the_evaluated_hour_and_cost_at_midnight(
     midnight = datetime(2026, 11, 22, 0, 10, tzinfo=TIMEZONE)
     evaluated = datetime(2026, 11, 21, 23, tzinfo=TIMEZONE)
     yesterday_price, today_price = Decimal("700.0000"), Decimal("900.0000")
-    db.tariffs[hogar_id] = [
+    db.seed_tariffs(hogar_id, [
         {
             "id": stable_id("tarifa", TAG, name, "ayer"),
             "precio_kwh": yesterday_price,
@@ -614,7 +597,7 @@ def test_tariff_of_the_evaluated_hour_and_cost_at_midnight(
             "vigente_desde": date(2026, 11, 22),
             "vigente_hasta": None,
         },
-    ]
+    ])
     query_at(monkeypatch, midnight)
 
     actual = ok(get(client, "actual", user_id, hogar_id))
@@ -715,7 +698,7 @@ def test_failed_recovery_answers_200_with_the_stored_data(
     user_id = user_of(name)
     backfill = db.readings_of(hogar_id)
     zona_id = db.zone_ids(hogar_id)[min(zones)]
-    db.tariffs[hogar_id] = [
+    db.seed_tariffs(hogar_id, [
         {
             "id": stable_id("tarifa", TAG, name),
             "precio_kwh": PRICE_KWH,
@@ -723,7 +706,7 @@ def test_failed_recovery_answers_200_with_the_stored_data(
             "vigente_desde": date(2026, 11, 1),
             "vigente_hasta": None,
         }
-    ]
+    ])
     query_at(monkeypatch, LATER)
     caplog.set_level(logging.INFO)
 

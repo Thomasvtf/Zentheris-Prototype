@@ -6,9 +6,9 @@ contrato `docs/api/zentheris-api.yaml` (no de una lista escrita a mano); de las
 reglas solo se toman qué operaciones exigen cada permiso (RN-XVII-01…04) y cuáles son solo
 del administrador (RN-X-08, RN-XVI-05).
 
-Cuando los guardias dejan pasar, responde el esqueleto del servicio: 501 `TODO(<operationId>)`.
-Eso prueba que el guardia no bloquea, no que la operación devuelva 200: el 200 de P-06 y los
-valores ocultos de P-07 se prueban cuando cada servicio exista.
+Cuando los guardias dejan pasar una operación aún sin servicio, responde su esqueleto: 501
+`TODO(<operationId>)`. Eso prueba que el guardia no bloquea, no que la operación devuelva 200: el
+200 de P-06 se prueba cuando cada servicio exista.
 
 Operaciones ya implementadas (`IMPLEMENTED_OPERATIONS`, fase 6: las 3 de consumo actual; fase
 7: `obtenerHistorial`; fase 8: las 5 de alertas y consejos): con la guardia superada responden 200
@@ -20,6 +20,15 @@ contenido se prueba en `test_alerts_e2e.py`. Para que lleguen al servicio sin ba
 `tariffs_data.list_tariffs_between`; la recuperación de horas es un espía) y los umbrales de
 `make_test_settings()`. La prueba sigue siendo de la guardia: el contenido de la respuesta se
 prueba en `test_consumption_e2e.py` y `test_history_e2e.py`.
+
+Fase 10 (`obtenerFuentesDatos`, `obtenerMeta`, `crearMeta`, `obtenerTarifa` y `crearTarifa`):
+`call_api` añade a los dobles del consumo la fuente principal y los sensores de
+`tests/services/test_data_sources_service.py` (`SourcesDatabase`: `HOGAR_ID` tiene su fuente y
+el sensor de su zona) y las metas y tarifas en memoria de
+`tests/services/test_goals_tariff_service.py` (`GoalsTariffDatabase`, con `lock_household`). Con
+la guardia superada responden 200 o 201 con un cuerpo válido según el contrato; los valores
+ocultos de P-07 y el contenido se prueban en `test_data_sources_e2e.py`,
+`test_goals_tariff_e2e.py` y `tests/permissions/test_p07_data_sources_hidden_values.py`.
 
 Fase 9 (las 11 de «Miembros e invitaciones»): `call_api` instala el doble en memoria de
 `tests/services/members_fakes.py` sembrado con lo que dicen las membresías de la prueba (el rol de
@@ -33,7 +42,7 @@ contenido se prueba en `test_members_e2e.py`.
 Los 401 llevan `codigo` = `NO_AUTENTICADO` (con `WWW-Authenticate: Bearer`) y el 404 sin
 membresía `NO_ENCONTRADO`; ambos cuerpos validan contra el esquema `Error` del contrato.
 
-Matriz: docs/pruebas/matriz-pruebas-backend-v1.md (P-01…P-06).
+Matriz: docs/pruebas/matriz-pruebas-backend-v1.md (P-01…P-06; P-07 solo el paso de la guardia).
 """
 
 from collections.abc import Callable, Iterator
@@ -54,9 +63,14 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.data import alerts as alerts_data
+from app.data import goals as goals_data
+from app.data import households as households_data
+from app.data import memberships as memberships_data
+from app.data import tariffs as tariffs_data
 from app.data import tips as tips_data
 from app.data.database import get_session
-from app.data.memberships import ActiveMembershipRow
+from app.data.households import HouseholdRow
+from app.data.memberships import ActiveMembershipRow, MembershipRow
 from app.data.tips import UserTipRow
 from app.domain.simulator import TIMEZONE
 from app.errors import NOT_FOUND_MESSAGE, UNAUTHORIZED_MESSAGE
@@ -80,6 +94,8 @@ from tests.helpers.auth import (
 from tests.services.consumption_fakes import FakeSession as CountingSession
 from tests.services.consumption_fakes import install_fake_consumption_database
 from tests.services.members_fakes import FakeMembersDatabase, install_fake_members_database
+from tests.services.test_data_sources_service import SourcesDatabase
+from tests.services.test_goals_tariff_service import GoalsTariffDatabase
 
 # --- Contrato -------------------------------------------------------------------------------
 
@@ -242,6 +258,12 @@ IMPLEMENTED_OPERATIONS: frozenset[str] = frozenset(
         "resolverTokenInvitacion",
         "aceptarInvitacion",
         "rechazarInvitacion",
+        # Fase 10: fuentes de datos, meta y tarifa.
+        "obtenerFuentesDatos",
+        "obtenerMeta",
+        "crearMeta",
+        "obtenerTarifa",
+        "crearTarifa",
     }
 )
 # Las 11 de la etiqueta «Miembros e invitaciones» del contrato (fase 9).
@@ -397,7 +419,7 @@ def call_api(e2e_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> CallApi
 
             monkeypatch.setitem(e2e_client.app.dependency_overrides, get_session, members_session)
         elif op_id in IMPLEMENTED_OPERATIONS:
-            install_implemented_operation_data(monkeypatch)
+            install_implemented_operation_data(monkeypatch, rows)
             # Las escrituras de la fase 8 hacen commit: sesión que lo admite (y lo cuenta).
             monkeypatch.setitem(
                 e2e_client.app.dependency_overrides, get_session, committing_session
@@ -424,14 +446,60 @@ def call_api(e2e_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> CallApi
     return _call
 
 
-def install_implemented_operation_data(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Dobles de `app.data` para las operaciones de consumo (fases 6 y 7), sin base ni `.env`.
+def install_implemented_operation_data(
+    monkeypatch: pytest.MonkeyPatch, rows: list[ActiveMembershipRow]
+) -> None:
+    """Dobles de `app.data` para las operaciones de consumo, metas y tarifa (fases 6 a 10), sin
+    base ni `.env`.
 
-    `HOGAR_ID` tiene una zona activa (la de `OTHER_PATH_IDS["zona_id"]`, así el detalle no da
-    404) sin lecturas: la respuesta es 200 con «sin datos». La recuperación es un espía.
+    `HOGAR_ID` tiene una zona activa con sensor (la de `OTHER_PATH_IDS["zona_id"]`, así el
+    detalle no da 404) sin lecturas: la respuesta es 200 con «sin datos». Tiene fuente principal,
+    ninguna meta ni tarifa. La recuperación es un espía. La comprobación bajo bloqueo de
+    `crearMeta` y `crearTarifa` (membresía propia FOR UPDATE y permisos del hogar) lee lo mismo
+    que la guardia: las membresías `rows` de la prueba.
     """
     fake = install_fake_consumption_database(monkeypatch)
     fake.add_zone(HOGAR_ID, "cocina", "Cocina", zona_id=OTHER_PATH_IDS["zona_id"])
+    sources = SourcesDatabase(fake)
+    sources.add_source(HOGAR_ID)
+    goals_tariff = GoalsTariffDatabase(fake)
+
+    def own_membership(
+        _s: object, hogar_id: UUID, usuario_id: UUID, *, for_update: bool = False
+    ) -> MembershipRow | None:
+        for row in rows:
+            if (row.hogar_id, row.usuario_id) == (hogar_id, usuario_id):
+                return MembershipRow(row.membresia_id, hogar_id, usuario_id, row.rol, "activo")
+        return None
+
+    def household_row(_s: object, hogar_id: UUID) -> HouseholdRow | None:
+        for row in rows:
+            if row.hogar_id == hogar_id:
+                return HouseholdRow(
+                    hogar_id,
+                    "Casa de prueba",
+                    "apartamento",
+                    row.permiso_ver_consumo_actual,
+                    row.permiso_ver_historial,
+                    row.permiso_recibir_alertas,
+                    row.permiso_modificar_metas,
+                )
+        return None
+
+    for module, name, value in (
+        (memberships_data, "get_user_membership_in_household", own_membership),
+        (households_data, "get_household", household_row),
+        (households_data, "get_main_source", sources.get_main_source),
+        (households_data, "list_zone_sensors", sources.list_zone_sensors),
+        (households_data, "lock_household", goals_tariff.lock_household),
+        (goals_data, "get_active_goal", goals_tariff.get_active_goal),
+        (goals_data, "deactivate_active_goal", goals_tariff.deactivate_active_goal),
+        (goals_data, "insert_goal", goals_tariff.insert_goal),
+        (tariffs_data, "get_open_tariff", goals_tariff.get_open_tariff),
+        (tariffs_data, "close_tariff", goals_tariff.close_tariff),
+        (tariffs_data, "insert_tariff", goals_tariff.insert_tariff),
+    ):
+        monkeypatch.setattr(module, name, value)
     monkeypatch.setattr(thresholds_service, "get_settings", make_test_settings)
     # Caché propia de la prueba (la de producción no queda con estos umbrales), en el nombre
     # que llama el servicio de consumo.
@@ -652,8 +720,9 @@ def test_p02_member_without_view_consumption_gets_403(call_api: CallApi, op_id: 
 def test_p02_data_sources_is_not_blocked_by_view_consumption(call_api: CallApi) -> None:
     """P-02 (límite) · Miembro sin `ver_consumo_actual` pide `obtenerFuentesDatos`.
 
-    Esperado: pasa el guardia (501 del servicio), no 403: P-07 oculta valores en el servicio
-    (RN-XVI-06, fase 10; no verificado aquí).
+    Esperado: pasa el guardia (200 válido según el contrato), no 403: P-07 oculta valores en el
+    servicio (RN-XVI-06). Que oculte los kW se prueba en `test_data_sources_e2e.py` y en
+    `tests/permissions/test_p07_data_sources_hidden_values.py`.
     """
     rows = [member(**{**ALL_TRUE, "ver_consumo_actual": False})]
     assert_passes_guards(call_api("obtenerFuentesDatos", rows=rows), "obtenerFuentesDatos")
@@ -705,7 +774,8 @@ def test_member_without_permissions_passes_membership_only_operations(
 ) -> None:
     """Miembro con los 4 permisos en False pide una operación que solo exige membresía.
 
-    Esperado: pasa el guardia (501), nunca 403: ningún permiso de más. Regla: RN-I-03,
+    Esperado: pasa el guardia (éxito del contrato si el servicio existe, si no 501), nunca 403:
+    ningún permiso de más. Regla: RN-I-03,
     RN-XVII (solo las operaciones de RN-XVII-01…04 exigen permiso).
     """
     assert_passes_guards(call_api(op_id, rows=[member(**ALL_FALSE)]), op_id)

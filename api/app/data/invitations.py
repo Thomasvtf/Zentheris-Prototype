@@ -93,6 +93,19 @@ COUNT_PENDING_INVITATIONS_SQL = text(
     """
 )
 
+# RN-X-05, R-01 (límite diario D2 de la fase 10): invitaciones creadas por el hogar en
+# [:start, :end), en cualquier estado. Entra por hogar_id (uq_invitacion_pendiente_hogar_correo
+# solo cubre las pendientes; el filtro por hogar acota el conteo).
+COUNT_INVITATIONS_CREATED_BETWEEN_SQL = text(
+    """
+    select count(*) as total
+      from invitaciones_hogar
+     where hogar_id = :hogar_id
+       and created_at >= :start
+       and created_at < :end
+    """
+)
+
 # RN-X-05, DC-41: invitación nueva en 'pendiente' con el hash del token (nunca el token).
 INSERT_INVITATION_SQL = text(
     """
@@ -275,6 +288,25 @@ def count_pending_invitations(session: Session, hogar_id: UUID, now: datetime) -
     result = session.exec(
         COUNT_PENDING_INVITATIONS_SQL,
         params={"hogar_id": hogar_id, "now": now},
+    )
+    row = result.mappings().first()
+    return int(row["total"]) if row is not None else 0
+
+
+def count_invitations_created_between(
+    session: Session, hogar_id: UUID, start: datetime, end: datetime
+) -> int:
+    """Invitaciones de `hogar_id` creadas en [start, end), en cualquier estado (RN-X-05, R-01).
+
+    Para el límite diario de invitaciones: el servicio pasa las 00:00 de Bogotá de hoy y de
+    mañana. `start` o `end` sin zona horaria dan ValueError sin SQL (se compararían contra un
+    timestamptz con la zona de la sesión). Sin commit.
+    """
+    if start.utcoffset() is None or end.utcoffset() is None:
+        raise ValueError("`start` y `end` deben llevar zona horaria.")
+    result = session.exec(
+        COUNT_INVITATIONS_CREATED_BETWEEN_SQL,
+        params={"hogar_id": hogar_id, "start": start, "end": end},
     )
     row = result.mappings().first()
     return int(row["total"]) if row is not None else 0

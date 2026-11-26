@@ -105,6 +105,9 @@ HOUSEHOLD_TABLES = (
 ALERT_TABLES = ("metas_consumo", "alertas", "alertas_usuario", "consejos", "consejos_usuario")
 # Tabla de la fase 9 (invitaciones): la usa el almacén de `test_members_e2e.py`.
 MEMBER_TABLES = ("invitaciones_hogar",)
+# Tabla de la fase 10 (tarifas): la usa el almacén de `test_consumption_e2e.py` (las metas ya
+# están en ALERT_TABLES).
+TARIFF_TABLES = ("tarifas_hogar",)
 TABLES = (
     "auth_users",
     "usuarios",
@@ -113,6 +116,7 @@ TABLES = (
     *HOUSEHOLD_TABLES,
     *ALERT_TABLES,
     *MEMBER_TABLES,
+    *TARIFF_TABLES,
 )
 # Filas de un solo hogar con las 4 zonas básicas (el cuerpo por defecto de `body_of`).
 ONE_BASIC_HOUSEHOLD = {
@@ -538,10 +542,10 @@ class Store:
                 self.put(session, table, key, None)
             if table in ("zonas", "sensores_zona"):
                 parents = children
-        # Metas, alertas y consejos del hogar, con sus entregas y seguimientos (0002).
+        # Tarifas, metas, alertas y consejos del hogar, con sus entregas y seguimientos (0002).
         removed: dict[str, set[Any]] = {}
-        for table, column in (("metas_consumo", "hogar_id"), ("alertas", "hogar_id"),
-                              ("consejos", "hogar_id")):
+        for table, column in (("tarifas_hogar", "hogar_id"), ("metas_consumo", "hogar_id"),
+                              ("alertas", "hogar_id"), ("consejos", "hogar_id")):
             rows = self.view(session, table)
             removed[table] = {k for k, row in rows.items() if row[column] == params["hogar_id"]}
             for key in removed[table]:

@@ -265,8 +265,8 @@ SAMPLE_USER_ID = UUID("00000000-0000-0000-0000-0000000000aa")
 
 
 # Operaciones ya implementadas (fase 3 · Usuario; fase 4 · Onboarding; fase 6 · Consumo;
-# fase 7 · Historial; fase 8 · Alertas y consejos; fase 9 · Miembros e invitaciones): no
-# responden 501.
+# fase 7 · Historial; fase 8 · Alertas y consejos; fase 9 · Miembros e invitaciones; fase 10 ·
+# Fuentes de datos, Metas y tarifa): no responden 501.
 IMPLEMENTED_OPERATIONS = frozenset(
     {
         "obtenerUsuarioActual",
@@ -298,6 +298,11 @@ IMPLEMENTED_OPERATIONS = frozenset(
         "resolverTokenInvitacion",
         "aceptarInvitacion",
         "rechazarInvitacion",
+        "obtenerFuentesDatos",
+        "obtenerMeta",
+        "crearMeta",
+        "obtenerTarifa",
+        "crearTarifa",
     }
 )
 

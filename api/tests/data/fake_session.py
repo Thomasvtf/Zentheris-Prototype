@@ -8,6 +8,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 
 class FakeResult:
     """Imita el Result de SQLAlchemy: solo lo que usa la capa de datos."""
@@ -79,3 +81,27 @@ def assert_bound_only(statement: Any, params: Mapping[str, Any] | None) -> None:
                 assert value not in sql
             elif value is not None and not isinstance(value, bool):
                 assert str(value) not in sql
+
+
+class FakeDiag:
+    """Imita `psycopg2` `exc.diag`: solo el nombre de la restricción."""
+
+    def __init__(self, constraint_name: str | None) -> None:
+        self.constraint_name = constraint_name
+
+
+class FakeDriverError(Exception):
+    """Imita la excepción de psycopg2: `pgcode`, `diag` (si viene) y el mensaje de Postgres."""
+
+    def __init__(
+        self, pgcode: str | None, *, message: str = "", diag: FakeDiag | None = None
+    ) -> None:
+        super().__init__(message)
+        self.pgcode = pgcode
+        if diag is not None:
+            self.diag = diag
+
+
+def integrity_error(orig: Exception, statement: str = "insert ...") -> IntegrityError:
+    """IntegrityError de SQLAlchemy que envuelve `orig`, como la lanzaría `Session.exec`."""
+    return IntegrityError(statement, {}, orig)

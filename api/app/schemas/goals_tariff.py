@@ -36,7 +36,8 @@ class MetaCrear(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tipo: TipoMeta
-    valor_kwh_mensual: float = Field(gt=0)
+    # JSON Schema solo admite números finitos: `Infinity` y `NaN` son 422 (revisión de seguridad).
+    valor_kwh_mensual: float = Field(gt=0, allow_inf_nan=False)
 
 
 class MetaVista(BaseModel):
@@ -65,9 +66,10 @@ class TarifaCrear(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     operador: str | None = Field(default=None)
-    precio_kwh: float = Field(ge=0)
+    # JSON Schema solo admite números finitos: `Infinity` y `NaN` son 422 (revisión de seguridad).
+    precio_kwh: float = Field(ge=0, allow_inf_nan=False)
     vigente_desde: str = Field(pattern=r'^[0-9]{4}-(0[1-9]|1[0-2])$')
-    cargo_fijo_mensual: float | None = Field(default=None, ge=0)
+    cargo_fijo_mensual: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class TarifaVista(BaseModel):

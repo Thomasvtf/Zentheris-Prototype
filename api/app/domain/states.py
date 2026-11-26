@@ -335,6 +335,35 @@ def days_in_month(day: date) -> int:
     return calendar.monthrange(day.year, day.month)[1]
 
 
+# ------------------------------------------------------------------ meta (fase 10)
+def daily_goal_limit(monthly_kwh: float | None, today: date) -> float | None:
+    """Límite diario de la meta: meta mensual ÷ días del mes de `today` (RN-XVI-04).
+
+    `today` es la fecha de Bogotá de hoy (la calcula quien llama). None si no hay meta.
+    """
+    if monthly_kwh is None:
+        return None
+    return monthly_kwh / days_in_month(today)
+
+
+def daily_average(
+    readings_by_zone: Mapping[UUID, HourlySeries], today: date, thresholds: StateThresholds
+) -> float | None:
+    """Promedio diario del hogar en los `window_days` días completos anteriores a `today`.
+
+    RN-XVI-04 (referencia de la pantalla Meta) con la misma definición que el promedio diario del
+    historial y de la proyección (DC-28, DC-30, DC-31): total del hogar por hora solo donde TODAS
+    las zonas tienen lectura (`readings_by_zone`: solo zonas que cuentan), días con las 24 horas,
+    y None con menos de `min_days_with_data` días con dato. `today` = fecha de Bogotá de hoy; las
+    lecturas de hoy no cuentan.
+    """
+    totals = _household_totals(readings_by_zone)
+    average, days = cumulative_average_by_index(
+        totals, today.toordinal(), HOURS_PER_DAY - 1, thresholds.window_days
+    )
+    return valid(average, days, thresholds)
+
+
 # ------------------------------------------------------------------ 1b · evaluación
 @dataclass(frozen=True)
 class GoalInput:

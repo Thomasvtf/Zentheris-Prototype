@@ -25,7 +25,11 @@ operaciones de alertas y consejos (fase 8: `listarAlertas`, `contarAlertasNoLeid
 `marcarAlertasLeidas`, `listarConsejos`, `actualizarEstadoConsejo`) con el servicio reemplazado
 por un doble: RN-XIV-01 a RN-XIV-05, RN-XV-02 a RN-XV-06, RN-XII-02, RN-I-03, RN-VI-05; y las 11
 operaciones de miembros e invitaciones (fase 9) con el servicio reemplazado por un doble:
-RN-II-01 a RN-II-04, RN-X-01, RN-X-05 a RN-X-08, RN-XVI-07, DC-41, DC-42.
+RN-II-01 a RN-II-04, RN-X-01, RN-X-05 a RN-X-08, RN-XVI-07, DC-41, DC-42 (v0.2.10: 409
+`LIMITE_INVITACIONES_DIARIO` y 500 en `crearInvitacion`; sin 409 en `transferirAdministracion`);
+y las 5 operaciones de la fase 10 (`obtenerFuentesDatos`, `obtenerMeta`, `crearMeta`,
+`obtenerTarifa`, `crearTarifa`) con el servicio reemplazado por un doble: RN-XVI-04 a RN-XVI-06,
+RN-XVII-01, RN-XVII-04, RN-V-03, RN-III-03, DC-39.
 Las demás: TODO(C-01).
 """
 
@@ -57,7 +61,7 @@ from app.data.memberships import (
 )
 from app.data.users import PreferencesRow, UserProfileRow
 from app.domain import states
-from app.domain.formats import zone_name
+from app.domain.formats import main_source_name, sensor_name, zone_name
 from app.domain.simulator import TIMEZONE
 from app.domain.zone_rules import BASIC_ZONES, PERSONALITIES, ZONE_TYPES
 from app.errors import NOT_FOUND_MESSAGE, ApiError, CodigoError
@@ -73,7 +77,21 @@ from app.schemas.alerts_tips import (
     ConsejoEstadoActualizar,
     ConsejosLista,
 )
-from app.schemas.common import Rol
+from app.schemas.common import IntervaloHora, Rol
+from app.schemas.consumption import (
+    FuentesDatos,
+    FuentesDatosFuentePrincipal,
+    FuentesDatosSensor,
+)
+from app.schemas.goals_tariff import (
+    Meta,
+    MetaCrear,
+    MetaVista,
+    Tarifa,
+    TarifaCrear,
+    TarifaVista,
+    TipoMeta,
+)
 from app.schemas.households import Permisos, PermisosActualizar
 from app.schemas.members_invitations import (
     InvitacionCrear,
@@ -87,6 +105,8 @@ from app.schemas.members_invitations import (
 from app.schemas.users import MembresiaResumen
 from app.services import alerts_tips as alerts_tips_service
 from app.services import consumption as consumption_service
+from app.services import email as email_service
+from app.services import goals_tariff as goals_service
 from app.services import hour_recovery, supabase_admin
 from app.services import members_invitations as members_service
 from app.services.backend_texts import get_backend_texts
@@ -164,24 +184,29 @@ MEMBERS_OPERATIONS = frozenset(
         "rechazarInvitacion",
     }
 )
+PHASE10_OPERATIONS = frozenset(
+    {"obtenerFuentesDatos", "obtenerMeta", "crearMeta", "obtenerTarifa", "crearTarifa"}
+)
 # Operaciones con C-01 real: las de la fase 3, el onboarding, la salud (sin autenticación), las
-# consultas de consumo de la fase 6, el historial de la fase 7, las alertas y consejos de la 8 y
-# los miembros e invitaciones de la 9.
+# consultas de consumo de la fase 6, el historial de la fase 7, las alertas y consejos de la 8,
+# los miembros e invitaciones de la 9 y las fuentes de datos, metas y tarifa de la 10.
 COVERED_OPERATIONS = (
-    PHASE_OPERATIONS | CONSUMPTION_OPERATIONS | ALERTS_OPERATIONS | MEMBERS_OPERATIONS
+    PHASE_OPERATIONS
+    | CONSUMPTION_OPERATIONS
+    | ALERTS_OPERATIONS
+    | MEMBERS_OPERATIONS
+    | PHASE10_OPERATIONS
 ) | {
     "obtenerSalud",
     "crearHogarOnboarding",
     HISTORY_OPERATION,
 }
 # Respuestas del contrato que no se pueden provocar: `/salud` no tiene parámetros ni cuerpo, así
-# que ninguna petición a esa operación da un 4XX propio; y `transferirAdministracion` declara 409,
-# pero ninguna regla del servicio lo produce (destino inexistente o inactivo → 404; la propia
-# membresía → 422).
-# TODO(pendiente: el contrato declara 409 en transferirAdministracion pero ninguna regla lo produce)
-UNREACHABLE_RANGES = frozenset({("obtenerSalud", "4XX"), ("transferirAdministracion", "409")})
+# que ninguna petición a esa operación da un 4XX propio. (Desde 0.2.10 `transferirAdministracion`
+# ya no declara 409.)
+UNREACHABLE_RANGES = frozenset({("obtenerSalud", "4XX")})
 # Respuestas que necesitan un cliente propio (el 500 no se propaga) y tienen su prueba aparte.
-COVERED_BY_OWN_TEST = frozenset({("eliminarCuenta", "500")})
+COVERED_BY_OWN_TEST = frozenset({("eliminarCuenta", "500"), ("crearInvitacion", "500")})
 
 
 # --- contrato ---------------------------------------------------------------------------
@@ -454,6 +479,18 @@ def client(store: FakeStore) -> Iterator[TestClient]:
     app.dependency_overrides[get_session] = session_override
     yield TestClient(app)
     app.dependency_overrides.clear()
+
+
+def client_without_raising(store: FakeStore) -> TestClient:
+    """Cliente que devuelve el 500 del manejador genérico en vez de propagar la excepción."""
+    app = create_app(Settings(_env_file=None))
+    app.dependency_overrides[get_settings] = make_test_settings
+
+    def session_override() -> Iterator[RecordingSession]:
+        yield store.session
+
+    app.dependency_overrides[get_session] = session_override
+    return TestClient(app, raise_server_exceptions=False)
 
 
 # --- estados de partida -------------------------------------------------------------------
@@ -953,7 +990,13 @@ def test_cases_cover_every_declared_response_of_the_phase() -> None:
         if (operation_id, str(code)) not in UNREACHABLE_RANGES | COVERED_BY_OWN_TEST
     }
     cases = (
-        CASES + ONBOARDING_CASES + CONSUMPTION_CASES + HISTORY_CASES + ALERTS_CASES + MEMBERS_CASES
+        CASES
+        + ONBOARDING_CASES
+        + CONSUMPTION_CASES
+        + HISTORY_CASES
+        + ALERTS_CASES
+        + MEMBERS_CASES
+        + PHASE10_CASES
     )
     covered = {(case.operation_id, case.status) for case in cases}
     assert covered == declared
@@ -2477,7 +2520,12 @@ MEMBERS_ERROR_CODES = {
     "transferirAdministracion": _ADMIN_GUARD_CODES,
     "salirDelHogar": _MEMBER_GUARD_CODES | {"ADMIN_DEBE_TRANSFERIR", "ADMIN_UNICO_MIEMBRO"},
     "crearInvitacion": _ADMIN_GUARD_CODES
-    | {"LIMITE_MIEMBROS", "INVITACION_PENDIENTE_EXISTENTE", "YA_ES_MIEMBRO"},
+    | {
+        "LIMITE_MIEMBROS",
+        "INVITACION_PENDIENTE_EXISTENTE",
+        "YA_ES_MIEMBRO",
+        "LIMITE_INVITACIONES_DIARIO",
+    },
     "revocarInvitacion": _ADMIN_GUARD_CODES | _INVITATION_STATE_CODES,
     "listarInvitacionesRecibidas": frozenset({"NO_AUTENTICADO"}),
     "resolverTokenInvitacion": _INVITEE_CODES,
@@ -2557,7 +2605,7 @@ class MembersWorld:
     members: list[Miembro] = field(default_factory=sample_members)
     pending: list[InvitacionPendiente] = field(default_factory=sample_pending_invitations)
     received: list[InvitacionRecibida] = field(default_factory=sample_received_invitations)
-    error: ApiError | None = None
+    error: Exception | None = None
     guard_sessions: list[object] = field(default_factory=list)
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = field(default_factory=list)
 
@@ -2909,6 +2957,12 @@ def _members_cases() -> tuple[MembersCase, ...]:
         invite(
             "ya-es-miembro", 409, setup=service_raises(409, "YA_ES_MIEMBRO"), codigo="YA_ES_MIEMBRO"
         ),
+        invite(  # 21.ª invitación creada hoy en el hogar (contrato 0.2.10)
+            "limite-diario",
+            409,
+            setup=service_raises(409, "LIMITE_INVITACIONES_DIARIO"),
+            codigo="LIMITE_INVITACIONES_DIARIO",
+        ),
         invite(
             "correo-invalido", 422, body={"correo_invitado": "no-es-correo"}, codigo="VALIDACION"
         ),
@@ -3149,6 +3203,630 @@ def test_invalid_invited_email_is_422_without_echoing_it(
     assert [c["ubicacion"] for c in body["detalles"]["campos"]] == [["body", "correo_invitado"]]
     assert wrong not in response.text
     assert members_world.calls == []
+
+
+def test_create_invitation_email_failure_is_500_without_internal_detail(
+    store: FakeStore, members_world: MembersWorld
+) -> None:
+    """crearInvitacion · 500 (contrato 0.2.10): si falla el envío del correo, `ERROR_INTERNO` con
+    el esquema `Error` y sin el detalle interno (S-01); el servicio decide el rollback."""
+    members_world.error = email_service.EmailDeliveryError(INTERNAL_DETAIL)
+    response = send_members(client_without_raising(store), MembersCase("x", "crearInvitacion", 500))
+    assert response.status_code == 500
+    assert_matches_contract("crearInvitacion", response)
+    assert response.json()["codigo"] == "ERROR_INTERNO"
+    assert INTERNAL_DETAIL not in response.text
+    assert INVITATION_TOKEN not in response.text
+    ((name, _args, _kwargs),) = members_world.calls
+    assert name == "create_invitation"
+    assert store.session.commits == 0
+
+
+# --- fase 10 · fuentes de datos, metas y tarifa (servicio reemplazado por un doble) -------
+# Las reglas (D1 a D7 de la fase: RN-XVI-04, RN-XVI-05, RN-XVI-06, RN-V-03, RN-III-03) se prueban
+# con el servicio real en `tests/services/`; aquí se prueba la capa HTTP: guardias, la sesión de
+# la petición, el usuario del token, la entrada validada, la bandera que decide el router
+# (`can_view_values` y `can_edit`, RN-XVII-01, RN-XVII-04, RN-XVI-05) y el cuerpo contra el
+# contrato. Los números de ejemplo salen de los promedios de la personalidad (`tests/helpers`).
+
+PHASE10_SERVICE_FUNCTIONS: dict[str, tuple[Any, str]] = {
+    "obtenerFuentesDatos": (consumption_service, "get_data_sources"),
+    "obtenerMeta": (goals_service, "get_goal"),
+    "crearMeta": (goals_service, "create_goal"),
+    "obtenerTarifa": (goals_service, "get_tariff"),
+    "crearTarifa": (goals_service, "create_tariff"),
+}
+PHASE10_ERROR_CODES = {
+    "obtenerFuentesDatos": _MEMBER_GUARD_CODES,
+    "obtenerMeta": _MEMBER_GUARD_CODES,
+    "crearMeta": _MEMBER_GUARD_CODES | {"SIN_PERMISO_MODIFICAR_METAS"},
+    "obtenerTarifa": _MEMBER_GUARD_CODES,
+    "crearTarifa": _ADMIN_GUARD_CODES | {"VIGENCIA_NO_POSTERIOR"},
+}
+PHASE10_EVALUATED_HOUR = 14  # FIXED_NOW (15:20 Bogotá): última hora completa 14:00-15:00
+PHASE10_HOUR = IntervaloHora(
+    inicio=datetime(2026, 11, 23, PHASE10_EVALUATED_HOUR, tzinfo=TIMEZONE),
+    fin=datetime(2026, 11, 23, PHASE10_EVALUATED_HOUR + 1, tzinfo=TIMEZONE),
+)
+PHASE10_TODAY = date(2026, 11, 23)
+DAYS_IN_NOVEMBER = 30
+MAIN_SOURCE_ID = sample_id(6, 0)
+GOAL_ID = sample_id(7, 0)
+NEW_GOAL_ID = sample_id(7, 1)
+TARIFF_ID = sample_id(8, 0)
+NEW_TARIFF_ID = sample_id(8, 1)
+OPEN_TARIFF_START = date(2026, 10, 1)  # tarifa abierta desde el mes anterior al de FIXED_NOW
+CURRENT_MONTH = "2026-11"  # mes de FIXED_NOW (Bogotá): el último que se puede elegir
+FUTURE_MONTH = "2026-12"  # posterior al mes actual: 422 `VALIDACION` (contrato 0.2.10)
+
+
+def _personality_zone_types() -> list[str]:
+    """Zonas que contempla la personalidad por defecto, en orden alfabético de nombre (D5)."""
+    averages = load_personalities()[DEFAULT_PERSONALITY]
+    return sorted(averages.zone_kwh_per_day, key=zone_name)
+
+
+def sample_data_sources(*, paused_and_missing: bool = False) -> FuentesDatos:
+    """Fuente principal y un sensor por zona con el kWh medio de la hora evaluada (kWh en 1 h =
+    kW medio). Con `paused_and_missing`: el primer sensor está pausado (muestra sus kW y no
+    suma) y el segundo no tiene lectura (`sin_datos`), así que la fuente sale null (nunca un
+    parcial)."""
+    averages = load_personalities()[DEFAULT_PERSONALITY]
+    sensors = []
+    for index, tipo in enumerate(_personality_zone_types()):
+        kw: float | None = round(averages.zone_kwh_for_hour(tipo, PHASE10_EVALUATED_HOUR), 3)
+        estado = "activo"
+        if paused_and_missing and index == 0:
+            estado = "pausado"
+        elif paused_and_missing and index == 1:
+            estado, kw = "sin_datos", None
+        sensors.append(
+            FuentesDatosSensor(
+                id=sample_id(9, index),
+                nombre=sensor_name(tipo),
+                zona_id=sample_id(10, index),
+                zona_nombre=zone_name(tipo),
+                potencia_kw=kw,
+                estado=estado,
+            )
+        )
+    total = None if paused_and_missing else sum(s.potencia_kw or 0.0 for s in sensors)
+    return FuentesDatos(
+        valores_ocultos=False,
+        hora=PHASE10_HOUR,
+        fuente_principal=FuentesDatosFuentePrincipal(
+            id=MAIN_SOURCE_ID,
+            nombre=main_source_name(MEMBERS_HOUSEHOLD_NAME),
+            estado="activa",
+            potencia_kw=total,
+        ),
+        sensores=sensors,
+    )
+
+
+def hidden_values(view: FuentesDatos) -> FuentesDatos:
+    """Sin `ver_consumo_actual` (y sin ser administrador): estados visibles, todos los kW null."""
+    return view.model_copy(
+        update={
+            "valores_ocultos": True,
+            "fuente_principal": view.fuente_principal.model_copy(update={"potencia_kw": None}),
+            "sensores": [s.model_copy(update={"potencia_kw": None}) for s in view.sensores],
+        }
+    )
+
+
+def sample_goal() -> Meta:
+    """Meta de ahorro igual al consumo mensual de referencia de la personalidad (30 días)."""
+    averages = load_personalities()[DEFAULT_PERSONALITY]
+    return Meta(
+        id=GOAL_ID,
+        tipo=TipoMeta.AHORRO,
+        valor_kwh_mensual=round(averages.kwh_per_month, 1),
+        estado="activa",
+        fecha_inicio=date(2026, 11, 2),
+        fecha_fin=None,
+    )
+
+
+def sample_daily_average() -> float:
+    return round(load_personalities()[DEFAULT_PERSONALITY].kwh_per_day, 2)
+
+
+def sample_tariff() -> Tarifa:
+    return Tarifa(
+        id=TARIFF_ID,
+        operador="EPM",
+        precio_kwh=PRICE_KWH,
+        cargo_fijo_mensual=FIXED_CHARGE,
+        vigente_desde=OPEN_TARIFF_START,
+        vigente_hasta=None,
+    )
+
+
+@dataclass
+class Phase10World:
+    """Membresías de la guardia, respuestas del doble del servicio y llamadas recibidas.
+
+    Los dobles tienen la firma posicional de la hoja de interfaces de la fase 10 (sin `now`): un
+    argumento de más o de menos es un TypeError (500) y la prueba falla. Si `error` no es None,
+    el doble lo lanza tras registrar la llamada.
+    """
+
+    session: RecordingSession
+    memberships: list[ActiveMembershipRow]
+    sources: FuentesDatos = field(default_factory=sample_data_sources)
+    goal: Meta | None = field(default_factory=sample_goal)
+    daily_average: float | None = field(default_factory=sample_daily_average)
+    tariff: Tarifa | None = field(default_factory=sample_tariff)
+    error: Exception | None = None
+    guard_sessions: list[object] = field(default_factory=list)
+    calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = field(default_factory=list)
+    answers: list[Any] = field(default_factory=list)
+
+    def _record(self, name: str, args: tuple[Any, ...], kwargs: dict[str, Any], answer: Any) -> Any:
+        self.calls.append((name, args, kwargs))
+        if self.error is not None:
+            raise self.error
+        self.answers.append(answer)
+        return answer
+
+    def get_data_sources(
+        self, session: object, user_id: UUID, hogar_id: UUID, can_view_values: bool, **kw: Any
+    ) -> FuentesDatos:
+        view = self.sources if can_view_values else hidden_values(self.sources)
+        args = (session, user_id, hogar_id, can_view_values)
+        return self._record("get_data_sources", args, kw, view)
+
+    def get_goal(
+        self, session: object, user_id: UUID, hogar_id: UUID, can_edit: bool, **kw: Any
+    ) -> MetaVista:
+        limit = None if self.goal is None else self.goal.valor_kwh_mensual / DAYS_IN_NOVEMBER
+        view = MetaVista(
+            meta=self.goal,
+            limite_diario_kwh=limit,
+            promedio_diario_30d_kwh=self.daily_average,
+            puede_editar=can_edit,
+        )
+        return self._record("get_goal", (session, user_id, hogar_id, can_edit), kw, view)
+
+    def create_goal(
+        self, session: object, user_id: UUID, hogar_id: UUID, payload: MetaCrear, **kw: Any
+    ) -> Meta:
+        goal = Meta(
+            id=NEW_GOAL_ID,
+            tipo=payload.tipo,
+            valor_kwh_mensual=payload.valor_kwh_mensual,
+            estado="activa",
+            fecha_inicio=PHASE10_TODAY,
+            fecha_fin=None,
+        )
+        return self._record("create_goal", (session, user_id, hogar_id, payload), kw, goal)
+
+    def get_tariff(
+        self, session: object, user_id: UUID, hogar_id: UUID, can_edit: bool, **kw: Any
+    ) -> TarifaVista:
+        view = TarifaVista(tarifa=self.tariff, puede_editar=can_edit)
+        return self._record("get_tariff", (session, user_id, hogar_id, can_edit), kw, view)
+
+    def create_tariff(
+        self, session: object, user_id: UUID, hogar_id: UUID, payload: TarifaCrear, **kw: Any
+    ) -> Tarifa:
+        tariff = Tarifa(
+            id=NEW_TARIFF_ID,
+            operador=payload.operador,
+            precio_kwh=payload.precio_kwh,
+            cargo_fijo_mensual=payload.cargo_fijo_mensual,
+            vigente_desde=date.fromisoformat(f"{payload.vigente_desde}-01"),
+            vigente_hasta=None,
+        )
+        return self._record("create_tariff", (session, user_id, hogar_id, payload), kw, tariff)
+
+
+@pytest.fixture
+def phase10_world(monkeypatch: pytest.MonkeyPatch, store: FakeStore) -> Phase10World:
+    world = Phase10World(
+        session=store.session,
+        memberships=[
+            make_membership_row(USER_ID, HOGAR_ID, rol="administrador", membresia_id=MEMBRESIA_ID)
+        ],
+    )
+
+    def fake_get_active_membership(
+        session: object, usuario_id: UUID, hogar_id: UUID
+    ) -> ActiveMembershipRow | None:
+        world.guard_sessions.append(session)
+        return next(
+            (m for m in world.memberships if m.usuario_id == usuario_id and m.hogar_id == hogar_id),
+            None,
+        )
+
+    monkeypatch.setattr(memberships_data, "get_active_membership", fake_get_active_membership)
+    for module, name in PHASE10_SERVICE_FUNCTIONS.values():
+        assert hasattr(module, name), f"{module.__name__}.{name}"
+        monkeypatch.setattr(module, name, getattr(world, name))
+    return world
+
+
+# Preparaciones de los casos (reciben el `Phase10World`).
+def phase10_role(rol: str, **permissions: bool) -> Callable[[Phase10World], None]:
+    """Quien llama tiene ese rol y esos permisos (los demás, los de un hogar nuevo, RN-II-03)."""
+
+    def setup(world: Phase10World) -> None:
+        world.memberships[:] = [
+            make_membership_row(
+                USER_ID, HOGAR_ID, rol=rol, membresia_id=MEMBRESIA_ID, **permissions
+            )
+        ]
+
+    return setup
+
+
+ALL_PERMISSIONS_OFF = dict.fromkeys(DEFAULT_PERMISSIONS.model_dump(), False)
+admin_without_permissions = phase10_role("administrador", **ALL_PERMISSIONS_OFF)
+member_default = phase10_role("miembro")  # ver consumo sí, modificar metas no (RN-II-03)
+member_without_consumption = phase10_role("miembro", ver_consumo_actual=False)
+member_with_goals = phase10_role("miembro", modificar_metas=True)
+
+
+def without_phase10_membership(world: Phase10World) -> None:
+    world.memberships.clear()
+
+
+def with_paused_and_missing_sensor(world: Phase10World) -> None:
+    world.sources = sample_data_sources(paused_and_missing=True)
+
+
+def without_goal(world: Phase10World) -> None:
+    world.goal = None
+
+
+def without_daily_average(world: Phase10World) -> None:
+    """Menos de 7 días completos de historia: el promedio de referencia es null (D6)."""
+    world.daily_average = None
+
+
+def without_tariff_row(world: Phase10World) -> None:
+    world.tariff = None
+
+
+def with_tariff_without_optionals(world: Phase10World) -> None:
+    assert world.tariff is not None
+    world.tariff = world.tariff.model_copy(update={"operador": None, "cargo_fijo_mensual": None})
+
+
+def tariff_future_month(world: Phase10World) -> None:
+    """El servicio rechaza un mes posterior al actual de Bogotá (catálogo
+    `error.campo.vigencia_futura`): 422 `VALIDACION` con el campo ubicado."""
+    world.error = ApiError(
+        422,
+        CodigoError.VALIDACION,
+        "Error del servicio.",
+        {"campos": [{"ubicacion": ["body", "vigente_desde"], "mensaje": "Mes futuro."}]},
+    )
+
+
+def tariff_not_later(world: Phase10World) -> None:
+    """El servicio rechaza un inicio que no es posterior al de la tarifa abierta (D4)."""
+    world.error = ApiError(
+        422,
+        CodigoError.VIGENCIA_NO_POSTERIOR,
+        "Error del servicio.",
+        {"vigente_desde": OPEN_TARIFF_START.isoformat()},
+    )
+
+
+@dataclass(frozen=True)
+class Phase10Case:
+    name: str
+    operation_id: str
+    status: int
+    setup: Callable[[Phase10World], None] | None = None
+    authenticated: bool = True
+    codigo: str | None = None
+    hogar_id: str | None = None  # por defecto, el hogar de la prueba
+    body: Any = NO_BODY  # por defecto, el cuerpo válido de la operación (si tiene)
+    flag: bool | None = None  # `can_view_values` o `can_edit` que el router debe pasar
+
+
+DEFAULT_PHASE10_BODIES: dict[str, Any] = {
+    "crearMeta": {"tipo": "ahorro", "valor_kwh_mensual": sample_goal().valor_kwh_mensual},
+    "crearTarifa": {
+        "operador": "EPM",
+        "precio_kwh": PRICE_KWH,
+        "vigente_desde": CURRENT_MONTH,
+        "cargo_fijo_mensual": FIXED_CHARGE,
+    },
+}
+
+
+def _phase10_guard_cases(operation_id: str) -> list[Phase10Case]:
+    """Guardias de `/hogares/{hogar_id}`: 401 → 404 (membresía) → 403 (permiso o rol)."""
+
+    def case(name: str, status: int, **kw: Any) -> Phase10Case:
+        return Phase10Case(name, operation_id, status, **kw)
+
+    cases = [
+        case("sin-token", 401, authenticated=False, codigo="NO_AUTENTICADO"),
+        case("sin-membresia", 404, setup=without_phase10_membership, codigo="NO_ENCONTRADO"),
+        case("hogar-ajeno", 404, hogar_id=str(OTHER_HOUSEHOLD_ID), codigo="NO_ENCONTRADO"),
+        case("hogar-no-uuid", 422, hogar_id="no-es-un-uuid", codigo="VALIDACION"),
+    ]
+    if operation_id == "crearMeta":  # RN-XVII-04
+        cases.append(
+            case("miembro", 403, setup=member_default, codigo="SIN_PERMISO_MODIFICAR_METAS")
+        )
+    if operation_id == "crearTarifa":  # RN-XVI-05: ni con todos los permisos
+        cases.append(case("miembro", 403, setup=member_with_goals, codigo="NO_ES_ADMINISTRADOR"))
+    return cases
+
+
+def _phase10_cases() -> tuple[Phase10Case, ...]:
+    def op(operation_id: str) -> Callable[..., Phase10Case]:
+        def case(name: str, status: int, **kw: Any) -> Phase10Case:
+            return Phase10Case(name, operation_id, status, **kw)
+
+        return case
+
+    sources = op("obtenerFuentesDatos")
+    goal = op("obtenerMeta")
+    new_goal = op("crearMeta")
+    tariff = op("obtenerTarifa")
+    new_tariff = op("crearTarifa")
+    goal_body = DEFAULT_PHASE10_BODIES["crearMeta"]
+    tariff_body = DEFAULT_PHASE10_BODIES["crearTarifa"]
+
+    def bad_goal(name: str, **changes: Any) -> Phase10Case:
+        return new_goal(name, 422, body={**goal_body, **changes}, codigo="VALIDACION")
+
+    def bad_tariff(name: str, **changes: Any) -> Phase10Case:
+        return new_tariff(name, 422, body={**tariff_body, **changes}, codigo="VALIDACION")
+
+    return (
+        # obtenerFuentesDatos (RN-XVI-06, RN-III-03; valores ocultos P-07, RN-XVII-01)
+        sources("admin", 200, flag=True),
+        sources("admin-sin-permisos", 200, setup=admin_without_permissions, flag=True),
+        sources("miembro-con-permiso", 200, setup=member_default, flag=True),
+        sources("miembro-sin-permiso", 200, setup=member_without_consumption, flag=False),
+        sources("pausado-y-sin-datos", 200, setup=with_paused_and_missing_sensor, flag=True),
+        *_phase10_guard_cases("obtenerFuentesDatos"),
+        # obtenerMeta (RN-V-03, RN-XVI-04; puede_editar RN-XVII-04)
+        goal("admin", 200, flag=True),
+        goal("admin-sin-permisos", 200, setup=admin_without_permissions, flag=True),
+        goal("miembro-sin-permiso", 200, setup=member_default, flag=False),
+        goal("miembro-con-permiso", 200, setup=member_with_goals, flag=True),
+        goal("sin-meta", 200, setup=without_goal, flag=True),
+        goal("sin-promedio", 200, setup=without_daily_average, flag=True),
+        *_phase10_guard_cases("obtenerMeta"),
+        # crearMeta (RN-V-03, RN-XVI-04, RN-XVII-04)
+        new_goal("admin", 201),
+        new_goal("miembro-con-permiso", 201, setup=member_with_goals),
+        new_goal("presupuesto", 201, body={**goal_body, "tipo": "presupuesto"}),
+        new_goal("eficiencia", 201, body={**goal_body, "tipo": "eficiencia"}),
+        *_phase10_guard_cases("crearMeta"),
+        bad_goal("valor-cero", valor_kwh_mensual=0),
+        bad_goal("valor-negativo", valor_kwh_mensual=-1),
+        bad_goal("valor-null", valor_kwh_mensual=None),
+        bad_goal("tipo-desconocido", tipo="otro"),
+        new_goal("sin-tipo", 422, body={"valor_kwh_mensual": 300}, codigo="VALIDACION"),
+        bad_goal("campo-de-mas", fecha_inicio=PHASE10_TODAY.isoformat()),
+        # obtenerTarifa (RN-XVI-05; puede_editar solo el administrador)
+        tariff("admin", 200, flag=True),
+        tariff("admin-sin-permisos", 200, setup=admin_without_permissions, flag=True),
+        tariff("miembro-con-permisos", 200, setup=member_with_goals, flag=False),
+        tariff("sin-tarifa", 200, setup=without_tariff_row, flag=True),
+        tariff("sin-operador-ni-cargo", 200, setup=with_tariff_without_optionals, flag=True),
+        *_phase10_guard_cases("obtenerTarifa"),
+        # crearTarifa (RN-V-01, RN-V-02, RN-XVI-05, DC-39)
+        new_tariff("admin", 201),
+        new_tariff("minima", 201, body={"precio_kwh": PRICE_KWH, "vigente_desde": CURRENT_MONTH}),
+        new_tariff(
+            "operador-y-cargo-null",
+            201,
+            body={**tariff_body, "operador": None, "cargo_fijo_mensual": None},
+        ),
+        new_tariff("precio-cero", 201, body={**tariff_body, "precio_kwh": 0}),
+        *_phase10_guard_cases("crearTarifa"),
+        new_tariff(
+            "vigencia-no-posterior",
+            422,
+            setup=tariff_not_later,
+            body={**tariff_body, "vigente_desde": "2026-10"},
+            codigo="VIGENCIA_NO_POSTERIOR",
+        ),
+        new_tariff(
+            "mes-futuro",
+            422,
+            setup=tariff_future_month,
+            body={**tariff_body, "vigente_desde": FUTURE_MONTH},
+            codigo="VALIDACION",
+        ),
+        bad_tariff("mes-13", vigente_desde="2026-13"),
+        bad_tariff("con-dia", vigente_desde="2026-11-01"),
+        bad_tariff("precio-negativo", precio_kwh=-1),
+        bad_tariff("cargo-negativo", cargo_fijo_mensual=-1),
+        new_tariff("sin-precio", 422, body={"vigente_desde": CURRENT_MONTH}, codigo="VALIDACION"),
+        bad_tariff("campo-de-mas", vigente_hasta="2027-01-01"),
+    )
+
+
+PHASE10_CASES: tuple[Phase10Case, ...] = _phase10_cases()
+# Casos que la guardia corta antes de llegar al servicio (los 422 de entrada tampoco llegan).
+PHASE10_GUARD_STOPS = frozenset({"sin-token", "sin-membresia", "hogar-ajeno", "miembro"})
+
+
+def _phase10_body_of(case: Phase10Case) -> Any:
+    return case.body if case.body is not NO_BODY else DEFAULT_PHASE10_BODIES.get(case.operation_id)
+
+
+def phase10_url(case: Phase10Case) -> str:
+    _method, path, _op = OPERATIONS[case.operation_id]
+    return API_PREFIX + path.format(hogar_id=case.hogar_id or str(HOGAR_ID))
+
+
+def send_phase10(client: TestClient, case: Phase10Case) -> Any:
+    method, _path, _op = OPERATIONS[case.operation_id]
+    headers = auth_header(make_token(USER_ID, CORREO)) if case.authenticated else {}
+    kwargs: dict[str, Any] = {"headers": headers}
+    body = _phase10_body_of(case)
+    if body is not None:
+        kwargs["json"] = body
+    return client.request(method.upper(), phase10_url(case), **kwargs)
+
+
+def expected_phase10_service_args(case: Phase10Case, world: Phase10World) -> tuple[Any, ...]:
+    """Lo que el router debe pasar al servicio (firmas de la hoja de interfaces de la fase 10):
+    la sesión de la petición, el usuario del token, el hogar de la ruta y la entrada ya validada
+    o la bandera que deciden el rol y el permiso; sin `now` (lo decide el servicio)."""
+    body = _phase10_body_of(case)
+    if case.operation_id == "crearMeta":
+        rest: tuple[Any, ...] = (MetaCrear(**body),)
+    elif case.operation_id == "crearTarifa":
+        rest = (TarifaCrear(**body),)
+    else:
+        assert case.flag is not None, case.name
+        rest = (case.flag,)
+    return (world.session, USER_ID, HOGAR_ID, *rest)
+
+
+@pytest.mark.parametrize(
+    "case", PHASE10_CASES, ids=lambda c: f"{c.operation_id}-{c.status}-{c.name}"
+)
+def test_phase10_response_matches_contract_schema(
+    case: Phase10Case, client: TestClient, phase10_world: Phase10World
+) -> None:
+    world = phase10_world
+    if case.setup is not None:
+        case.setup(world)
+    response = send_phase10(client, case)
+    assert response.status_code == case.status, response.text
+    assert_matches_contract(case.operation_id, response)
+    assert all(s is world.session for s in world.guard_sessions)
+    assert world.session.commits == 0  # el router no confirma: lo hace el servicio
+    reaches_service = case.name not in PHASE10_GUARD_STOPS and (
+        case.status != 422 or world.error is not None
+    )
+    if reaches_service:
+        assert world.guard_sessions == [world.session]
+        ((name, args, kwargs),) = world.calls
+        assert name == PHASE10_SERVICE_FUNCTIONS[case.operation_id][1]
+        assert kwargs == {}
+        assert args[0] is world.session  # la misma sesión que usó la guardia
+        assert args == expected_phase10_service_args(case, world)
+    else:
+        assert world.calls == []  # no llegó al servicio
+    if case.status < 300:
+        (answer,) = world.answers
+        assert response.json() == answer.model_dump(mode="json")  # el router no cambia nada
+        return
+    assert response.json()["codigo"] == case.codigo
+    assert (response.headers.get("WWW-Authenticate") == "Bearer") == (case.status == 401)
+
+
+def test_phase10_cases_cover_every_code_of_the_operations() -> None:
+    assert set(PHASE10_ERROR_CODES) == set(PHASE10_SERVICE_FUNCTIONS) == PHASE10_OPERATIONS
+    for operation_id, expected in PHASE10_ERROR_CODES.items():
+        cases = [c for c in PHASE10_CASES if c.operation_id == operation_id]
+        assert {c.codigo for c in cases} - {None} == expected, operation_id
+        assert any(c.status < 300 for c in cases), operation_id
+
+
+def test_sample_rows_cover_every_sensor_state_and_nulls() -> None:
+    """Los datos de ejemplo cubren los 3 estados de sensor y los null de la fuente y del sensor."""
+    sources = sample_data_sources(paused_and_missing=True)
+    assert {s.estado for s in sources.sensores} == {"activo", "pausado", "sin_datos"}
+    assert sources.fuente_principal.potencia_kw is None
+    assert sample_data_sources().fuente_principal.potencia_kw == pytest.approx(
+        sum(s.potencia_kw or 0.0 for s in sample_data_sources().sensores)
+    )
+
+
+def test_data_sources_without_permission_hide_every_value_but_keep_states(
+    client: TestClient, phase10_world: Phase10World
+) -> None:
+    """P-07 · RN-XVII-01: un miembro sin `ver_consumo_actual` recibe 200 (nunca 403) con
+    `valores_ocultos = true`, todos los kW null y los mismos estados de los sensores."""
+    with_paused_and_missing_sensor(phase10_world)
+    member_without_consumption(phase10_world)
+    body = send_phase10(client, Phase10Case("x", "obtenerFuentesDatos", 200)).json()
+    assert body["valores_ocultos"] is True
+    assert body["fuente_principal"]["potencia_kw"] is None
+    assert all(s["potencia_kw"] is None for s in body["sensores"])
+    assert [s["estado"] for s in body["sensores"]] == [
+        s.estado for s in phase10_world.sources.sensores
+    ]
+
+
+def test_tariff_not_later_error_carries_the_open_tariff_start(
+    client: TestClient, phase10_world: Phase10World
+) -> None:
+    """D4: 422 `VIGENCIA_NO_POSTERIOR` con `detalles.vigente_desde` (el catálogo usa `{mes_anio}`)."""
+    tariff_not_later(phase10_world)
+    body = {**DEFAULT_PHASE10_BODIES["crearTarifa"], "vigente_desde": "2026-10"}
+    response = send_phase10(client, Phase10Case("x", "crearTarifa", 422, body=body))
+    assert response.status_code == 422
+    assert response.json()["detalles"] == {"vigente_desde": OPEN_TARIFF_START.isoformat()}
+
+
+# Cuerpos con números no finitos: JSON Schema (y el contrato) solo admite números finitos, pero
+# Starlette lee el JSON con `json.loads`, que acepta `Infinity` y `NaN`. Se envían como texto
+# porque httpx no los serializa (revisión de seguridad, hallazgo medio).
+NON_FINITE_BODIES = (
+    ("crearMeta", "valor_kwh_mensual", b'{"tipo": "ahorro", "valor_kwh_mensual": Infinity}'),
+    ("crearMeta", "valor_kwh_mensual", b'{"tipo": "ahorro", "valor_kwh_mensual": NaN}'),
+    ("crearMeta", "valor_kwh_mensual", b'{"tipo": "ahorro", "valor_kwh_mensual": -Infinity}'),
+    (
+        "crearTarifa",
+        "precio_kwh",
+        b'{"precio_kwh": Infinity, "vigente_desde": "' + CURRENT_MONTH.encode() + b'"}',
+    ),
+    (
+        "crearTarifa",
+        "precio_kwh",
+        b'{"precio_kwh": NaN, "vigente_desde": "' + CURRENT_MONTH.encode() + b'"}',
+    ),
+    (
+        "crearTarifa",
+        "cargo_fijo_mensual",
+        b'{"precio_kwh": 850, "vigente_desde": "'
+        + CURRENT_MONTH.encode()
+        + b'", "cargo_fijo_mensual": Infinity}',
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("operation_id", "field_name", "raw"),
+    NON_FINITE_BODIES,
+    ids=[
+        "meta-infinity",
+        "meta-nan",
+        "meta-menos-infinity",
+        "tarifa-precio-infinity",
+        "tarifa-precio-nan",
+        "tarifa-cargo-infinity",
+    ],
+)
+def test_non_finite_numbers_are_422_and_never_reach_the_service(
+    operation_id: str,
+    field_name: str,
+    raw: bytes,
+    client: TestClient,
+    phase10_world: Phase10World,
+) -> None:
+    """`Infinity`, `-Infinity` y `NaN` en un número del cuerpo: 422 `VALIDACION` que ubica el
+    campo, valida contra el contrato y no llega al servicio."""
+    response = client.post(
+        phase10_url(Phase10Case("x", operation_id, 422)),
+        content=raw,
+        headers={**auth_header(make_token(USER_ID, CORREO)), "Content-Type": "application/json"},
+    )
+    assert response.status_code == 422, response.text
+    assert_matches_contract(operation_id, response)
+    body = response.json()
+    assert body["codigo"] == "VALIDACION"
+    assert [c["ubicacion"] for c in body["detalles"]["campos"]] == [["body", field_name]]
+    assert phase10_world.calls == []
+    assert phase10_world.session.commits == 0
 
 
 # --- operaciones pendientes ---------------------------------------------------------------

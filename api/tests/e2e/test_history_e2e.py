@@ -10,8 +10,9 @@ solo se reemplaza lo más bajo. `HistoryStore` le enseña al almacén la sentenc
 fase 7, imitando su resultado (no las ramas del SQL):
 
 - `TARIFFS_BETWEEN_SQL`: tarifas del hogar cuya vigencia [desde, hasta) toca alguna fecha de
-  [start, end] (ambas inclusive), por `vigente_desde`. Las tarifas se siembran ya confirmadas:
-  `crearTarifa` sigue en 501 (fase 9).
+  [start, end] (ambas inclusive), por `vigente_desde` (sobre `tarifas_hogar`, en
+  `tests/e2e/goals_tariff_store.py`). Aquí las tarifas se siembran ya confirmadas; `crearTarifa`
+  por la API y su efecto en el costo se prueban en `test_goals_tariff_e2e.py` (fase 10).
 
 Lo esperado se recalcula aquí, desde las lecturas guardadas en el almacén y con las reglas
 escritas (no con el dominio): serie, total, participación, pico (DC-31), tramo anterior
@@ -45,7 +46,6 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.data import tariffs as tariffs_data
 from app.domain.formats import zone_name
 from app.domain.simulator import TIMEZONE
 from app.main import API_PREFIX
@@ -53,7 +53,6 @@ from app.services import consumption as consumption_service
 from app.services import hour_recovery
 from app.services import onboarding as onboarding_service
 from tests.contract.test_c01_responses_match_schema import assert_matches_contract
-from tests.data.fake_session import FakeResult
 from tests.e2e.alerts_store import use_test_config
 from tests.e2e.test_consumption_e2e import (
     FAILURES,
@@ -81,8 +80,6 @@ from tests.e2e.test_onboarding_e2e import (
     READINGS_STATEMENT,
     REFERENCE_HOUSEHOLDS,
     ROUNDING_KWH,
-    Params,
-    StoreSession,
 )
 from tests.helpers.auth import auth_header, install_test_jwks, make_token
 from tests.helpers.personalities import PERSONALITY_ORDER, load_personalities
@@ -122,28 +119,12 @@ each_personality = pytest.mark.parametrize("name", PERSONALITY_ORDER)
 each_period = pytest.mark.parametrize("periodo", PERIODS)
 
 
-# --- el almacén con la sentencia de la fase 7 -----------------------------------------------
+# --- el almacén del historial ---------------------------------------------------------------
 
 
 class HistoryStore(ConsumptionStore):
-    """`ConsumptionStore` más las tarifas por rango de fechas del historial."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.handlers[id(tariffs_data.TARIFFS_BETWEEN_SQL)] = (
-            TARIFFS_STATEMENT,
-            self._tariffs_between,
-        )
-
-    def _tariffs_between(self, _session: StoreSession, params: Params) -> FakeResult:
-        """tarifas_hogar del hogar con vigencia [desde, hasta) que toca [start, end]."""
-        rows = [
-            row
-            for row in self.tariffs.get(params["hogar_id"], [])
-            if row["vigente_desde"] <= params["end"]
-            and (row["vigente_hasta"] is None or row["vigente_hasta"] > params["start"])
-        ]
-        return FakeResult(sorted(rows, key=lambda row: row["vigente_desde"]))
+    """`ConsumptionStore` (que ya resuelve `TARIFFS_BETWEEN_SQL` sobre `tarifas_hogar`, ver
+    `tests/e2e/goals_tariff_store.py`) más la siembra de tarifas del historial."""
 
     def seed_tariff(
         self,
@@ -153,15 +134,14 @@ class HistoryStore(ConsumptionStore):
         until: date | None = None,
         fixed: Decimal | None = None,
     ) -> None:
-        self.tariffs.setdefault(hogar_id, []).append(
-            {
-                "id": stable_id("tarifa", TAG, str(hogar_id), since.isoformat()),
-                "precio_kwh": price,
-                "cargo_fijo_mensual": fixed,
-                "vigente_desde": since,
-                "vigente_hasta": until,
-            }
-        )
+        row = {
+            "id": stable_id("tarifa", TAG, str(hogar_id), since.isoformat()),
+            "precio_kwh": price,
+            "cargo_fijo_mensual": fixed,
+            "vigente_desde": since,
+            "vigente_hasta": until,
+        }
+        self.seed_tariffs(hogar_id, [*self.tariffs_of(hogar_id), row])
 
     def stored(self, hogar_id: UUID) -> Stored:
         """Lecturas guardadas del hogar por zona, como float."""
@@ -660,7 +640,7 @@ def test_tariff_by_date_and_fixed_charge_only_in_month_general(
         with_fixed[periodo, zone] = projection
 
     # La misma tarifa nueva, sin cargo fijo.
-    db.tariffs[hogar_id] = []
+    db.seed_tariffs(hogar_id, [])
     db.seed_tariff(hogar_id, OLD_PRICE, date(2026, 10, 1), change)
     db.seed_tariff(hogar_id, NEW_PRICE, change, None, None)
     for periodo, zone in views:

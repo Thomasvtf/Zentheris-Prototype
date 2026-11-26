@@ -16,18 +16,22 @@ from sqlalchemy.sql.elements import TextClause
 from app.data import households
 from app.data.households import (
     HouseholdRow,
+    MainSourceRow,
     SensorToInsert,
     ZoneRow,
+    ZoneSensorRow,
     ZoneToInsert,
     delete_household,
     get_household,
     get_household_created_at,
+    get_main_source,
     insert_household,
     insert_main_source,
     insert_zone_sensors,
     insert_zones,
     list_household_ids_with_active_sensors,
     list_household_zones,
+    list_zone_sensors,
     lock_household,
     update_permissions,
 )
@@ -576,3 +580,122 @@ def test_update_permissions_rejects_invalid_changes_without_sql(changes: dict[st
         update_permissions(session, uuid4(), changes)  # type: ignore[arg-type]
 
     assert session.calls == []
+
+
+# ------------------------------------------------------------ fuentes de datos (RN-XVI-06)
+
+
+def test_main_source_binds_only_the_household() -> None:
+    hogar_id = uuid4()
+    session = FakeSession()
+
+    assert get_main_source(session, hogar_id) is None  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert statement is households.MAIN_SOURCE_SQL
+    assert isinstance(statement, TextClause)
+    assert params == {"hogar_id": hogar_id}
+    assert_bound_only(statement, params)
+    assert normalized_sql(statement) == (
+        "select id, nombre, estado from fuentes_principales where hogar_id = :hogar_id"
+    )
+    assert session.commits == 0
+
+
+@pytest.mark.parametrize("estado", ["activa", "inactiva"])
+def test_main_source_maps_the_row(estado: str) -> None:
+    fuente_id = uuid4()
+    session = FakeSession([{"id": str(fuente_id), "nombre": "Medidor principal", "estado": estado}])
+
+    source = get_main_source(session, uuid4())  # type: ignore[arg-type]
+
+    assert source == MainSourceRow(id=fuente_id, nombre="Medidor principal", estado=estado)  # type: ignore[arg-type]
+    assert isinstance(source.id, UUID)
+
+
+def test_zone_sensors_bind_only_the_household() -> None:
+    hogar_id = uuid4()
+    session = FakeSession()
+
+    assert list_zone_sensors(session, hogar_id) == []  # type: ignore[arg-type]
+
+    statement, params = session.calls[0]
+    assert statement is households.ZONE_SENSORS_SQL
+    assert isinstance(statement, TextClause)
+    assert params == {"hogar_id": hogar_id}
+    assert_bound_only(statement, params)
+    assert session.commits == 0
+
+
+def test_zone_sensors_sql_joins_the_zone_filters_by_household_and_orders_by_zone() -> None:
+    """R-01 e I-01: el hogar sale de zonas; todos los estados (el dominio decide, RN-III-03)."""
+    assert normalized_sql(households.ZONE_SENSORS_SQL) == (
+        "select s.id as sensor_id, z.id as zona_id, z.tipo as zona_tipo, "
+        "z.estado as zona_estado, s.estado as sensor_estado "
+        "from sensores_zona s "
+        "join zonas z on z.id = s.zona_id "
+        "where z.hogar_id = :hogar_id "
+        "order by z.id"
+    )
+    sql = normalized_sql(households.ZONE_SENSORS_SQL)
+    assert "'activa'" not in sql
+    assert "'activo'" not in sql
+
+
+def _sensor_row(tipo: str, **overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "sensor_id": uuid4(),
+        "zona_id": uuid4(),
+        "zona_tipo": tipo,
+        "zona_estado": "activa",
+        "sensor_estado": "activo",
+    }
+    row.update(overrides)
+    return row
+
+
+def test_zone_sensors_are_mapped_in_the_query_order_with_every_state() -> None:
+    s1, z1, s2, z2 = uuid4(), uuid4(), uuid4(), uuid4()
+    session = FakeSession(
+        [
+            _sensor_row("cocina", sensor_id=str(s1), zona_id=str(z1)),
+            _sensor_row(
+                "garaje", sensor_id=s2, zona_id=z2, zona_estado="inactiva", sensor_estado="pausado"
+            ),
+        ]
+    )
+
+    sensors = list_zone_sensors(session, uuid4())  # type: ignore[arg-type]
+
+    assert sensors == [
+        ZoneSensorRow(
+            sensor_id=s1,
+            zona_id=z1,
+            zona_tipo="cocina",
+            zona_estado="activa",
+            sensor_estado="activo",
+        ),
+        ZoneSensorRow(
+            sensor_id=s2,
+            zona_id=z2,
+            zona_tipo="garaje",
+            zona_estado="inactiva",
+            sensor_estado="pausado",
+        ),
+    ]
+    assert all(isinstance(s.sensor_id, UUID) and isinstance(s.zona_id, UUID) for s in sensors)
+
+
+def test_zone_sensors_map_all_nine_zone_types() -> None:
+    session = FakeSession([_sensor_row(tipo) for tipo in ZONE_KEYS])
+
+    sensors = list_zone_sensors(session, uuid4())  # type: ignore[arg-type]
+
+    assert [sensor.zona_tipo for sensor in sensors] == list(ZONE_KEYS)
+
+
+@pytest.mark.parametrize("statement", ["MAIN_SOURCE_SQL", "ZONE_SENSORS_SQL"])
+def test_data_source_statements_have_no_python_formatting(statement: str) -> None:
+    sql = str(getattr(households, statement))
+    assert "{" not in sql
+    assert "%" not in sql

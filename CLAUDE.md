@@ -15,7 +15,7 @@ Zentheris es una app móvil (Android e iOS) que muestra y ayuda a reducir el con
 5. `docs/textos/`: catálogo de textos (app, backend y Supabase). **Ningún texto de interfaz se escribe a mano.**
 6. `docs/diseno/`: tokens y fichas de los 31 componentes más 3 gráficos de consumo (`ConsumptionGauge`, `ConsumptionRing`, `LineChart`).
 7. `docs/supabase/especificacion-supabase-v1.md`: tablas, restricciones, RLS, Storage y variables de entorno.
-8. `docs/historias/` (27 historias) y `docs/pruebas/` (matriz de pruebas).
+8. `docs/historias/` (27 historias) y `docs/pruebas/` (plan, registro y matriz de pruebas).
 
 Si dos fuentes chocan, gana la de número menor. Avisa la contradicción en el PR. Las guías humanas están en `docs/guias/`.
 

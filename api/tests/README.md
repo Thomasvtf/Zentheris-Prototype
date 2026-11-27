@@ -4,7 +4,7 @@ Pruebas de la API con `pytest`. Se corren desde `api/` con `uv run pytest`; no u
 
 - **Una carpeta por grupo de la matriz** [`docs/pruebas/matriz-pruebas-backend-v1.md`](../../docs/pruebas/matriz-pruebas-backend-v1.md): `permissions/` (P), `rls/` (R), `zones/` (Z), `backfill/` (B), `thresholds/` (U), `alerts/` (A), `contract/` (C), `integrity/` (I) y `security/` (S).
 - **Nombre:** `test_<id>_<caso>.py`; por ejemplo, `permissions/test_p02_no_view_consumption_403.py` para P-02.
-- **Pendientes:** los archivos de la matriz que aún no tienen su sesión siguen con `pytest.skip("TODO(<ID>)")`; así cada pendiente se ve y la suite queda en verde. Desde la fase 4 ya son reales Z-01 a Z-04, B-01, B-02 y B-04 (B-03 sigue en skip: necesita Render) y la parte sin base de I-01.
+- **Pendientes:** los archivos de la matriz que aún no tienen su sesión siguen con `pytest.skip("TODO(<ID>)")`; así cada pendiente se ve y la suite queda en verde. El estado de cada caso está en el registro de pruebas ([`docs/pruebas/REGISTRO-DE-PRUEBAS.md`](../../docs/pruebas/REGISTRO-DE-PRUEBAS.md)).
 - **Reales desde ya:** `test_health.py`, `test_errors.py`, `test_config.py` y `contract/test_skeleton_matches_contract.py` (paridad del esqueleto con el contrato).
 - **Fuera de la matriz** (sin ID propio, por eso no siguen `test_<id>_<caso>.py`):
   - `helpers/`: utilidades compartidas. `personalities.py` (promedios de las 5 personalidades, SHA-256 comprobado) y `auth.py` (JWKS y tokens de prueba en memoria, membresías y sesión falsas).

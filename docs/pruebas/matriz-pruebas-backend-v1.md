@@ -43,4 +43,4 @@ Complementa el plan v3.0 con lo que faltaba según las reglas §10: permisos, RL
 | S-03 | Seguridad | Llamada protegida sin token, con token inválido o vencido | 401 `NO_AUTENTICADO` | Contrato, RN-I-01 |
 | S-04 | Seguridad | Fallo no previsto en cualquier endpoint | 500 `ERROR_INTERNO` sin exponer la excepción | Contrato, Guía 3 §7 |
 
-La referencia ejecutada está en `04_datos-simulados/calibracion-umbrales-v1/` (13/13 OK) y en el Avance 03 (59/59 OK). Nada de lo demás está ejecutado: el backend no existe todavía.
+La referencia ejecutada de los umbrales está en `04_datos-simulados/`. El estado de cada caso, sus resultados y evidencias están en el registro de pruebas (`09_pruebas/`); el método, en el plan de pruebas de la misma carpeta.

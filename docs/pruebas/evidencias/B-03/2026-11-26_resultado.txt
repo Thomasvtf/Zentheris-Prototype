@@ -1,0 +1,14 @@
+Medición B-03 · 26/11/2026 19:21 · casa con 9 zonas (6 480 lecturas)
+#1: 2.67 s
+#2: 2.76 s
+#3: 2.58 s
+#4: 2.37 s
+#5: 2.53 s
+#6: 2.56 s
+#7: 2.35 s
+#8: 2.62 s
+#9: 2.17 s
+#10: 2.28 s
+Mediciones válidas: 10 de 10
+Mínimo 2.17 s · mediana 2.56 s · p95 2.76 s
+RESULTADO: PASA (p95 <= 10 s)

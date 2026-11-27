@@ -11,6 +11,6 @@ Copia de las fuentes vigentes de Archivos_Zentheris para el desarrollo, que hace
 | `datos/` | Umbrales v1, motor de referencia, pruebas, perfiles y Avance 03 (zip) |
 | `textos/` | Catálogo de textos v1 |
 | `diseno/` | Tokens y fichas de los 31 componentes más 3 gráficos de consumo |
-| `historias/`, `pruebas/`, `guias/` | Historias v5, matriz de pruebas y guías 2 y 3 |
+| `historias/`, `pruebas/`, `guias/` | Historias v5, pruebas (plan, registro y matriz) y guías 2 y 3 |
 
 No editar a mano. Si una regla cambia, se actualiza Archivos_Zentheris y se vuelve a copiar (DC-57).
